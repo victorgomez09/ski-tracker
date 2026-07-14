@@ -1,0 +1,56 @@
+package store
+
+import (
+	"context"
+
+	"github.com/victorgomez09/ski-tracker/internal/models"
+)
+
+// Store aggregates all repository interfaces.
+type Store interface {
+	SkiResort() SkiResortStore
+	SkiPiste() SkiPisteStore
+	SkiLift() SkiLiftStore
+}
+
+// Pagination request parameters.
+type ListParams struct {
+	Page    int
+	PerPage int
+}
+
+func (p ListParams) Offset() int {
+	return (p.Page - 1) * p.PerPage
+}
+
+func (p ListParams) Limit() int {
+	return p.PerPage
+}
+
+// DefaultListParams returns sensible defaults.
+func DefaultListParams() ListParams {
+	return ListParams{Page: 1, PerPage: 20}
+}
+
+// ============================================================================
+// Repository Interfaces
+// ============================================================================
+type SkiResortListFilter struct {
+	Search    string
+	Status    string
+	Latitude  *float64
+	Longitude *float64
+	RadiusKm  *float64
+}
+
+type SkiResortStore interface {
+	ListAll(ctx context.Context, filter SkiResortListFilter) ([]models.SkiResort, error)
+}
+
+type SkiPisteStore interface {
+	GetByResortID(ctx context.Context, resortID string) ([]models.SkiPiste, error)
+}
+
+type SkiLiftStore interface {
+	GetByResortID(ctx context.Context, resortID string) ([]models.SkiLift, error)
+}
