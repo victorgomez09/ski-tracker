@@ -20,19 +20,19 @@ help: ## Show this help
 dev: docker-up ## Start full dev environment
 	@$(MAKE) -j2 dev-api dev-web
 
-dev-data: docker-up ## Start data script
-	cd $(API_DIR) && go run ./cmd/scripts
-
 dev-api: docker-up ## Start Go API with hot reload
 	cd $(API_DIR) && air
 
 dev-web: ## Start Next.js dev server
-	cd $(WEB_DIR) && bun dev
+	cd $(WEB_DIR) && bun web
 
 # ============================================================================
 # Build
 # ============================================================================
 build: build-api build-web ## Build all
+
+build-data: docker-up ## Start data script
+	cd $(API_DIR) && go run ./cmd/scripts
 
 build-api: ## Build Go API binary
 	cd $(API_DIR) && $(GO) build $(GOFLAGS) -o ../../$(BIN_DIR)/vipas-api ./cmd/server
