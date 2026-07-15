@@ -280,22 +280,20 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
             )}
 
             {((data as Lift).LiftType && type === "LineString") && (
-                <>
                 <div className="grid grid-cols-3 gap-2 border-t border-b border-gray-100 py-3 mb-3 text-xs font-semibold text-gray-700">
-                        <div>
-                            <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Type:</span>
-                            <span className="text-sm font-bold text-gray-900">{parseLiftType((data as Lift).LiftType)}</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Capacity:</span>
-                            <span className="text-sm font-bold text-gray-900">{(data as Lift).Capacity} pers.</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Hourly Capacity:</span>
-                            <span className="text-sm font-bold text-gray-900">{(data as Lift).CapacityHourly} pers.</span>
-                        </div>
+                    <div>
+                        <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Type:</span>
+                        <span className="text-sm font-bold text-gray-900">{parseLiftType((data as Lift).LiftType)}</span>
                     </div>
-                </>
+                    <div>
+                        <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Capacity:</span>
+                        <span className="text-sm font-bold text-gray-900">{(data as Lift).Capacity} pers.</span>
+                    </div>
+                    <div>
+                        <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Hourly Capacity:</span>
+                        <span className="text-sm font-bold text-gray-900">{(data as Lift).CapacityHourly} pers.</span>
+                    </div>
+                </div>
             )}
 
             <div className="text-[10px] text-gray-400 flex items-center justify-between border-t border-gray-100 pt-3">

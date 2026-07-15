@@ -4,7 +4,7 @@ import 'leaflet-polylinedecorator';
 import 'leaflet/dist/leaflet.css';
 import { Lift, Piste, PisteTextDecoratorProps, ResortDetail } from 'models/ski-resort.model';
 import { useEffect, useRef, useState } from 'react';
-import { CircleMarker, MapContainer, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+import { Circle, CircleMarker, LayerGroup, LayersControl, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import { MapDetailPanel } from './MapDetailPanel';
 
 export default function InteractiveSkiMap() {
@@ -13,6 +13,7 @@ export default function InteractiveSkiMap() {
     const [center, setCenter] = useState({ lat: 40.797891, lng: -3.971953 });
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [activePiste, setActivePiste] = useState<Piste | Lift | null>(null);
+    const [hoveredPisteID, setHoveredPisteID] = useState<string | null>(null);
     const [zoom, setZoom] = useState(13);
 
     const fetchNearbyResorts = async (lat: number, lng: number) => {
@@ -141,6 +142,7 @@ export default function InteractiveSkiMap() {
                         fetchNearbyResorts(centerLat, centerLon);
                     }
                 }} />
+
                 <TileLayer
                     attribution='&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, USGS, NOAA'
                     url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
@@ -182,16 +184,13 @@ export default function InteractiveSkiMap() {
                     ))
                 ) : (
                     <>
-                        {resorts.flatMap(r => r.pistes || []).map((piste) => {
+                        {resorts.flatMap(r => r.pistes || []).filter(piste => piste.GeometryGeoJSON.type !== "Polygon").map((piste) => {
                             const isSelected = activePiste?.ID === piste.ID;
+                            const isHovered = hoveredPisteID === piste.ID;
                             const color = getPisteColor(piste.Difficulty);
 
-                            const rawCoords = piste.GeometryGeoJSON.type === "Polygon"
-                                ? piste.GeometryGeoJSON.coordinates[0]
-                                : piste.GeometryGeoJSON.coordinates;
-
+                            const rawCoords = piste.GeometryGeoJSON.coordinates;
                             const downhillCoordinates = getDownhillCoords(rawCoords);
-
                             const positions = downhillCoordinates.map(
                                 (coord) => [coord[1], coord[0]] as [number, number]
                             );
@@ -206,40 +205,31 @@ export default function InteractiveSkiMap() {
                                 shouldShowText = true;
                             }
 
+                            const commonEventHandlers = {
+                                click: () => setActivePiste(piste),
+                                mouseover: () => setHoveredPisteID(piste.ID),
+                                mouseout: () => setHoveredPisteID(null)
+                            };
+
                             return (
                                 <div key={`piste-${piste.ID}`}>
-                                    {piste.GeometryGeoJSON.type !== "Polygon" ? (
-                                        <Polyline
-                                            positions={positions}
-                                            eventHandlers={{ click: () => setActivePiste(piste) }}
-                                            pathOptions={{
-                                                color: color,
-                                                weight: isSelected ? 7 : 5,
-                                                opacity: 0.85,
-                                                lineCap: 'round',
-                                                renderer: L.canvas()
-                                            }}
-                                        />
-                                    ) : <Polygon
+                                    <Polyline
                                         positions={positions}
-                                        eventHandlers={{ click: () => setActivePiste(piste) }}
+                                        eventHandlers={commonEventHandlers}
                                         pathOptions={{
-                                            fillColor: color,
-                                            fillOpacity: isSelected ? 0.4 : 0.2,
-                                            stroke: false,
+                                            color: color,
+                                            weight: isSelected ? 8 : (isHovered ? 8 : 5),
+                                            opacity: 0.85,
+                                            lineCap: 'round',
+                                            renderer: L.canvas()
                                         }}
-                                    />}
-
-                                    {piste.GeometryGeoJSON.type !== "Polygon" && (
-                                        <>
-                                            <Polyline
-                                                eventHandlers={{ click: () => setActivePiste(piste) }}
-                                                positions={positions}
-                                                pathOptions={{ color: '#ffffff', weight: isSelected ? 3 : 2, opacity: 0.9 }}
-                                            />
-                                            <PisteDecorator positions={positions} color={color} />
-                                        </>
-                                    )}
+                                    />
+                                    <Polyline
+                                        eventHandlers={commonEventHandlers}
+                                        positions={positions}
+                                        pathOptions={{ color: '#ffffff', weight: isSelected ? 3.5 : (isHovered ? 3 : 2), opacity: 0.9 }}
+                                    />
+                                    <PisteDecorator positions={positions} color={color} />
 
                                     {shouldShowText && zoom > 15 && (
                                         <PisteTextDecorator
@@ -316,25 +306,54 @@ export default function InteractiveSkiMap() {
                             );
                         })}
 
-                        {resorts.flatMap(r => r.areas || []).map((area) => {
-                            const polygonCoords = area.GeometryGeoJSON.coordinates[0].map(
-                                coord => [coord[1], coord[0]] as [number, number]
-                            );
+                        <LayersControl position="topright">
+                            <LayersControl.Overlay name="Resort Areas & Polygons">
+                                <LayerGroup>
+                                    {resorts.flatMap(r => r.pistes || []).filter(piste => piste.GeometryGeoJSON.type === "Polygon").map((piste) => {
+                                        const isSelected = activePiste?.ID === piste.ID;
+                                        const color = getPisteColor(piste.Difficulty);
 
-                            return (
-                                <Polygon
-                                    key={area.ID}
-                                    positions={polygonCoords}
-                                    pathOptions={{
-                                        color: '#3498db',
-                                        fillColor: '#3498db',
-                                        fillOpacity: 0.3,
-                                        weight: 2,
-                                        dashArray: '5, 5'
-                                    }}
-                                />
-                            );
-                        })}
+                                        const rawCoords = piste.GeometryGeoJSON.coordinates[0];
+                                        const positions = rawCoords.map(
+                                            (coord: any) => [coord[1], coord[0]] as [number, number]
+                                        );
+
+                                        return (
+                                            <Polygon
+                                                key={`piste-poly-${piste.ID}`}
+                                                positions={positions}
+                                                eventHandlers={{ click: () => setActivePiste(piste) }}
+                                                pathOptions={{
+                                                    fillColor: color,
+                                                    fillOpacity: isSelected ? 0.4 : 0.2,
+                                                    stroke: false,
+                                                }}
+                                            />
+                                        );
+                                    })}
+
+                                    {resorts.flatMap(r => r.areas || []).map((area) => {
+                                        const polygonCoords = area.GeometryGeoJSON.coordinates[0].map(
+                                            coord => [coord[1], coord[0]] as [number, number]
+                                        );
+
+                                        return (
+                                            <Polygon
+                                                key={area.ID}
+                                                positions={polygonCoords}
+                                                pathOptions={{
+                                                    color: '#3498db',
+                                                    fillColor: '#3498db',
+                                                    fillOpacity: 0.3,
+                                                    weight: 2,
+                                                    dashArray: '5, 5'
+                                                }}
+                                            />
+                                        );
+                                    })}
+                                </LayerGroup>
+                            </LayersControl.Overlay>
+                        </LayersControl>
                     </>
                 )}
             </MapContainer>
@@ -362,16 +381,18 @@ function PisteDecorator({ positions, color }: { positions: [number, number][], c
         decoratorRef.current = (L as any).polylineDecorator(positions, {
             patterns: [
                 {
-                    offset: '15%',
-                    repeat: '100px',
+                    offset: '25px',
+                    repeat: '80px',
                     symbol: LeafletSymbol.arrowHead({
                         pixelSize: 8,
                         headAngle: 60,
+                        polygon: false,
                         pathOptions: {
                             stroke: true,
                             color: color,
-                            weight: 2,
-                            fill: false
+                            weight: 2.0,
+                            fill: false,
+                            opacity: 0.95
                         }
                     })
                 }
@@ -401,25 +422,19 @@ export function PisteTextDecorator({ positions, text, color, isLift = false }: P
     useEffect(() => {
         if (!positions || positions.length < 2 || !text) return;
 
-        let totalLength = 0;
-        for (let i = 0; i < positions.length - 1; i++) {
-            totalLength += getDistance(positions[i], positions[i + 1]);
-        }
-
-        const halfLength = totalLength / 2;
-        let currentLength = 0;
-        let p1 = positions[0];
-        let p2 = positions[1];
+        let longestSegIdx = 0;
+        let maxDist = 0;
 
         for (let i = 0; i < positions.length - 1; i++) {
             const dist = getDistance(positions[i], positions[i + 1]);
-            if (currentLength + dist >= halfLength) {
-                p1 = positions[i];
-                p2 = positions[i + 1];
-                break;
+            if (dist > maxDist) {
+                maxDist = dist;
+                longestSegIdx = i;
             }
-            currentLength += dist;
         }
+
+        const p1 = positions[longestSegIdx];
+        const p2 = positions[longestSegIdx + 1];
 
         const midPoint: [number, number] = [
             (p1[0] + p2[0]) / 2,
@@ -438,42 +453,22 @@ export function PisteTextDecorator({ positions, text, color, isLift = false }: P
 
         const renderAngle = -angle;
 
-        const charWidth = 7;
-        const padding = 16;
-        const rectWidth = Math.max(60, text.length * charWidth + padding);
-        const rectHeight = 18;
-
-        const halfW = rectWidth / 2;
-        const halfH = rectHeight / 2;
-
-        const rectFill = isLift ? '#e67e22' : '#ffffff';
-        const rectStroke = isLift ? '#d35400' : color;
-        const textColor = isLift ? '#ffffff' : '#1e293b';
+        const textColor = isLift ? '#d35400' : color;
 
         const svgHtml = `
-          <svg width="240" height="60" viewBox="0 0 240 60" style="overflow: visible; pointer-events: none;">
-            <g transform="rotate(${renderAngle} 120 30)">
-              <rect 
-                x="${120 - halfW}" 
-                y="${30 - halfH}" 
-                width="${rectWidth}" 
-                height="${rectHeight}" 
-                rx="5" 
-                fill="${rectFill}" 
-                stroke="${rectStroke}" 
-                stroke-width="1"
-                style="filter: drop-shadow(0px 1px 2px rgba(0,0,0,0.2));"
-              />
+          <svg width="200" height="30" viewBox="0 0 200 30" style="overflow: visible; pointer-events: none;">
+            <g transform="rotate(${renderAngle} 100 15)">
               <text 
-                x="120" 
-                y="31" 
+                x="100" 
+                y="15" 
                 fill="${textColor}"
                 dominant-baseline="middle" 
                 text-anchor="middle" 
-                font-size="10px" 
+                font-size="9px" 
                 font-family="system-ui, -apple-system, sans-serif" 
                 font-weight="700"
                 letter-spacing="0.5px"
+                style="text-shadow: 1px 1px 1px #ffffff, -1px -1px 1px #ffffff, 1px -1px 1px #ffffff, -1px 1px 1px #ffffff;"
               >
                 ${text}
               </text>
@@ -484,8 +479,8 @@ export function PisteTextDecorator({ positions, text, color, isLift = false }: P
         const svgIcon = L.divIcon({
             className: 'static-piste-label',
             html: svgHtml,
-            iconSize: [240, 60],
-            iconAnchor: [120, 30]
+            iconSize: [200, 30],
+            iconAnchor: [100, 15]
         });
 
         svgMarkerRef.current = L.marker(midPoint, {
