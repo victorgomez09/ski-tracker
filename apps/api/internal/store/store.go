@@ -43,8 +43,16 @@ type SkiResortListFilter struct {
 	RadiusKm  *float64
 }
 
+type SkiResortBBoxFilter struct {
+	MinLatitude  *float64
+	MaxLatitude  *float64
+	MinLongitude *float64
+	MaxLongitude *float64
+}
+
 type SkiResortStore interface {
 	ListAll(ctx context.Context, filter SkiResortListFilter) ([]models.SkiResort, error)
+	ListByBBox(ctx context.Context, filter SkiResortBBoxFilter) ([]models.SkiResort, error)
 }
 
 type SkiPisteStore interface {

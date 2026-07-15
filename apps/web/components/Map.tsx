@@ -3,7 +3,7 @@ import L from 'leaflet';
 import 'leaflet-polylinedecorator';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useRef, useState } from 'react';
-import { CircleMarker, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import { PisteDetailPanel } from './PisteDetailPanel';
 
 interface GeoJSONLine {
@@ -53,6 +53,7 @@ interface ResortDetail {
 
 
 export default function InteractiveSkiMap() {
+    const mapRef = useRef(null);
     const [center, setCenter] = useState({ lat: 40.797891, lng: -3.971953 });
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [activePiste, setActivePiste] = useState<Piste | null>(null);
@@ -68,6 +69,17 @@ export default function InteractiveSkiMap() {
             console.error("Error cargando estaciones:", error);
         }
     };
+
+    const fetchResortsByBBox = async (minLat: number, maxLat: number, minLon: number, maxLon: number) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/resorts/bbox?minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`);
+            if (!response.ok) throw new Error(`HTTP: ${response.status}`);
+            const data: ResortDetail[] = await response.json();
+            setResorts(data);
+        } catch (error) {
+            console.error("Error cargando estaciones por BBOX:", error);
+        }
+    }
 
     const nombresPistasRenderizados = new Set<string>();
     const nombresRemontesRenderizados = new Set<string>();
@@ -111,9 +123,32 @@ export default function InteractiveSkiMap() {
         return null;
     };
 
+    const MapBoundsListener = ({ onBoundsChange }: { onBoundsChange: (bounds: any) => void }) => {
+        useMapEvents({
+            moveend: (e) => {
+                const bounds = e.target.getBounds();
+                onBoundsChange({
+                    minLat: bounds.getSouth(),
+                    maxLat: bounds.getNorth(),
+                    minLon: bounds.getWest(),
+                    maxLon: bounds.getEast()
+                });
+            },
+        });
+        return null;
+    };
+
+    const MapController = ({ setMapRef }: { setMapRef: (map: any) => void }) => {
+        const map = useMap();
+        setMapRef(map);
+        return null;
+    };
+
     useEffect(() => {
-        fetchNearbyResorts(center.lat, center.lng);
-    }, []);
+        if (zoom > 10) {
+            fetchNearbyResorts(center.lat, center.lng);
+        }
+    }, [center, zoom]);
 
     return (
         <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
@@ -129,28 +164,40 @@ export default function InteractiveSkiMap() {
                 zoom={zoom}
                 style={{ height: '100%', width: '100%' }}
             >
+                <MapController setMapRef={(map) => (mapRef.current = map)} />
                 <MapEvents />
+                <MapBoundsListener onBoundsChange={(bounds) => zoom < 10 && fetchResortsByBBox(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon)} />
                 <TileLayer
                     attribution='&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, USGS, NOAA'
                     url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
                 />
 
                 {zoom < 12 ? (
-                    resorts.map(resort => (
+                    resorts?.map(resort => (
                         <CircleMarker
                             key={resort.ID}
                             center={[resort.Latitude, resort.Longitude]}
-                            radius={8} // Tamaño del punto en píxeles
+                            radius={8}
                             pathOptions={{
-                                color: '#ffffff',       // Color del borde del punto
-                                fillColor: '#e67e22',   // Color interior (mismo naranja que tus remontes)
-                                fillOpacity: 1,         // Sólido
-                                weight: 2               // Grosor del borde blanco para que destaque
+                                color: '#ffffff',
+                                fillColor: '#e67e22',
+                                fillOpacity: 1,
+                                weight: 2,
+                                className: 'focus-none'
                             }}
                             eventHandlers={{
                                 click: () => {
-                                    // Aquí podrías hacer zoom automáticamente a la estación al hacer click
-                                    console.log("Estación seleccionada:", resort.Name);
+                                    if (mapRef.current) {
+                                        (mapRef.current as any).flyTo(
+                                            [resort.Latitude, resort.Longitude],
+                                            13,
+                                            { duration: 1 }
+                                        );
+                                        setTimeout(() => {
+                                            setCenter({ lat: resort.Latitude, lng: resort.Longitude });
+                                            setZoom(13);
+                                        }, 1000);
+                                    }
                                 }
                             }}
                         >
@@ -212,6 +259,7 @@ export default function InteractiveSkiMap() {
                                     {piste.GeometryGeoJSON.type !== "Polygon" && (
                                         <>
                                             <Polyline
+                                                eventHandlers={{ click: () => setActivePiste(piste) }}
                                                 positions={positions}
                                                 pathOptions={{ color: '#ffffff', weight: isSelected ? 3 : 2, opacity: 0.9 }}
                                             />
@@ -252,12 +300,12 @@ export default function InteractiveSkiMap() {
                                 <div key={`lift-${lift.ID}`}>
                                     <CircleMarker
                                         center={startPoint}
-                                        radius={7}
+                                        radius={zoom > 15 ? 7 : 3.5}
                                         pathOptions={{ color: '#ffffff', fillColor: '#e67e22', fillOpacity: 1, weight: 2 }}
                                     />
                                     <CircleMarker
                                         center={endPoint}
-                                        radius={7}
+                                        radius={zoom > 15 ? 7 : 3.5}
                                         pathOptions={{ color: '#ffffff', fillColor: '#e67e22', fillOpacity: 1, weight: 2 }}
                                     />
 

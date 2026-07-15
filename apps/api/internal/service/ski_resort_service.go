@@ -74,6 +74,51 @@ func (s *SkiResortService) List(ctx context.Context, latStr, lngStr, radStr stri
 	return detailedResorts, nil
 }
 
+func (s *SkiResortService) ListByBBox(ctx context.Context, minLatStr, maxLatStr, minLonStr, maxLonStr string) ([]models.SkiResort, error) {
+	minLat, err1 := strconv.ParseFloat(minLatStr, 64)
+	maxLat, err2 := strconv.ParseFloat(maxLatStr, 64)
+	minLon, err3 := strconv.ParseFloat(minLonStr, 64)
+	maxLon, err4 := strconv.ParseFloat(maxLonStr, 64)
+
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return nil, apierr.ErrBadRequest.WithDetail("Parámetros minLat, maxLat, minLon y maxLon deben ser números válidos")
+	}
+
+	filter := store.SkiResortBBoxFilter{
+		MinLatitude:  &minLat,
+		MaxLatitude:  &maxLat,
+		MinLongitude: &minLon,
+		MaxLongitude: &maxLon,
+	}
+
+	resorts, err := s.store.SkiResort().ListByBBox(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	// var detailedResorts []ResortDetailDTO
+
+	// for _, resort := range resorts {
+	// 	pistes, err := s.store.SkiPiste().GetByResortID(ctx, resort.ID)
+	// 	if err != nil {
+	// 		pistes = []models.SkiPiste{}
+	// 	}
+
+	// 	lifts, err := s.store.SkiLift().GetByResortID(ctx, resort.ID)
+	// 	if err != nil {
+	// 		lifts = []models.SkiLift{}
+	// 	}
+
+	// 	detailedResorts = append(detailedResorts, ResortDetailDTO{
+	// 		SkiResort:  resort,
+	// 		Pistes:     pistes,
+	// 		Lifts:      lifts,
+	// 	})
+	// }
+
+	return resorts, nil
+}
+
 func calculateDistance(lat1, lon1, lat2, lon2 float64) float64 {
 	const earthRadiusKm = 6371.0
 

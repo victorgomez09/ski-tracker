@@ -46,6 +46,7 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		// restoreRL := middleware.RateLimit(5, 5*time.Minute)
 		skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
 		apiV1.GET("/resorts/nearby", skiResortHandler.ListNearby)
+		apiV1.GET("/resorts/bbox", skiResortHandler.ListByBBox)
 	}
 
 	return r

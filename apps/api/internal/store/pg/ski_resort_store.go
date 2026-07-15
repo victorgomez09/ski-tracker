@@ -41,3 +41,24 @@ func (s *skiResortStore) ListAll(ctx context.Context, filter store.SkiResortList
 	err := q.Scan(ctx)
 	return resorts, err
 }
+
+func (s *skiResortStore) ListByBBox(ctx context.Context, filter store.SkiResortBBoxFilter) ([]models.SkiResort, error) {
+	var resorts []models.SkiResort
+	q := s.db.NewSelect().Model(&resorts)
+
+	if filter.MinLatitude != nil {
+		q = q.Where("latitude >= ?", *filter.MinLatitude)
+	}
+	if filter.MaxLatitude != nil {
+		q = q.Where("latitude <= ?", *filter.MaxLatitude)
+	}
+	if filter.MinLongitude != nil {
+		q = q.Where("longitude >= ?", *filter.MinLongitude)
+	}
+	if filter.MaxLongitude != nil {
+		q = q.Where("longitude <= ?", *filter.MaxLongitude)
+	}
+
+	err := q.Scan(ctx)
+	return resorts, err
+}
