@@ -6,13 +6,18 @@ import { Lift, Piste, PisteTextDecoratorProps, ResortDetail } from 'models/ski-r
 import { useEffect, useRef, useState } from 'react';
 import { Circle, CircleMarker, LayerGroup, LayersControl, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import { MapDetailPanel } from './MapDetailPanel';
+import { ResortDetailPanel } from './ResortDetailPanel';
+
+let renderedLabelPoints: { x: number; y: number; text: string }[] = [];
 
 export default function InteractiveSkiMap() {
+    renderedLabelPoints = [];
     const mapRef = useRef(null);
     const lastCenter = useRef({ lat: 0, lng: 0 });
     const [center, setCenter] = useState({ lat: 40.797891, lng: -3.971953 });
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [activePiste, setActivePiste] = useState<Piste | Lift | null>(null);
+    const [activeResort, setActiveResort] = useState<ResortDetail | null>(null);
     const [hoveredPisteID, setHoveredPisteID] = useState<string | null>(null);
     const [zoom, setZoom] = useState(13);
 
@@ -109,7 +114,7 @@ export default function InteractiveSkiMap() {
     };
 
     useEffect(() => {
-        if (zoom > 10) {
+        if (zoom >= 12) {
             fetchNearbyResorts(center.lat, center.lng);
         }
     }, [center, zoom]);
@@ -129,11 +134,17 @@ export default function InteractiveSkiMap() {
                         onClose={() => setActivePiste(null)}
                     />
                 )}
+                {activeResort && (
+                    <ResortDetailPanel
+                        resort={activeResort}
+                        onClose={() => setActiveResort(null)}
+                    />
+                )}
                 <ZoomControl position="bottomright" />
                 <MapController setMapRef={(map) => (mapRef.current = map)} />
                 <MapEvents />
                 <MapBoundsListener onBoundsChange={(bounds) => {
-                    if (zoom < 10) {
+                    if (zoom < 12) {
                         fetchResortsByBBox(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon);
                     } else {
                         const centerLat = (bounds.minLat + bounds.maxLat) / 2;
@@ -184,65 +195,8 @@ export default function InteractiveSkiMap() {
                     ))
                 ) : (
                     <>
-                        {resorts.flatMap(r => r.pistes || []).filter(piste => piste.GeometryGeoJSON.type !== "Polygon").map((piste) => {
-                            const isSelected = activePiste?.ID === piste.ID;
-                            const isHovered = hoveredPisteID === piste.ID;
-                            const color = getPisteColor(piste.Difficulty);
-
-                            const rawCoords = piste.GeometryGeoJSON.coordinates;
-                            const downhillCoordinates = getDownhillCoords(rawCoords);
-                            const positions = downhillCoordinates.map(
-                                (coord) => [coord[1], coord[0]] as [number, number]
-                            );
-
-                            const displayName = piste.Name && piste.Name.trim() !== ""
-                                ? piste.Name
-                                : `Piste ${piste.Difficulty.toUpperCase()} #${piste.ID.slice(0, 4)}`;
-
-                            let shouldShowText = false;
-                            if (piste.Name && !pistesNamesRendered.has(piste.Name)) {
-                                pistesNamesRendered.add(piste.Name);
-                                shouldShowText = true;
-                            }
-
-                            const commonEventHandlers = {
-                                click: () => setActivePiste(piste),
-                                mouseover: () => setHoveredPisteID(piste.ID),
-                                mouseout: () => setHoveredPisteID(null)
-                            };
-
-                            return (
-                                <div key={`piste-${piste.ID}`}>
-                                    <Polyline
-                                        positions={positions}
-                                        eventHandlers={commonEventHandlers}
-                                        pathOptions={{
-                                            color: color,
-                                            weight: isSelected ? 8 : (isHovered ? 8 : 5),
-                                            opacity: 0.85,
-                                            lineCap: 'round',
-                                            renderer: L.canvas()
-                                        }}
-                                    />
-                                    <Polyline
-                                        eventHandlers={commonEventHandlers}
-                                        positions={positions}
-                                        pathOptions={{ color: '#ffffff', weight: isSelected ? 3.5 : (isHovered ? 3 : 2), opacity: 0.9 }}
-                                    />
-                                    <PisteDecorator positions={positions} color={color} />
-
-                                    {shouldShowText && zoom > 15 && (
-                                        <PisteTextDecorator
-                                            positions={positions}
-                                            text={displayName}
-                                            color={color}
-                                        />
-                                    )}
-                                </div>
-                            );
-                        })}
-
                         {resorts.flatMap(r => r.lifts || []).map((lift) => {
+                            const isLiftSelected = activePiste?.ID === lift.ID || (activeResort && activeResort.lifts?.some(l => l.ID === lift.ID));
                             const positions = lift.GeometryGeoJSON.coordinates.map(
                                 (coord) => [coord[1], coord[0]] as [number, number]
                             );
@@ -273,6 +227,18 @@ export default function InteractiveSkiMap() {
                                         pathOptions={{ color: '#ffffff', fillColor: '#e67e22', fillOpacity: 1, weight: 2 }}
                                     />
 
+                                    {isLiftSelected && (
+                                        <Polyline
+                                            positions={positions}
+                                            pathOptions={{
+                                                color: '#3498db',
+                                                weight: 10,
+                                                opacity: 0.7,
+                                                lineCap: 'square',
+                                            }}
+                                        />
+                                    )}
+
                                     <Polyline
                                         positions={positions}
                                         pathOptions={{
@@ -291,7 +257,12 @@ export default function InteractiveSkiMap() {
                                             dashArray: '6, 6',
                                             opacity: 1
                                         }}
-                                        eventHandlers={{ click: () => setActivePiste(lift) }}
+                                        eventHandlers={{
+                                            click: () => {
+                                                setActivePiste(lift);
+                                                setActiveResort(null);
+                                            }
+                                        }}
                                     />
 
                                     {shouldShowLiftText && zoom > 15 && (
@@ -300,6 +271,82 @@ export default function InteractiveSkiMap() {
                                             text={displayLiftName}
                                             color="#d35400"
                                             isLift={true}
+                                            resorts={resorts}
+                                        />
+                                    )}
+                                </div>
+                            );
+                        })}
+
+                        {resorts.flatMap(r => r.pistes || []).filter(piste => piste.GeometryGeoJSON.type !== "Polygon").map((piste) => {
+                            const isSelected = activePiste?.ID === piste.ID || !!(activeResort && activeResort.pistes?.some(p => p.ID === piste.ID));
+                            const isHovered = hoveredPisteID === piste.ID;
+                            const color = getPisteColor(piste.Difficulty);
+
+                            const rawCoords = piste.GeometryGeoJSON.coordinates;
+                            const downhillCoordinates = getDownhillCoords(rawCoords);
+                            const positions = downhillCoordinates.map(
+                                (coord) => [coord[1], coord[0]] as [number, number]
+                            );
+
+                            const displayName = piste.Name && piste.Name.trim() !== ""
+                                ? piste.Name
+                                : `Piste ${piste.Difficulty.toUpperCase()} #${piste.ID.slice(0, 4)}`;
+
+                            let shouldShowText = false;
+                            if (piste.Name && !pistesNamesRendered.has(piste.Name)) {
+                                pistesNamesRendered.add(piste.Name);
+                                shouldShowText = true;
+                            }
+
+                            const commonEventHandlers = {
+                                click: () => {
+                                    setActivePiste(piste);
+                                    setActiveResort(null);
+                                },
+                                mouseover: () => setHoveredPisteID(piste.ID),
+                                mouseout: () => setHoveredPisteID(null)
+                            };
+
+                             return (
+                                <div key={`piste-${piste.ID}`}>
+                                    {isSelected && (
+                                        <Polyline
+                                            positions={positions}
+                                            eventHandlers={commonEventHandlers}
+                                            pathOptions={{
+                                                color: '#3498db',
+                                                weight: 12,
+                                                opacity: 0.7,
+                                                lineCap: 'round',
+                                                renderer: L.canvas()
+                                            }}
+                                        />
+                                    )}
+                                    <Polyline
+                                        positions={positions}
+                                        eventHandlers={commonEventHandlers}
+                                        pathOptions={{
+                                            color: color,
+                                            weight: isSelected ? 8 : (isHovered ? 8 : 5),
+                                            opacity: 0.85,
+                                            lineCap: 'round',
+                                            renderer: L.canvas()
+                                        }}
+                                    />
+                                    <Polyline
+                                        eventHandlers={commonEventHandlers}
+                                        positions={positions}
+                                        pathOptions={{ color: '#ffffff', weight: isSelected ? 3.5 : (isHovered ? 3 : 2), opacity: 0.9 }}
+                                    />
+                                    <PisteDecorator positions={positions} color={color} />
+
+                                    {shouldShowText && zoom > 15 && (
+                                        <PisteTextDecorator
+                                            positions={positions}
+                                            text={displayName}
+                                            color={color}
+                                            resorts={resorts}
                                         />
                                     )}
                                 </div>
@@ -310,7 +357,7 @@ export default function InteractiveSkiMap() {
                             <LayersControl.Overlay name="Resort Areas & Polygons">
                                 <LayerGroup>
                                     {resorts.flatMap(r => r.pistes || []).filter(piste => piste.GeometryGeoJSON.type === "Polygon").map((piste) => {
-                                        const isSelected = activePiste?.ID === piste.ID;
+                                        const isSelected = activePiste?.ID === piste.ID || !!(activeResort && activeResort.pistes?.some(p => p.ID === piste.ID));
                                         const color = getPisteColor(piste.Difficulty);
 
                                         const rawCoords = piste.GeometryGeoJSON.coordinates[0];
@@ -322,11 +369,18 @@ export default function InteractiveSkiMap() {
                                             <Polygon
                                                 key={`piste-poly-${piste.ID}`}
                                                 positions={positions}
-                                                eventHandlers={{ click: () => setActivePiste(piste) }}
+                                                eventHandlers={{
+                                                    click: () => {
+                                                        setActivePiste(piste);
+                                                        setActiveResort(null);
+                                                    }
+                                                }}
                                                 pathOptions={{
                                                     fillColor: color,
-                                                    fillOpacity: isSelected ? 0.4 : 0.2,
-                                                    stroke: false,
+                                                    fillOpacity: isSelected ? 0.35 : 0.2,
+                                                    color: '#3498db',
+                                                    weight: isSelected ? 3.5 : 0,
+                                                    stroke: isSelected,
                                                 }}
                                             />
                                         );
@@ -354,6 +408,35 @@ export default function InteractiveSkiMap() {
                                 </LayerGroup>
                             </LayersControl.Overlay>
                         </LayersControl>
+
+                        {resorts.map((resort) => {
+                            const customIcon = L.divIcon({
+                                className: 'resort-center-marker',
+                                html: `
+                                    <div class="resort-marker-container">
+                                        <div class="resort-marker-dot"></div>
+                                        <div class="resort-marker-name">${resort.Name}</div>
+                                    </div>
+                                `,
+                                iconSize: [120, 40],
+                                iconAnchor: [60, 5]
+                            });
+
+                            return (
+                                <Marker
+                                    key={`resort-marker-${resort.ID}`}
+                                    position={[resort.Latitude, resort.Longitude]}
+                                    icon={customIcon}
+                                    zIndexOffset={1000}
+                                    eventHandlers={{
+                                        click: () => {
+                                            setActiveResort(resort);
+                                            setActivePiste(null);
+                                        }
+                                    }}
+                                />
+                            );
+                        })}
                     </>
                 )}
             </MapContainer>
@@ -415,31 +498,89 @@ const getDistance = (p1: [number, number], p2: [number, number]) => {
     return Math.sqrt(dx * dx + dy * dy);
 };
 
-export function PisteTextDecorator({ positions, text, color, isLift = false }: PisteTextDecoratorProps) {
+export function PisteTextDecorator({ positions, text, color, isLift = false, resorts = [] }: PisteTextDecoratorProps & { resorts?: ResortDetail[] }) {
     const map = useMap();
     const svgMarkerRef = useRef<L.Marker | null>(null);
 
     useEffect(() => {
         if (!positions || positions.length < 2 || !text) return;
 
-        let longestSegIdx = 0;
-        let maxDist = 0;
-
+        // Calculate all segments in the line
+        const segments: { p1: [number, number]; p2: [number, number]; dist: number }[] = [];
         for (let i = 0; i < positions.length - 1; i++) {
-            const dist = getDistance(positions[i], positions[i + 1]);
-            if (dist > maxDist) {
-                maxDist = dist;
-                longestSegIdx = i;
+            segments.push({
+                p1: positions[i],
+                p2: positions[i + 1],
+                dist: getDistance(positions[i], positions[i + 1])
+            });
+        }
+        // Sort by distance descending (prefer longest segments)
+        segments.sort((a, b) => b.dist - a.dist);
+
+        let finalPoint: [number, number] | null = null;
+        let chosenSegment = segments[0];
+
+        // Try to find a position without collision
+        for (const seg of segments) {
+            // Check center (50%), then quarter (25%), then three-quarter (75%)
+            const fractions = [0.5, 0.25, 0.75];
+            for (const frac of fractions) {
+                const candidate: [number, number] = [
+                    seg.p1[0] + (seg.p2[0] - seg.p1[0]) * frac,
+                    seg.p1[1] + (seg.p2[1] - seg.p1[1]) * frac
+                ];
+
+                // Check collision in screen pixels with other labels
+                const pt = map.latLngToContainerPoint(candidate);
+                let hasCollision = renderedLabelPoints.some(r => {
+                    const dx = r.x - pt.x;
+                    const dy = r.y - pt.y;
+                    return Math.sqrt(dx * dx + dy * dy) < 95; // 95 pixels safety distance
+                });
+
+                // Also check collision with resort center markers (avoid overlapping resort names)
+                if (!hasCollision && resorts && resorts.length > 0) {
+                    hasCollision = resorts.some(resort => {
+                        try {
+                            const rPt = map.latLngToContainerPoint([resort.Latitude, resort.Longitude]);
+                            const dx = rPt.x - pt.x;
+                            const dy = rPt.y - pt.y;
+                            return Math.sqrt(dx * dx + dy * dy) < 95; // 95 pixels safety distance from resort center
+                        } catch (e) {
+                            return false;
+                        }
+                    });
+                }
+
+                if (!hasCollision) {
+                    finalPoint = candidate;
+                    chosenSegment = seg;
+                    break;
+                }
             }
+            if (finalPoint) break;
         }
 
-        const p1 = positions[longestSegIdx];
-        const p2 = positions[longestSegIdx + 1];
+        // Fallback to the midpoint of the longest segment if they all collide
+        if (!finalPoint) {
+            const seg = segments[0];
+            finalPoint = [
+                seg.p1[0] + (seg.p2[0] - seg.p1[0]) * 0.5,
+                seg.p1[1] + (seg.p2[1] - seg.p1[1]) * 0.5
+            ];
+            chosenSegment = seg;
+        }
 
-        const midPoint: [number, number] = [
-            (p1[0] + p2[0]) / 2,
-            (p1[1] + p2[1]) / 2
-        ];
+        // Register final point to screen coordinate registry
+        try {
+            const pt = map.latLngToContainerPoint(finalPoint);
+            renderedLabelPoints.push({ x: pt.x, y: pt.y, text });
+        } catch (e) {
+            // map.latLngToContainerPoint might throw if points are out of bounds/invalid
+        }
+
+        const p1 = chosenSegment.p1;
+        const p2 = chosenSegment.p2;
 
         const dy = p2[0] - p1[0];
         const dx = p2[1] - p1[1];
@@ -483,7 +624,7 @@ export function PisteTextDecorator({ positions, text, color, isLift = false }: P
             iconAnchor: [100, 15]
         });
 
-        svgMarkerRef.current = L.marker(midPoint, {
+        svgMarkerRef.current = L.marker(finalPoint, {
             icon: svgIcon,
             interactive: false
         }).addTo(map);
@@ -493,7 +634,7 @@ export function PisteTextDecorator({ positions, text, color, isLift = false }: P
                 map.removeLayer(svgMarkerRef.current);
             }
         };
-    }, [map, positions, text, color, isLift]);
+    }, [map, positions, text, color, isLift, resorts]);
 
     return null;
 }

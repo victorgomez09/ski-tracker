@@ -37,6 +37,9 @@ export interface ResortDetail {
     Name: string;
     Latitude: number;
     Longitude: number;
+    Country?: string;
+    Website?: string;
+    Tags?: any;
     pistes: Piste[];
     lifts?: Lift[];
     areas?: Area[];
