@@ -8,6 +8,8 @@ export interface Piste {
     Difficulty: string;
     Name: string;
     GeometryGeoJSON: GeoJSONLine;
+    Tags: any;
+    PisteType: 'downhill' | 'cross_country' | 'freeride' | 'freestyle' | 'sledding' | 'snowpark' | 'touring';
 }
 
 export interface Lift {
@@ -17,6 +19,7 @@ export interface Lift {
     Capacity: number;
     CapacityHourly: number;
     GeometryGeoJSON: GeoJSONLine;
+    Tags: any;
 }
 
 export interface Area {

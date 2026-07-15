@@ -2,17 +2,17 @@ import { API_BASE_URL } from 'constants/constants';
 import L from 'leaflet';
 import 'leaflet-polylinedecorator';
 import 'leaflet/dist/leaflet.css';
-import { Piste, PisteTextDecoratorProps, ResortDetail } from 'models/ski-resort.model';
+import { Lift, Piste, PisteTextDecoratorProps, ResortDetail } from 'models/ski-resort.model';
 import { useEffect, useRef, useState } from 'react';
-import { CircleMarker, MapContainer, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
-import { PisteDetailPanel } from './PisteDetailPanel';
+import { CircleMarker, MapContainer, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+import { MapDetailPanel } from './MapDetailPanel';
 
 export default function InteractiveSkiMap() {
     const mapRef = useRef(null);
     const lastCenter = useRef({ lat: 0, lng: 0 });
     const [center, setCenter] = useState({ lat: 40.797891, lng: -3.971953 });
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
-    const [activePiste, setActivePiste] = useState<Piste | null>(null);
+    const [activePiste, setActivePiste] = useState<Piste | Lift | null>(null);
     const [zoom, setZoom] = useState(13);
 
     const fetchNearbyResorts = async (lat: number, lng: number) => {
@@ -115,18 +115,20 @@ export default function InteractiveSkiMap() {
 
     return (
         <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
-            {activePiste && (
-                <PisteDetailPanel
-                    piste={activePiste}
-                    onClose={() => setActivePiste(null)}
-                />
-            )}
 
             <MapContainer
                 center={[center.lat, center.lng]}
                 zoom={zoom}
                 style={{ height: '100%', width: '100%' }}
+                zoomControl={false}
             >
+                {activePiste && (
+                    <MapDetailPanel
+                        data={activePiste}
+                        onClose={() => setActivePiste(null)}
+                    />
+                )}
+                <ZoomControl position="bottomright" />
                 <MapController setMapRef={(map) => (mapRef.current = map)} />
                 <MapEvents />
                 <MapBoundsListener onBoundsChange={(bounds) => {
@@ -223,7 +225,7 @@ export default function InteractiveSkiMap() {
                                         eventHandlers={{ click: () => setActivePiste(piste) }}
                                         pathOptions={{
                                             fillColor: color,
-                                            fillOpacity: 0.2,
+                                            fillOpacity: isSelected ? 0.4 : 0.2,
                                             stroke: false,
                                         }}
                                     />}
@@ -299,32 +301,8 @@ export default function InteractiveSkiMap() {
                                             dashArray: '6, 6',
                                             opacity: 1
                                         }}
-                                    >
-                                        <Popup>
-                                            <div style={{
-                                                fontFamily: 'system-ui, sans-serif',
-                                                fontSize: '13px',
-                                                lineHeight: '1.4',
-                                                minWidth: '160px'
-                                            }}>
-                                                <h4 style={{ margin: '0 0 5px 0', color: '#e67e22', borderBottom: '1px solid #eee', paddingBottom: '3px' }}>
-                                                    🚠 {displayLiftName}
-                                                </h4>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '3px 0' }}>
-                                                    <span style={{ fontWeight: '600', color: '#666' }}>Type:</span>
-                                                    <span>{(lift.LiftType || 'Unknown').toUpperCase().replace('_', ' ')}</span>
-                                                </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '3px 0' }}>
-                                                    <span style={{ fontWeight: '600', color: '#666' }}>Capacity:</span>
-                                                    <span>👥 {lift.Capacity || 'N/A'} pers.</span>
-                                                </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '3px 0' }}>
-                                                    <span style={{ fontWeight: '600', color: '#666' }}>Hourly Capacity:</span>
-                                                    <span>⚡ {lift.CapacityHourly || 'N/A'} p/h</span>
-                                                </div>
-                                            </div>
-                                        </Popup>
-                                    </Polyline>
+                                        eventHandlers={{ click: () => setActivePiste(lift) }}
+                                    />
 
                                     {shouldShowLiftText && zoom > 15 && (
                                         <PisteTextDecorator
@@ -480,10 +458,10 @@ export function PisteTextDecorator({ positions, text, color, isLift = false }: P
                 y="${30 - halfH}" 
                 width="${rectWidth}" 
                 height="${rectHeight}" 
-                rx="9" 
+                rx="5" 
                 fill="${rectFill}" 
                 stroke="${rectStroke}" 
-                stroke-width="1.5"
+                stroke-width="1"
                 style="filter: drop-shadow(0px 1px 2px rgba(0,0,0,0.2));"
               />
               <text 
