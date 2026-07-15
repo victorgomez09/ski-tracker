@@ -27,7 +27,7 @@ type GeoJSONFeatureCollection struct {
 
 type GeoJSONFeature struct {
 	Type       string                 `json:"type"`
-	ID         interface{}            `json:"id"` // Puede venir como string o int
+	ID         interface{}            `json:"id"`
 	Geometry   map[string]interface{} `json:"geometry"`
 	Properties map[string]interface{} `json:"properties"`
 }
@@ -83,34 +83,33 @@ func main() {
 		logger.Info("migrations applied", slog.String("group", group.String()))
 	}
 
-	// 2. DESCARGAR DATOS GLOBALES
-	// Nota: OpenSkiData ofrece volcados globales ya masticados.
-	// Usaremos las URLs de sus capas GeoJSON globales de producción.
+	// 2. DOWNLOAD GLOBAL DATA
+	// Note: OpenSkiData offers pre-processed global dumps.
+	// We will use the URLs of their production global GeoJSON layers.
 	pistesURL := "https://tiles.openskimap.org/geojson/runs.geojson"
 	liftsURL := "https://tiles.openskimap.org/geojson/lifts.geojson"
 	resortsURL := "https://tiles.openskimap.org/geojson/ski_areas.geojson"
 
-	// Procesar Estaciones (Resorts)
+	// Process Resorts
 	resorts := downloadAndParseResorts(resortsURL)
-	fmt.Printf("Descargadas %d estaciones de esquí.\n", len(resorts))
 	saveResorts(ctx, store.DB(), resorts)
 
-	// Procesar Pistas
+	// Process Pistes
 	pistes := downloadAndParsePistes(pistesURL)
 	savePistes(ctx, store.DB(), pistes)
 
-	// Procesar Remontes
+	// Process Lifts
 	lifts := downloadAndParseLifts(liftsURL)
 	saveLifts(ctx, store.DB(), lifts)
 
-	fmt.Println("Sincronización mundial completada con éxito.")
+	fmt.Println("Global synchronization completed successfully.")
 }
 
-// --- PROCESADORES Y DESCARGADORES ---
+// --- PROCESSORS AND DOWNLOADERS ---
 func downloadAndParseResorts(url string) []models.SkiResort {
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Fatalf("Error descargando estaciones: %v", err)
+		log.Fatalf("Error getting resorts: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -215,10 +214,10 @@ func downloadAndParseResorts(url string) []models.SkiResort {
 func downloadAndParsePistes(url string) []models.SkiPiste {
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Fatalf("Error descargando pistas: %v", err)
+		log.Fatalf("Error getting pistes: %v", err)
 	}
 	defer resp.Body.Close()
-	fmt.Println("Descargando pistas")
+	fmt.Println("Downloading pistes")
 
 	body, _ := io.ReadAll(resp.Body)
 	var fc GeoJSONFeatureCollection
@@ -293,17 +292,17 @@ func downloadAndParsePistes(url string) []models.SkiPiste {
 		})
 	}
 
-	fmt.Println("Pistas guardadas en memoria, listas para guardar en la base de datos.")
+	fmt.Println("Pistes saved in memory, ready to be saved to the database.")
 	return pistes
 }
 
 func downloadAndParseLifts(url string) []models.SkiLift {
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Fatalf("Error descargando remontes: %v", err)
+		log.Fatalf("Error getting lifts: %v", err)
 	}
 	defer resp.Body.Close()
-	fmt.Println("Descargando remontes")
+	fmt.Println("Downloading lifts")
 
 	body, _ := io.ReadAll(resp.Body)
 	var fc GeoJSONFeatureCollection
@@ -384,19 +383,19 @@ func downloadAndParseLifts(url string) []models.SkiLift {
 		})
 	}
 
-	fmt.Println("Remontes guardados en memoria, listos para guardar en la base de datos.")
+	fmt.Println("Lifts saved in memory, ready to be saved to the database.")
 	return lifts
 }
 
-// --- OPERACIONES DE BASE DE DATOS (UPSERTS CON BUN) ---
+// --- DATABASE OPERATIONS (UPSERTS WITH BUN) ---
 func saveResorts(ctx context.Context, db *bun.DB, resorts []models.SkiResort) {
 	if len(resorts) == 0 {
-		fmt.Println("No hay estaciones de esquí para guardar.")
+		fmt.Println("No ski resorts to save.")
 		return
 	}
-	fmt.Printf("Guardando/Actualizando %d estaciones de esquí...\n", len(resorts))
+	fmt.Printf("Saving/Updating %d ski resorts...\n", len(resorts))
 
-	// Bun permite hacer Upsert masivo de forma nativa e increíblemente limpia
+	// Bun allows for native and incredibly clean bulk Upsert
 	_, err := db.NewInsert().
 		Model(&resorts).
 		On("CONFLICT (id) DO UPDATE").
@@ -409,19 +408,19 @@ func saveResorts(ctx context.Context, db *bun.DB, resorts []models.SkiResort) {
 		Exec(ctx)
 
 	if err != nil {
-		log.Printf("Error al guardar resorts en la BD: %v", err)
+		log.Printf("Error saving ski resorts to the database: %v", err)
 	}
 
-	fmt.Println("Estaciones de esquí guardadas/actualizadas con éxito.")
+	fmt.Println("Ski resorts saved/updated successfully.")
 }
 
 func savePistes(ctx context.Context, db *bun.DB, pistes []models.SkiPiste) {
 	if len(pistes) == 0 {
 		return
 	}
-	fmt.Printf("Guardando/Actualizando %d pistas...\n", len(pistes))
+	fmt.Printf("Saving/Updating %d pistes...\n", len(pistes))
 
-	// Procesamos en lotes de 1000 elementos para evitar colapsar la memoria de Postgres en el Upsert
+	// Process in batches of 1000 to avoid overwhelming Postgres memory during Upsert
 	batchSize := 1000
 	for i := 0; i < len(pistes); i += batchSize {
 		end := i + batchSize
@@ -443,7 +442,7 @@ func savePistes(ctx context.Context, db *bun.DB, pistes []models.SkiPiste) {
 			Exec(ctx)
 
 		if err != nil {
-			log.Fatalf("Error al guardar lote de pistas en la BD: %v", err)
+			log.Fatalf("Error saving batch of pistes to the database: %v", err)
 		}
 	}
 }
@@ -452,7 +451,7 @@ func saveLifts(ctx context.Context, db *bun.DB, lifts []models.SkiLift) {
 	if len(lifts) == 0 {
 		return
 	}
-	fmt.Printf("Guardando/Actualizando %d remontes...\n", len(lifts))
+	fmt.Printf("Saving/Updating %d lifts...\n", len(lifts))
 
 	batchSize := 1000
 	for i := 0; i < len(lifts); i += batchSize {
@@ -474,7 +473,7 @@ func saveLifts(ctx context.Context, db *bun.DB, lifts []models.SkiLift) {
 			Exec(ctx)
 
 		if err != nil {
-			log.Fatalf("Error al guardar lote de remontes en la BD: %v", err)
+			log.Fatalf("Error saving batch of lifts to the database: %v", err)
 		}
 	}
 }

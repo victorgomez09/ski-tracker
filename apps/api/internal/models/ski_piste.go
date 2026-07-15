@@ -12,8 +12,8 @@ type SkiPiste struct {
 	ID              string                 `bun:"id,pk"`
 	ResortID        *string                `bun:"resort_id"`
 	Name            string                 `bun:"name"`
-	PisteType       string                 `bun:"piste_type,notnull"`                  // downhill, nordic, sled, etc.
-	Difficulty      string                 `bun:"difficulty"`                          // novice, easy, intermediate, advanced
+	PisteType       string                 `bun:"piste_type,notnull"`
+	Difficulty      string                 `bun:"difficulty"`
 	Lit             bool                   `bun:"lit,default:false"`                   // lighted at night
 	GeometryGeoJSON map[string]interface{} `bun:"geometry_geojson,type:jsonb,notnull"` // 2D LineString coordinates
 	Tags            map[string]interface{} `bun:"tags,type:jsonb"`

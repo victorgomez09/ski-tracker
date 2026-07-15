@@ -12,7 +12,7 @@ type SkiLift struct {
 	ID              string                 `bun:"id,pk"`
 	ResortID        *string                `bun:"resort_id"`
 	Name            string                 `bun:"name"`
-	LiftType        string                 `bun:"lift_type,notnull"` // chair_lift, t-bar, gondola...
+	LiftType        string                 `bun:"lift_type,notnull"`
 	Capacity        int                    `bun:"capacity"`
 	CapacityHourly  int                    `bun:"capacity_hourly"`
 	GeometryGeoJSON map[string]interface{} `bun:"geometry_geojson,type:jsonb,notnull"` // 2D LineString coordinates

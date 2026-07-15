@@ -122,8 +122,6 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
 
     return (
         <div className="absolute top-4 left-4 z-1000 w-95 bg-white rounded-lg shadow-xl border border-gray-100 p-5 font-sans text-gray-800">
-
-            {/* Cabecera */}
             <div className="flex justify-between items-start mb-2">
                 <div className="text-xs text-gray-500 font-medium tracking-wide">
                     {country} <span className="mx-1">›</span> {region} <span className="mx-1">›</span>
@@ -139,7 +137,6 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
                 </button>
             </div>
 
-            {/* Nombre */}
             <div className="flex items-center gap-3 mb-3">
                 <div className={`w-8 h-8 rounded-full ${diffMeta.bg} ${diffMeta.text} flex items-center justify-center font-bold text-sm shadow-sm`}>
                     {ref}
@@ -249,7 +246,6 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
                 )}
             </div>
 
-            {/* Footer */}
             <div className="text-[10px] text-gray-400 flex items-center justify-between border-t border-gray-100 pt-3">
                 <span>Source: <a href="https://openstreetmap.org" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">OpenStreetMap</a></span>
             </div>

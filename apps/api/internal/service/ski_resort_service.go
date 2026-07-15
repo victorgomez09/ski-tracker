@@ -33,7 +33,7 @@ func (s *SkiResortService) List(ctx context.Context, latStr, lngStr, radStr stri
 	radiusKm, err3 := strconv.ParseFloat(radStr, 64)
 
 	if err1 != nil || err2 != nil || err3 != nil {
-		return nil, apierr.ErrBadRequest.WithDetail("Parámetros lat, lng y radius deben ser números válidos")
+		return nil, apierr.ErrBadRequest.WithDetail("lat, lng and radius must be valid numbers")
 	}
 
 	filter := store.SkiResortListFilter{
@@ -81,7 +81,7 @@ func (s *SkiResortService) ListByBBox(ctx context.Context, minLatStr, maxLatStr,
 	maxLon, err4 := strconv.ParseFloat(maxLonStr, 64)
 
 	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
-		return nil, apierr.ErrBadRequest.WithDetail("Parámetros minLat, maxLat, minLon y maxLon deben ser números válidos")
+		return nil, apierr.ErrBadRequest.WithDetail("minLat, maxLat, minLon and maxLon must be valid numbers")
 	}
 
 	filter := store.SkiResortBBoxFilter{
@@ -95,26 +95,6 @@ func (s *SkiResortService) ListByBBox(ctx context.Context, minLatStr, maxLatStr,
 	if err != nil {
 		return nil, err
 	}
-
-	// var detailedResorts []ResortDetailDTO
-
-	// for _, resort := range resorts {
-	// 	pistes, err := s.store.SkiPiste().GetByResortID(ctx, resort.ID)
-	// 	if err != nil {
-	// 		pistes = []models.SkiPiste{}
-	// 	}
-
-	// 	lifts, err := s.store.SkiLift().GetByResortID(ctx, resort.ID)
-	// 	if err != nil {
-	// 		lifts = []models.SkiLift{}
-	// 	}
-
-	// 	detailedResorts = append(detailedResorts, ResortDetailDTO{
-	// 		SkiResort:  resort,
-	// 		Pistes:     pistes,
-	// 		Lifts:      lifts,
-	// 	})
-	// }
 
 	return resorts, nil
 }

@@ -15,8 +15,8 @@ type RouterDeps struct {
 	Services *service.Container
 	// JWTManager  *auth.JWTManager
 	Store       store.Store
-	AppURL      string // Public URL of the Vipas instance
-	SetupSecret string // Secret for unauthenticated setup operations
+	AppURL      string
+	SetupSecret string
 	Logger      *slog.Logger
 }
 
@@ -43,7 +43,6 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 	apiV1 := r.Group("/api/v1")
 	{
 		// Public routes
-		// restoreRL := middleware.RateLimit(5, 5*time.Minute)
 		skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
 		apiV1.GET("/resorts/nearby", skiResortHandler.ListNearby)
 		apiV1.GET("/resorts/bbox", skiResortHandler.ListByBBox)

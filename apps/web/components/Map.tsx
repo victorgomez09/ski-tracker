@@ -2,55 +2,10 @@ import { API_BASE_URL } from 'constants/constants';
 import L from 'leaflet';
 import 'leaflet-polylinedecorator';
 import 'leaflet/dist/leaflet.css';
+import { Piste, PisteTextDecoratorProps, ResortDetail } from 'models/ski-resort.model';
 import { useEffect, useRef, useState } from 'react';
 import { CircleMarker, MapContainer, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import { PisteDetailPanel } from './PisteDetailPanel';
-
-interface GeoJSONLine {
-    type: string;
-    coordinates: [number, number, number][];
-}
-
-interface Piste {
-    ID: string;
-    Difficulty: string;
-    Name: string;
-    GeometryGeoJSON: GeoJSONLine;
-}
-
-interface Lift {
-    ID: string;
-    Name: string;
-    LiftType: string;
-    Capacity: number;
-    CapacityHourly: number;
-    GeometryGeoJSON: GeoJSONLine;
-}
-
-interface Area {
-    ID: string;
-    Name?: string;
-    GeometryGeoJSON: {
-        type: "Polygon";
-        coordinates: [number, number][][];
-    };
-    Type: 'beginner_area' | 'off_piste' | 'building';
-}
-
-interface ResortDetail {
-    ID: string;
-    Name: string;
-    Latitude: number;
-    Longitude: number;
-    pistes: Piste[];
-    lifts?: Lift[];
-    areas?: Area[];
-    statistics: {
-        maxElevation: number;
-        minElevation: number;
-    };
-}
-
 
 export default function InteractiveSkiMap() {
     const mapRef = useRef(null);
@@ -66,7 +21,7 @@ export default function InteractiveSkiMap() {
             const data: ResortDetail[] = await response.json();
             setResorts(data);
         } catch (error) {
-            console.error("Error cargando estaciones:", error);
+            console.error("Error getting nearby resorts:", error);
         }
     };
 
@@ -77,12 +32,12 @@ export default function InteractiveSkiMap() {
             const data: ResortDetail[] = await response.json();
             setResorts(data);
         } catch (error) {
-            console.error("Error cargando estaciones por BBOX:", error);
+            console.error("Error getting resorts by BBOX:", error);
         }
     }
 
-    const nombresPistasRenderizados = new Set<string>();
-    const nombresRemontesRenderizados = new Set<string>();
+    const pistesNamesRendered = new Set<string>();
+    const liftsNamesRendered = new Set<string>();
 
     const getPisteColor = (difficulty: string) => {
         switch (difficulty.toLowerCase()) {
@@ -224,11 +179,11 @@ export default function InteractiveSkiMap() {
 
                             const displayName = piste.Name && piste.Name.trim() !== ""
                                 ? piste.Name
-                                : `Pista ${piste.Difficulty.toUpperCase()} #${piste.ID.slice(0, 4)}`;
+                                : `Piste ${piste.Difficulty.toUpperCase()} #${piste.ID.slice(0, 4)}`;
 
                             let shouldShowText = false;
-                            if (piste.Name && !nombresPistasRenderizados.has(piste.Name)) {
-                                nombresPistasRenderizados.add(piste.Name);
+                            if (piste.Name && !pistesNamesRendered.has(piste.Name)) {
+                                pistesNamesRendered.add(piste.Name);
                                 shouldShowText = true;
                             }
 
@@ -285,11 +240,11 @@ export default function InteractiveSkiMap() {
 
                             const displayLiftName = lift.Name && lift.Name.trim() !== ""
                                 ? lift.Name
-                                : `Remonte #${lift.ID.slice(0, 4)}`;
+                                : `Lift #${lift.ID.slice(0, 4)}`;
 
                             let shouldShowLiftText = false;
-                            if (lift.Name && !nombresRemontesRenderizados.has(lift.Name)) {
-                                nombresRemontesRenderizados.add(lift.Name);
+                            if (lift.Name && !liftsNamesRendered.has(lift.Name)) {
+                                liftsNamesRendered.add(lift.Name);
                                 shouldShowLiftText = true;
                             }
 
@@ -339,15 +294,15 @@ export default function InteractiveSkiMap() {
                                                     🚠 {displayLiftName}
                                                 </h4>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', margin: '3px 0' }}>
-                                                    <span style={{ fontWeight: '600', color: '#666' }}>Tipo:</span>
-                                                    <span>{(lift.LiftType || 'Desconocido').toUpperCase().replace('_', ' ')}</span>
+                                                    <span style={{ fontWeight: '600', color: '#666' }}>Type:</span>
+                                                    <span>{(lift.LiftType || 'Unknown').toUpperCase().replace('_', ' ')}</span>
                                                 </div>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', margin: '3px 0' }}>
-                                                    <span style={{ fontWeight: '600', color: '#666' }}>Capacidad:</span>
+                                                    <span style={{ fontWeight: '600', color: '#666' }}>Capacity:</span>
                                                     <span>👥 {lift.Capacity || 'N/A'} pers.</span>
                                                 </div>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', margin: '3px 0' }}>
-                                                    <span style={{ fontWeight: '600', color: '#666' }}>Cap. Horaria:</span>
+                                                    <span style={{ fontWeight: '600', color: '#666' }}>Hourly Capacity:</span>
                                                     <span>⚡ {lift.CapacityHourly || 'N/A'} p/h</span>
                                                 </div>
                                             </div>
@@ -405,7 +360,7 @@ function PisteDecorator({ positions, color }: { positions: [number, number][], c
             (L as any).PolylineDecorator?.Symbol;
 
         if (!LeafletSymbol || !LeafletSymbol.arrowHead) {
-            console.warn("No se pudo cargar el generador de símbolos de flecha de Leaflet");
+            console.warn("Could not load Leaflet arrow symbol generator");
             return;
         }
 
@@ -443,13 +398,6 @@ const getDistance = (p1: [number, number], p2: [number, number]) => {
     const dx = p2[1] - p1[1];
     return Math.sqrt(dx * dx + dy * dy);
 };
-
-interface PisteTextDecoratorProps {
-    positions: [number, number][];
-    text: string;
-    color: string;
-    isLift?: boolean;
-}
 
 export function PisteTextDecorator({ positions, text, color, isLift = false }: PisteTextDecoratorProps) {
     const map = useMap();
