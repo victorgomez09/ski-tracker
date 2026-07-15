@@ -41,7 +41,6 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
 
     const diffMeta = getDifficultyMeta(difficulty);
 
-    // 1. Procesar puntos, distancias y pendientes de cada tramo
     const chartData = useMemo(() => {
         if (heights.length === 0) return [];
 
@@ -56,22 +55,20 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
                 slopePct = (elevationDiff / resolution) * 100;
             }
 
-            // Asignar color según inclinación
-            let color = '#00a859'; // Verde (suave)
-            if (slopePct >= 10 && slopePct < 20) color = '#0072bc'; // Azul (moderada)
-            else if (slopePct >= 20 && slopePct < 35) color = '#f0141e'; // Rojo (fuerte)
-            else if (slopePct >= 35) color = '#111827'; // Gris oscuro (extrema)
+            let color = '#00a859';
+            if (slopePct >= 10 && slopePct < 20) color = '#0072bc';
+            else if (slopePct >= 20 && slopePct < 35) color = '#f0141e';
+            else if (slopePct >= 35) color = '#111827';
 
             return {
                 distance: parseFloat(distanceKm),
                 elevation: Math.round(height),
-                slope: Math.round(slopePct), // Guardamos el % de pendiente aquí
+                slope: Math.round(slopePct),
                 color: color,
             };
         });
     }, [heights, resolution]);
 
-    // Generar paradas del gradiente
     const gradientStops = useMemo(() => {
         if (chartData.length < 2) return [];
 
@@ -87,7 +84,6 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
         });
     }, [chartData]);
 
-    // Cálculos de distancia total, ascenso y descenso
     const totalDistance = heights.length > 1 ? Math.round((heights.length - 1) * resolution) : 0;
 
     const { ascent, descent } = useMemo(() => {
@@ -122,7 +118,7 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
     const country = places[0]?.localized?.en?.country || "Spain";
 
     const skiAreas = tags.skiAreas || [];
-    const skiArea = skiAreas[0]?.properties?.name || "Estación de esquí de Valdesquí";
+    const skiArea = skiAreas[0]?.properties?.name;
 
     return (
         <div className="absolute top-4 left-4 z-1000 w-95 bg-white rounded-lg shadow-xl border border-gray-100 p-5 font-sans text-gray-800">
@@ -155,7 +151,6 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
                 {diffMeta.label} downhill ski run
             </div>
 
-            {/* Grid de Distancias y Desniveles */}
             <div className="grid grid-cols-3 gap-2 border-t border-b border-gray-100 py-3 mb-3 text-xs font-semibold text-gray-700">
                 <div>
                     <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Distance</span>
@@ -171,7 +166,6 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
                 </div>
             </div>
 
-            {/* Pendientes */}
             <div className="grid grid-cols-2 gap-4 mb-5 text-xs text-gray-700">
                 <div>
                     <span className="text-gray-400 block mb-0.5">Average Slope</span>
@@ -183,7 +177,6 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
                 </div>
             </div>
 
-            {/* Gráfico */}
             <div className="h-44 w-full mb-3">
                 {chartData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
@@ -212,11 +205,10 @@ export const PisteDetailPanel: React.FC<PisteDetailPanelProps> = ({ piste, onClo
                                 axisLine={{ stroke: '#e5e7eb' }}
                             />
 
-                            {/* Tooltip mejorado para mostrar Elevación y Pendiente (en % y grados) */}
                             <Tooltip
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
-                                        const data = payload[0].payload; // Accedemos a los datos crudos del punto activo
+                                        const data = payload[0].payload;
                                         const slopeDeg = pctToDegrees(data.slope);
                                         return (
                                             <div className="bg-white p-3 border border-gray-100 rounded-lg shadow-md text-xs font-sans">
