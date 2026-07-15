@@ -9,12 +9,20 @@ import { PisteDetailPanel } from './PisteDetailPanel';
 
 export default function InteractiveSkiMap() {
     const mapRef = useRef(null);
+    const lastCenter = useRef({ lat: 0, lng: 0 });
     const [center, setCenter] = useState({ lat: 40.797891, lng: -3.971953 });
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [activePiste, setActivePiste] = useState<Piste | null>(null);
     const [zoom, setZoom] = useState(13);
 
     const fetchNearbyResorts = async (lat: number, lng: number) => {
+        const delta = Math.abs(lat - lastCenter.current.lat) +
+            Math.abs(lng - lastCenter.current.lng);
+
+        if (delta < 0.05) return;
+
+        lastCenter.current = { lat, lng };
+
         try {
             const response = await fetch(`${API_BASE_URL}/resorts/nearby?lat=${lat}&lng=${lng}&radius=20`);
             if (!response.ok) throw new Error(`HTTP: ${response.status}`);
@@ -121,7 +129,16 @@ export default function InteractiveSkiMap() {
             >
                 <MapController setMapRef={(map) => (mapRef.current = map)} />
                 <MapEvents />
-                <MapBoundsListener onBoundsChange={(bounds) => zoom < 10 && fetchResortsByBBox(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon)} />
+                <MapBoundsListener onBoundsChange={(bounds) => {
+                    if (zoom < 10) {
+                        fetchResortsByBBox(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon);
+                    } else {
+                        const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+                        const centerLon = (bounds.minLon + bounds.maxLon) / 2;
+                        setCenter({ lat: centerLat, lng: centerLon });
+                        fetchNearbyResorts(centerLat, centerLon);
+                    }
+                }} />
                 <TileLayer
                     attribution='&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, USGS, NOAA'
                     url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
