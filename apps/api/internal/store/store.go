@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/victorgomez09/ski-tracker/internal/models"
 )
 
@@ -11,6 +12,7 @@ type Store interface {
 	SkiResort() SkiResortStore
 	SkiPiste() SkiPisteStore
 	SkiLift() SkiLiftStore
+	User() UserStore
 }
 
 // Pagination request parameters.
@@ -62,4 +64,12 @@ type SkiPisteStore interface {
 
 type SkiLiftStore interface {
 	GetByResortID(ctx context.Context, resortID string) ([]models.SkiLift, error)
+}
+
+type UserStore interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*models.User, error)
+	GetByEmail(ctx context.Context, email string) (*models.User, error)
+	Create(ctx context.Context, user *models.User) error
+	Update(ctx context.Context, user *models.User) error
+	Delete(ctx context.Context, id string) error
 }

@@ -1,6 +1,8 @@
 import { API_BASE_URL } from 'constants/constants';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
+import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import L from 'leaflet';
 import { useEffect, useRef, useState } from 'react';
 import { CircleMarker, LayerGroup, LayersControl, MapContainer, Marker, Polygon, Polyline, TileLayer, Tooltip, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
@@ -37,7 +39,12 @@ export default function InteractiveSkiMap() {
         lastCenter.current = { lat, lng };
 
         try {
-            const response = await fetch(`${API_BASE_URL}/resorts/nearby?lat=${lat}&lng=${lng}&radius=20`);
+            const response = await fetch(`${API_BASE_URL}/resorts/nearby?lat=${lat}&lng=${lng}&radius=20`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${Platform.OS === 'web' ? localStorage.getItem('jwt_key') || '' : await SecureStore.getItemAsync('jwt_key') || ''}`
+                }
+            });
             if (!response.ok) throw new Error(`HTTP: ${response.status}`);
             const data: ResortDetail[] = await response.json();
             setResorts(data);
@@ -48,7 +55,12 @@ export default function InteractiveSkiMap() {
 
     const fetchResortsByBBox = async (minLat: number, maxLat: number, minLon: number, maxLon: number) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/resorts/bbox?minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`);
+            const response = await fetch(`${API_BASE_URL}/resorts/bbox?minLat=${minLat}&maxLat=${maxLat}&minLon=${minLon}&maxLon=${maxLon}`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${Platform.OS === 'web' ? localStorage.getItem('jwt_key') || '' : await SecureStore.getItemAsync('jwt_key') || ''}`
+                }
+            });
             if (!response.ok) throw new Error(`HTTP: ${response.status}`);
             const data: ResortDetail[] = await response.json();
             setResorts(data);
@@ -148,7 +160,7 @@ export default function InteractiveSkiMap() {
     }, [searchParams.lat, searchParams.lng, searchParams.zoom]);
 
     return (
-        <div style={{ position: 'relative', height: 'calc(100vh - 8rem)', width: '100%', overflow: 'hidden' }}>
+        <div style={{ position: 'relative', height: 'calc(100vh - 2.5rem)', width: '100%', overflow: 'hidden' }}>
             <MapContainer
                 center={[parseFloat(searchParams.lat as string || '40.797891'), parseFloat(searchParams.lng as string || '-3.971953')]}
                 zoom={parseInt(searchParams.zoom as string || '13')}
@@ -195,7 +207,6 @@ export default function InteractiveSkiMap() {
                                 fillColor: '#e67e22',
                                 fillOpacity: 1,
                                 weight: 2,
-                                className: 'focus-none'
                             }}
                             eventHandlers={{
                                 click: () => {

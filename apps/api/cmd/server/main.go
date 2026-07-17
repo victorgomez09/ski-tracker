@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/uptrace/bun/migrate"
+	"github.com/victorgomez09/ski-tracker/internal/api/auth"
 	"github.com/victorgomez09/ski-tracker/internal/config"
 	"github.com/victorgomez09/ski-tracker/internal/server"
 	"github.com/victorgomez09/ski-tracker/internal/service"
@@ -74,16 +75,15 @@ func main() {
 	}
 
 	// JWT
-	// jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.TokenExpiry, cfg.Auth.RefreshExpiry)
+	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.TokenExpiry, cfg.Auth.RefreshExpiry)
 
 	// // Services
-	// services := service.NewContainer(store, jwtManager, logger, cfg.Database.URL, cfg.Auth.SetupSecret)
-	services := service.NewContainer(store, logger, cfg.Database.URL, cfg.Auth.SetupSecret)
+	services := service.NewContainer(store, jwtManager, logger, cfg.Database.URL, cfg.Auth.SetupSecret)
 
 	// Router
 	router := server.NewRouter(&server.RouterDeps{
-		Services: services,
-		// JWTManager:  jwtManager,
+		Services:    services,
+		JWTManager:  jwtManager,
 		Store:       store,
 		AppURL:      cfg.Server.AppURL,
 		SetupSecret: cfg.Auth.SetupSecret,

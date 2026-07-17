@@ -80,3 +80,6 @@ func (s *Store) SkiPiste() store.SkiPisteStore {
 func (s *Store) SkiLift() store.SkiLiftStore {
 	return &skiLiftStore{db: s.db}
 }
+func (s *Store) User() store.UserStore {
+	return &userStore{db: s.db}
+}

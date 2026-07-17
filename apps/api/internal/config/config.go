@@ -60,30 +60,27 @@ func Load() (*Config, error) {
 			MaxIdleConns:    envInt("DATABASE_MAX_IDLE_CONNS", 5),
 			ConnMaxLifetime: envDuration("DATABASE_CONN_MAX_LIFETIME", 5*time.Minute),
 		},
-		// Auth: AuthConfig{
-		// 	JWTSecret:     envStr("JWT_SECRET", ""),
-		// 	TokenExpiry:   envDuration("JWT_TOKEN_EXPIRY", 24*time.Hour),
-		// 	RefreshExpiry: envDuration("JWT_REFRESH_EXPIRY", 7*24*time.Hour),
-		// 	SetupSecret:   envStr("SETUP_SECRET", ""),
-		// },
+		Auth: AuthConfig{
+			JWTSecret:     envStr("JWT_SECRET", "ski-tracker-secret"),
+			TokenExpiry:   envDuration("JWT_TOKEN_EXPIRY", 24*time.Hour),
+			RefreshExpiry: envDuration("JWT_REFRESH_EXPIRY", 7*24*time.Hour),
+			SetupSecret:   envStr("SETUP_SECRET", ""),
+		},
 	}
 
-	// if err := cfg.validate(); err != nil {
-	// 	return nil, err
-	// }
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
 
-// func (c *Config) validate() error {
-// 	if c.Auth.JWTSecret == "" {
-// 		return fmt.Errorf("JWT_SECRET is required")
-// 	}
-// 	if c.Auth.SetupSecret == "" {
-// 		return fmt.Errorf("SETUP_SECRET is required")
-// 	}
-// 	return nil
-// }
+func (c *Config) validate() error {
+	if c.Auth.JWTSecret == "" {
+		return fmt.Errorf("JWT_SECRET is required")
+	}
+	return nil
+}
 
 func (c *Config) ListenAddr() string {
 	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port)

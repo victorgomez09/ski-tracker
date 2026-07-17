@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/gin-gonic/gin"
+	"github.com/victorgomez09/ski-tracker/internal/api/auth"
 	"github.com/victorgomez09/ski-tracker/internal/api/middleware"
 	v1 "github.com/victorgomez09/ski-tracker/internal/api/v1"
 	"github.com/victorgomez09/ski-tracker/internal/service"
@@ -12,8 +13,8 @@ import (
 
 // RouterDeps holds dependencies required by the router.
 type RouterDeps struct {
-	Services *service.Container
-	// JWTManager  *auth.JWTManager
+	Services    *service.Container
+	JWTManager  *auth.JWTManager
 	Store       store.Store
 	AppURL      string
 	SetupSecret string
@@ -42,11 +43,28 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 	// API v1
 	apiV1 := r.Group("/api/v1")
 	{
-		// Public routes
-		skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
-		apiV1.GET("/resorts/nearby", skiResortHandler.ListNearby)
-		apiV1.GET("/resorts/by-name", skiResortHandler.ListByName)
-		apiV1.GET("/resorts/bbox", skiResortHandler.ListByBBox)
+		// User routes
+		userHandler := v1.NewUserHandler(deps.Services.User, deps.Store)
+		apiV1.POST("/auth/login", userHandler.Login)
+		apiV1.POST("/auth/register", userHandler.Create)
+
+		protected := apiV1.Group("")
+		protected.Use(middleware.Auth(deps.JWTManager))
+		{
+			// Resort routes
+			skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
+			protected.GET("/resorts/nearby", skiResortHandler.ListNearby)
+			protected.GET("/resorts/by-name", skiResortHandler.ListByName)
+			protected.GET("/resorts/bbox", skiResortHandler.ListByBBox)
+
+			// User routes
+			userHandler := v1.NewUserHandler(deps.Services.User, deps.Store)
+			protected.GET("/users/me", userHandler.GetMe)
+			protected.GET("/users/:id", userHandler.GetByID)
+			protected.GET("/users", userHandler.GetByEmail)
+			protected.PUT("/users/:id", userHandler.Update)
+			protected.DELETE("/users/:id", userHandler.Delete)
+		}
 	}
 
 	return r

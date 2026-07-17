@@ -4,7 +4,7 @@ import * as SQLite from 'expo-sqlite';
 
 import { initDB } from 'tracking/database';
 
-import '../styles/global.css';
+import '../../styles/global.css';
 import InteractiveSkiMap from 'components/map/map';
 
 export default function App() {
