@@ -12,16 +12,22 @@ type skiResortStore struct {
 	db *bun.DB
 }
 
+func (s *skiResortStore) ListByName(ctx context.Context, name string) ([]models.SkiResort, error) {
+	var resorts []models.SkiResort
+	q := s.db.NewSelect().Model(&resorts)
+	if name != "" {
+		q = q.Where("LOWER(name) LIKE LOWER(?) AND tags->>'status' = ?", "%"+name+"%", "operating")
+	}
+
+	err := q.Scan(ctx)
+	return resorts, err
+}
+
 func (s *skiResortStore) ListAll(ctx context.Context, filter store.SkiResortListFilter) ([]models.SkiResort, error) {
 	var resorts []models.SkiResort
 	q := s.db.NewSelect().Model(&resorts)
 
-	if filter.Search != "" {
-		q = q.Where("LOWER(name) LIKE LOWER(?)", "%"+filter.Search+"%")
-	}
-	if filter.Status != "" {
-		q = q.Where("status = ?", filter.Status)
-	}
+	q = q.Where("name IS NOT NULL AND name != ? AND tags->>'status' = ?", "No name", "operating")
 
 	isGeoSearch := filter.Latitude != nil && filter.Longitude != nil && filter.RadiusKm != nil
 	if isGeoSearch {
@@ -58,6 +64,7 @@ func (s *skiResortStore) ListByBBox(ctx context.Context, filter store.SkiResortB
 	if filter.MaxLongitude != nil {
 		q = q.Where("longitude <= ?", *filter.MaxLongitude)
 	}
+	q = q.Where("name IS NOT NULL AND name != ? AND tags->>'status' = ?", "No name", "operating")
 
 	err := q.Scan(ctx)
 	return resorts, err

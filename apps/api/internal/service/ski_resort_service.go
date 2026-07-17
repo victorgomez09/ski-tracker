@@ -13,9 +13,11 @@ import (
 
 type ResortDetailDTO struct {
 	models.SkiResort
-	DistanceKM float64           `json:"distance_km"`
-	Pistes     []models.SkiPiste `json:"pistes"`
-	Lifts      []models.SkiLift  `json:"lifts"`
+	DistanceKM  float64           `json:"distance_km"`
+	TotalPistes int               `json:"total_pistes"`
+	TotalLifts  int               `json:"total_lifts"`
+	Pistes      []models.SkiPiste `json:"pistes"`
+	Lifts       []models.SkiLift  `json:"lifts"`
 }
 
 type SkiResortService struct {
@@ -25,6 +27,77 @@ type SkiResortService struct {
 
 func NewSkiResortService(s store.Store, logger *slog.Logger) *SkiResortService {
 	return &SkiResortService{store: s, logger: logger}
+}
+
+func (s *SkiResortService) ListByName(ctx context.Context, name string) ([]ResortDetailDTO, error) {
+	resorts, err := s.store.SkiResort().ListByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]ResortDetailDTO, len(resorts))
+	for i, resort := range resorts {
+		result[i] = ResortDetailDTO{
+			SkiResort:  resort,
+			DistanceKM: 0, // Distance is not calculated in this method
+		}
+	}
+
+	// Get total number of pistes for each resort
+	for i, resort := range resorts {
+		pistes, err := s.store.SkiPiste().GetByResortID(ctx, resort.ID)
+		if err != nil {
+			s.logger.Error("failed to get pistes for resort", "resort_id", resort.ID, "error", err)
+			continue
+		}
+
+		// calculate total distance of pistes for the resort, filter only by pistes with name
+		pistes = mergeContiguousPistes(pistes)
+		filterPistes := make([]models.SkiPiste, 0, len(pistes))
+		for _, piste := range pistes {
+			if piste.Name != "" {
+				filterPistes = append(filterPistes, piste)
+			}
+		}
+		result[i].TotalPistes = len(filterPistes)
+		totalKmOfPistes := 0.0
+		for _, piste := range filterPistes {
+			coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{})
+			if !ok || len(coords) < 2 {
+				continue
+			}
+
+			// Calculate the total distance of the piste by summing the distances between consecutive points
+			for j := 0; j < len(coords)-1; j++ {
+				pointA, okA := coords[j].([]interface{})
+				pointB, okB := coords[j+1].([]interface{})
+				if !okA || !okB || len(pointA) < 2 || len(pointB) < 2 {
+					continue
+				}
+
+				latA, okLatA := pointA[1].(float64)
+				lonA, okLonA := pointA[0].(float64)
+				latB, okLatB := pointB[1].(float64)
+				lonB, okLonB := pointB[0].(float64)
+
+				if !okLatA || !okLonA || !okLatB || !okLonB {
+					continue
+				}
+
+				totalKmOfPistes += calculateDistance(latA, lonA, latB, lonB)
+			}
+		}
+		result[i].DistanceKM = totalKmOfPistes
+
+		lifts, err := s.store.SkiLift().GetByResortID(ctx, resort.ID)
+		if err != nil {
+			s.logger.Error("failed to get lifts for resort", "resort_id", resort.ID, "error", err)
+			continue
+		}
+		result[i].TotalLifts = len(lifts)
+	}
+
+	return result, nil
 }
 
 func (s *SkiResortService) List(ctx context.Context, latStr, lngStr, radStr string) ([]ResortDetailDTO, error) {
@@ -40,7 +113,7 @@ func (s *SkiResortService) List(ctx context.Context, latStr, lngStr, radStr stri
 		Latitude:  &userLat,
 		Longitude: &userLng,
 		RadiusKm:  &radiusKm,
-		// Status:    "operating",
+		Status:    "operating",
 	}
 
 	resorts, err := s.store.SkiResort().ListAll(ctx, filter)
@@ -55,58 +128,6 @@ func (s *SkiResortService) List(ctx context.Context, latStr, lngStr, radStr stri
 		if err != nil {
 			pistes = []models.SkiPiste{}
 		}
-
-		// // Recalculate piste difficulty based on elevation profile (slope)
-		// for idx, piste := range pistes {
-		// 	if elevationProfile, ok := piste.Tags["elevationProfile"].(map[string]interface{}); ok {
-		// 		if heightsVal, ok := elevationProfile["heights"].([]interface{}); ok && len(heightsVal) >= 2 {
-		// 			resolution := 25.0
-		// 			if resVal, ok := elevationProfile["resolution"].(float64); ok && resVal > 0 {
-		// 				resolution = resVal
-		// 			} else if resValInt, ok := elevationProfile["resolution"].(int); ok && resValInt > 0 {
-		// 				resolution = float64(resValInt)
-		// 			}
-
-		// 			maxSlopePct := 0.0
-		// 			for i := 0; i < len(heightsVal)-1; i++ {
-		// 				h1, ok1 := heightsVal[i].(float64)
-		// 				h2, ok2 := heightsVal[i+1].(float64)
-		// 				if !ok1 {
-		// 					if h1Int, ok1Int := heightsVal[i].(int); ok1Int {
-		// 						h1 = float64(h1Int)
-		// 						ok1 = true
-		// 					}
-		// 				}
-		// 				if !ok2 {
-		// 					if h2Int, ok2Int := heightsVal[i+1].(int); ok2Int {
-		// 						h2 = float64(h2Int)
-		// 						ok2 = true
-		// 					}
-		// 				}
-		// 				if ok1 && ok2 {
-		// 					diff := math.Abs(h2 - h1)
-		// 					pct := (diff / resolution) * 100.0
-		// 					if pct > maxSlopePct {
-		// 						maxSlopePct = pct
-		// 					}
-		// 				}
-		// 			}
-
-		// 			// Assign difficulty based on maxSlopePct
-		// 			var difficulty string
-		// 			if maxSlopePct < 15.0 {
-		// 				difficulty = "novice" // Verde (Muy fácil)
-		// 			} else if maxSlopePct < 30.0 {
-		// 				difficulty = "easy" // Azul (Fácil/Intermedio)
-		// 			} else if maxSlopePct < 45.0 {
-		// 				difficulty = "intermediate" // Roja (Difícil)
-		// 			} else {
-		// 				difficulty = "advanced" // Negra (Muy difícil)
-		// 			}
-		// 			pistes[idx].Difficulty = difficulty
-		// 		}
-		// 	}
-		// }
 
 		// Merge contiguous pistes with the same Name, Difficulty, and PisteType
 		pistes = mergeContiguousPistes(pistes)

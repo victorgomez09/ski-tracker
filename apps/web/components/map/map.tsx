@@ -1,25 +1,32 @@
 import { API_BASE_URL } from 'constants/constants';
+import { router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router/build/hooks';
 import L from 'leaflet';
+import { useEffect, useRef, useState } from 'react';
+import { CircleMarker, LayerGroup, LayersControl, MapContainer, Marker, Polygon, Polyline, TileLayer, Tooltip, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+
 import 'leaflet-polylinedecorator';
 import 'leaflet/dist/leaflet.css';
+
 import { Lift, Piste, PisteTextDecoratorProps, ResortDetail } from 'models/ski-resort.model';
-import { useEffect, useRef, useState } from 'react';
-import { Circle, CircleMarker, LayerGroup, LayersControl, MapContainer, Marker, Polygon, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
-import { MapDetailPanel } from './MapDetailPanel';
-import { ResortDetailPanel } from './ResortDetailPanel';
+import { MapDetailPanel } from './map-detail-panel';
+import { ResortDetailPanel } from './resort-detail-panel';
 
 let renderedLabelPoints: { x: number; y: number; text: string }[] = [];
 
 export default function InteractiveSkiMap() {
-    renderedLabelPoints = [];
+    const searchParams = useLocalSearchParams();
+
     const mapRef = useRef(null);
     const lastCenter = useRef({ lat: 0, lng: 0 });
-    const [center, setCenter] = useState({ lat: 40.797891, lng: -3.971953 });
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [activePiste, setActivePiste] = useState<Piste | Lift | null>(null);
     const [activeResort, setActiveResort] = useState<ResortDetail | null>(null);
     const [hoveredPisteID, setHoveredPisteID] = useState<string | null>(null);
-    const [zoom, setZoom] = useState(13);
+
+    const lat = parseFloat(searchParams.lat as string || '40.797891');
+    const lng = parseFloat(searchParams.lng as string || '-3.971953');
+    const zoom = parseInt(searchParams.zoom as string || '13');
 
     const fetchNearbyResorts = async (lat: number, lng: number) => {
         const delta = Math.abs(lat - lastCenter.current.lat) +
@@ -86,7 +93,7 @@ export default function InteractiveSkiMap() {
     const MapEvents = () => {
         useMapEvents({
             zoomend: (e) => {
-                setZoom(e.target.getZoom());
+                router.setParams({ lat: searchParams.lat, lng: searchParams.lng, zoom: e.target.getZoom() });
             },
         });
         return null;
@@ -102,6 +109,17 @@ export default function InteractiveSkiMap() {
                     minLon: bounds.getWest(),
                     maxLon: bounds.getEast()
                 });
+
+                const newCenter = e.target.getCenter();
+                const newZoom = e.target.getZoom();
+
+                if (Math.abs(newCenter.lat - lat) > 0.0001 || Math.abs(newCenter.lng - lng) > 0.0001 || newZoom !== zoom) {
+                    router.setParams({
+                        lat: newCenter.lat.toFixed(6),
+                        lng: newCenter.lng.toFixed(6),
+                        zoom: newZoom.toString()
+                    });
+                }
             },
         });
         return null;
@@ -113,18 +131,27 @@ export default function InteractiveSkiMap() {
         return null;
     };
 
+    function MapUpdater({ lat, lng, zoom }: { lat: number; lng: number; zoom: number }) {
+        const map = useMap();
+
+        useEffect(() => {
+            map.setView([lat, lng], zoom);
+        }, [lat, lng, zoom, map]);
+
+        return null;
+    }
+
     useEffect(() => {
         if (zoom >= 12) {
-            fetchNearbyResorts(center.lat, center.lng);
+            fetchNearbyResorts(parseFloat(searchParams.lat as string || '40.797891'), parseFloat(searchParams.lng as string || '-3.971953'));
         }
-    }, [center, zoom]);
+    }, [searchParams.lat, searchParams.lng, searchParams.zoom]);
 
     return (
-        <div style={{ position: 'relative', height: '100vh', width: '100%', overflow: 'hidden' }}>
-
+        <div style={{ position: 'relative', height: 'calc(100vh - 8rem)', width: '100%', overflow: 'hidden' }}>
             <MapContainer
-                center={[center.lat, center.lng]}
-                zoom={zoom}
+                center={[parseFloat(searchParams.lat as string || '40.797891'), parseFloat(searchParams.lng as string || '-3.971953')]}
+                zoom={parseInt(searchParams.zoom as string || '13')}
                 style={{ height: '100%', width: '100%' }}
                 zoomControl={false}
             >
@@ -142,15 +169,13 @@ export default function InteractiveSkiMap() {
                 )}
                 <ZoomControl position="bottomright" />
                 <MapController setMapRef={(map) => (mapRef.current = map)} />
+                <MapUpdater lat={lat} lng={lng} zoom={zoom} />
                 <MapEvents />
                 <MapBoundsListener onBoundsChange={(bounds) => {
                     if (zoom < 12) {
                         fetchResortsByBBox(bounds.minLat, bounds.maxLat, bounds.minLon, bounds.maxLon);
                     } else {
-                        const centerLat = (bounds.minLat + bounds.maxLat) / 2;
-                        const centerLon = (bounds.minLon + bounds.maxLon) / 2;
-                        setCenter({ lat: centerLat, lng: centerLon });
-                        fetchNearbyResorts(centerLat, centerLon);
+                        fetchNearbyResorts(parseFloat(searchParams.lat as string || '40.797891'), parseFloat(searchParams.lng as string || '-3.971953'));
                     }
                 }} />
 
@@ -159,7 +184,7 @@ export default function InteractiveSkiMap() {
                     url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
                 />
 
-                {zoom < 12 ? (
+                {zoom <= 12 ? (
                     resorts?.map(resort => (
                         <CircleMarker
                             key={resort.ID}
@@ -181,8 +206,11 @@ export default function InteractiveSkiMap() {
                                             { duration: 1 }
                                         );
                                         setTimeout(() => {
-                                            setCenter({ lat: resort.Latitude, lng: resort.Longitude });
-                                            setZoom(13);
+                                            router.setParams({
+                                                lat: resort.Latitude.toFixed(6),
+                                                lng: resort.Longitude.toFixed(6),
+                                                zoom: '13'
+                                            });
                                         }, 1000);
                                     }
                                 }
@@ -195,7 +223,7 @@ export default function InteractiveSkiMap() {
                     ))
                 ) : (
                     <>
-                        {resorts.flatMap(r => r.lifts || []).map((lift) => {
+                        {resorts?.flatMap(r => r.lifts || []).map((lift) => {
                             const isLiftSelected = activePiste?.ID === lift.ID || (activeResort && activeResort.lifts?.some(l => l.ID === lift.ID));
                             const positions = lift.GeometryGeoJSON.coordinates.map(
                                 (coord) => [coord[1], coord[0]] as [number, number]
@@ -278,7 +306,7 @@ export default function InteractiveSkiMap() {
                             );
                         })}
 
-                        {resorts.flatMap(r => r.pistes || []).filter(piste => piste.GeometryGeoJSON.type !== "Polygon").map((piste) => {
+                        {resorts?.flatMap(r => r.pistes || []).filter(piste => piste.GeometryGeoJSON.type !== "Polygon").map((piste) => {
                             const isSelected = activePiste?.ID === piste.ID || !!(activeResort && activeResort.pistes?.some(p => p.ID === piste.ID));
                             const isHovered = hoveredPisteID === piste.ID;
                             const color = getPisteColor(piste.Difficulty);
@@ -308,7 +336,7 @@ export default function InteractiveSkiMap() {
                                 mouseout: () => setHoveredPisteID(null)
                             };
 
-                             return (
+                            return (
                                 <div key={`piste-${piste.ID}`}>
                                     {isSelected && (
                                         <Polyline
@@ -339,7 +367,7 @@ export default function InteractiveSkiMap() {
                                         positions={positions}
                                         pathOptions={{ color: '#ffffff', weight: isSelected ? 3.5 : (isHovered ? 3 : 2), opacity: 0.9 }}
                                     />
-                                    <PisteDecorator positions={positions} color={color} />
+                                    {zoom >= 15 && <PisteDecorator positions={positions} color={color} />}
 
                                     {shouldShowText && zoom > 15 && (
                                         <PisteTextDecorator
@@ -356,7 +384,7 @@ export default function InteractiveSkiMap() {
                         <LayersControl position="topright">
                             <LayersControl.Overlay name="Resort Areas & Polygons">
                                 <LayerGroup>
-                                    {resorts.flatMap(r => r.pistes || []).filter(piste => piste.GeometryGeoJSON.type === "Polygon").map((piste) => {
+                                    {resorts?.flatMap(r => r.pistes || []).filter(piste => piste.GeometryGeoJSON.type === "Polygon").map((piste) => {
                                         const isSelected = activePiste?.ID === piste.ID || !!(activeResort && activeResort.pistes?.some(p => p.ID === piste.ID));
                                         const color = getPisteColor(piste.Difficulty);
 
@@ -386,7 +414,7 @@ export default function InteractiveSkiMap() {
                                         );
                                     })}
 
-                                    {resorts.flatMap(r => r.areas || []).map((area) => {
+                                    {resorts?.flatMap(r => r.areas || []).map((area) => {
                                         const polygonCoords = area.GeometryGeoJSON.coordinates[0].map(
                                             coord => [coord[1], coord[0]] as [number, number]
                                         );
@@ -409,7 +437,7 @@ export default function InteractiveSkiMap() {
                             </LayersControl.Overlay>
                         </LayersControl>
 
-                        {resorts.map((resort) => {
+                        {resorts?.map((resort) => {
                             const customIcon = L.divIcon({
                                 className: 'resort-center-marker',
                                 html: `

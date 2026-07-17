@@ -45,6 +45,7 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		// Public routes
 		skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
 		apiV1.GET("/resorts/nearby", skiResortHandler.ListNearby)
+		apiV1.GET("/resorts/by-name", skiResortHandler.ListByName)
 		apiV1.GET("/resorts/bbox", skiResortHandler.ListByBBox)
 	}
 

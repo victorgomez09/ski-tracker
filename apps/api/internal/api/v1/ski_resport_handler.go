@@ -18,6 +18,23 @@ func NewSkiResortHandler(svc *service.SkiResortService, s store.Store) *SkiResor
 	return &SkiResortHandler{svc: svc, store: s}
 }
 
+func (h *SkiResortHandler) ListByName(c *gin.Context) {
+	name := c.Query("name")
+	if name == "" {
+		httputil.RespondError(c, fmt.Errorf("missing required query parameter: name"))
+		return
+	}
+
+	fmt.Println("Name", name)
+	resorts, err := h.svc.ListByName(c.Request.Context(), name)
+	if err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+
+	httputil.RespondOK(c, resorts)
+}
+
 func (h *SkiResortHandler) ListNearby(c *gin.Context) {
 	latStr := c.Query("lat")
 	lngStr := c.Query("lng")

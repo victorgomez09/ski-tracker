@@ -32,6 +32,152 @@ export interface Area {
     Type: 'beginner_area' | 'off_piste' | 'building';
 }
 
+export interface Resort {
+        ID: string;
+        Name: string;
+        Country: string;
+        Website: string;
+        Latitude: number;
+        Longitude: number;
+        Tags: {
+            activities: string[];
+            id: string;
+            name: string;
+            places: [
+                {
+                    iso3166_1Alpha2: string;
+                    iso3166_2: string;
+                    localized: {
+                        en: {
+                            country: string;
+                            locality: string | null;
+                            region: string;
+                        }
+                    }
+                },
+                {
+                    iso3166_1Alpha2: string;
+                    iso3166_2: string;
+                    localized: {
+                        en: {
+                            country: string;
+                            locality: string | null;
+                            region: string;
+                        }
+                    }
+                }
+            ],
+            runConvention: string;
+            sources: [
+                {
+                    id: string;
+                    type: string;
+                }
+            ];
+            statistics: {
+                lifts: {
+                    byType: {
+                        chair_lift: {
+                            combinedElevationChange: number;
+                            count: number;
+                            lengthInKm: number;
+                            maxElevation: number;
+                            minElevation: number;
+                        },
+                        drag_lift: {
+                            combinedElevationChange: number;
+                            count: number;
+                            lengthInKm: number;
+                            maxElevation: number;
+                            minElevation: number;
+                        },
+                        magic_carpet: {
+                            combinedElevationChange: number;
+                            count: number;
+                            lengthInKm: number;
+                            maxElevation: number;
+                            minElevation: number;
+                        },
+                        rope_tow: {
+                            combinedElevationChange: number;
+                            count: number;
+                            lengthInKm: number;
+                            maxElevation: number;
+                            minElevation: number;
+                        }
+                    },
+                    maxElevation: number;
+                    minElevation: number;
+                },
+                maxElevation: number;
+                minElevation: number;
+                runs: {
+                    byActivity: {
+                        downhill: {
+                            byDifficulty: {
+                                advanced: {
+                                    combinedElevationChange: number;
+                                    count: number;
+                                    lengthInKm: number;
+                                    maxElevation: number;
+                                    minElevation: number;
+                                    snowfarmingLengthInKm: number;
+                                    snowmakingLengthInKm: number;
+                                },
+                                easy: {
+                                    combinedElevationChange: number;
+                                    count: number;
+                                    lengthInKm: number;
+                                    maxElevation: number;
+                                    minElevation: number;
+                                    snowfarmingLengthInKm: number;
+                                    snowmakingLengthInKm: number;
+                                },
+                                intermediate: {
+                                    combinedElevationChange: number;
+                                    count: number;
+                                    lengthInKm: number;
+                                    maxElevation: number;
+                                    minElevation: number;
+                                    snowfarmingLengthInKm: number;
+                                    snowmakingLengthInKm: number;
+                                },
+                                novice: {
+                                    combinedElevationChange: number;
+                                    count: number;
+                                    lengthInKm: number;
+                                    maxElevation: number;
+                                    minElevation: number;
+                                    snowfarmingLengthInKm: number,
+                                    snowmakingLengthInKm: number
+                                }
+                            }
+                        }
+                    },
+                    maxElevation: number,
+                    minElevation: number
+                }
+            },
+            status: string;
+            type: string;
+            viewportHint: {
+                bearing: number;
+                center: number[];
+                minCameraY: number;
+                rotatedHeightMeters: number;
+                rotatedWidthMeters: number;
+            };
+            websites: string[];
+            wikidataID: null;
+        },
+        CreatedAt: string;
+        Pistes: Piste[] | null;
+        Lifts: Lift[] | null;
+        distance_km: number | null;
+        total_pistes: number | null;
+        total_lifts: number | null;
+}
+
 export interface ResortDetail {
     ID: string;
     Name: string;
