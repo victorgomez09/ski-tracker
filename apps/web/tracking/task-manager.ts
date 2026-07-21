@@ -2,6 +2,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import * as SQLite from 'expo-sqlite';
 import { Barometer } from 'expo-sensors';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { savePointToLocalDB } from './database';
 
@@ -16,12 +17,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
     return;
   }
   if (data) {
+    const resortId = await AsyncStorage.getItem('ACTIVE_RESORT_ID');
     const database = await SQLite.openDatabaseAsync('ski_tracker.db');
     const { locations } = data as { locations: Location.LocationObject[] };
     const location = locations[0];
 
     let currentPressure: number | null = null;
-    
+
     try {
       const baroData = await Barometer.getPermissionsAsync();
       if (baroData.granted) {
@@ -41,6 +43,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
       location.coords.altitude || 0,
       location.coords.speed || 0,
       currentPressure,
+      resortId,
       location.timestamp,
       database
     );
@@ -50,8 +53,9 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
 /**
  * Starts tracking the user's location in the background. This function requests the necessary permissions and initiates location updates with specified accuracy and intervals. It also configures a foreground service notification to inform the user that their ski session is being monitored.
  */
-export const startTracking = async () => {
-const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+export const startTracking = async (resortId: string) => {
+  await AsyncStorage.setItem('ACTIVE_RESORT_ID', resortId.toString());
+  const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
   if (foregroundStatus !== 'granted') return;
 
   const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();

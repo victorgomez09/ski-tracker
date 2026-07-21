@@ -53,6 +53,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	_, err = store.DB().NewRaw("CREATE EXTENSION IF NOT EXISTS postgis;").Exec(ctx)
+	if err != nil {
+		logger.Error("failed to enable PostGIS", slog.Any("error", err))
+		store.DB().ExecContext(ctx, "SELECT pg_advisory_unlock(1)")
+		os.Exit(1)
+	}
+
 	migrator := migrate.NewMigrator(store.DB(), migrations.Migrations)
 	if err := migrator.Init(ctx); err != nil {
 		logger.Error("failed to init migrations", slog.Any("error", err))

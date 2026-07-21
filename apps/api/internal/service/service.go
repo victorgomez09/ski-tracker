@@ -13,7 +13,7 @@ type Container struct {
 	SkiPiste   *SkiPisteService
 	SkiLift    *SkiLiftService
 	User       *UserService
-	TrackPoint *TrackPointService
+	SkiSession *SkiSessionService
 }
 
 // NewContainer creates all services with shared dependencies.
@@ -29,6 +29,6 @@ func NewContainer(
 		SkiPiste:   NewSkiPisteService(s, logger),
 		SkiLift:    NewSkiLiftService(s, logger),
 		User:       NewUserService(s, jwtManager, logger),
-		TrackPoint: NewTrackPointService(s, jwtManager, logger),
+		SkiSession: NewSkiSessionService(s, jwtManager, logger),
 	}
 }

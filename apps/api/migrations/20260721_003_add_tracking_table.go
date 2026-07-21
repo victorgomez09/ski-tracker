@@ -13,16 +13,34 @@ func init() {
 
 		queries := []string{
 			`
-				CREATE TABLE track_points (
-					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-					lat DOUBLE PRECISION NOT NULL,
-					lon DOUBLE PRECISION NOT NULL,
-					alt DOUBLE PRECISION,
-					speed DOUBLE PRECISION,
-					timestamp BIGINT NOT NULL,
-					user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-					resort_id TEXT REFERENCES ski_resorts(id) ON DELETE SET NULL
-				);
+			-- Enable PostGIS extension for geospatial support
+			CREATE EXTENSION IF NOT EXISTS postgis;
+
+			-- 1. Ski sessions table to track individual ski sessions
+			CREATE TABLE ski_sessions (
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+				user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				start_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+				end_time TIMESTAMP WITH TIME ZONE,
+				total_distance FLOAT DEFAULT 0,
+				max_speed FLOAT DEFAULT 0,
+				vertical_drop FLOAT DEFAULT 0,
+				created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+			);
+
+			-- 2. Session points table with PostGIS geospatial support
+			CREATE TABLE session_points (
+				id SERIAL PRIMARY KEY,
+				session_id UUID REFERENCES ski_sessions(id) ON DELETE CASCADE,
+				geom GEOMETRY(Point, 4326) NOT NULL, -- Stores lat/lon spatially
+				altitude FLOAT,
+				speed FLOAT,
+				timestamp TIMESTAMP WITH TIME ZONE NOT NULL
+			);
+
+			-- Spatial index to speed up future Map Matching queries (Phase 4)
+			CREATE INDEX idx_session_points_geom ON session_points USING GIST (geom);
+			CREATE INDEX idx_session_points_session_id ON session_points(session_id);
 			`,
 		}
 

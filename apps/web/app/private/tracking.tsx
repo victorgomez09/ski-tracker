@@ -120,7 +120,7 @@ export default function InteractiveSkiMap() {
             setIsTracking(false);
             await loadTrackPoints();
         } else {
-            await startTracking();
+            await startTracking(resort.ID);
             setIsTracking(true);
         }
     };

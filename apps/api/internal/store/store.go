@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/victorgomez09/ski-tracker/internal/models"
@@ -13,7 +14,9 @@ type Store interface {
 	SkiPiste() SkiPisteStore
 	SkiLift() SkiLiftStore
 	User() UserStore
-	TrackPoint() TrackPointStore
+	SkiSession() SkiSessionStore
+	SessionPoint() SessionPointStore
+	SkiRun() SkiRunStore
 }
 
 // Pagination request parameters.
@@ -76,9 +79,18 @@ type UserStore interface {
 	Delete(ctx context.Context, id string) error
 }
 
-type TrackPointStore interface {
-	GetByID(ctx context.Context, id uuid.UUID) (*models.TrackPoint, error)
-	GetByUser(ctx context.Context, userID uuid.UUID) ([]*models.TrackPoint, error)
-	Create(ctx context.Context, trackPoint *models.TrackPoint) error
-	Delete(ctx context.Context, id uuid.UUID) error
+type SkiSessionStore interface {
+	Raw(ctx context.Context, query string, wktLine string, result interface{}) error
+	Create(ctx context.Context, skiSession *models.SkiSession) (*models.SkiSession, error)
+	Update(ctx context.Context, sessionID uuid.UUID, now time.Time) error
+}
+
+type SessionPointStore interface {
+	GetBySessionID(ctx context.Context, sessionID uuid.UUID) ([]models.SessionPoint, error)
+	Create(ctx context.Context, point *models.SessionPoint) (*models.SessionPoint, error)
+	Bulk(ctx context.Context, points *[]models.SessionPoint) error
+}
+
+type SkiRunStore interface {
+	Create(ctx context.Context, run *models.SkiRun) (*models.SkiRun, error)
 }

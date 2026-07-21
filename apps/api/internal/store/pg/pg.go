@@ -83,6 +83,12 @@ func (s *Store) SkiLift() store.SkiLiftStore {
 func (s *Store) User() store.UserStore {
 	return &userStore{db: s.db}
 }
-func (s *Store) TrackPoint() store.TrackPointStore {
-	return &trackPointStore{db: s.db}
+func (s *Store) SkiSession() store.SkiSessionStore {
+	return &skiSessionStore{db: s.db}
+}
+func (s *Store) SessionPoint() store.SessionPointStore {
+	return &sessionPointStore{db: s.db}
+}
+func (s *Store) SkiRun() store.SkiRunStore {
+	return &skiRunStore{db: s.db}
 }
