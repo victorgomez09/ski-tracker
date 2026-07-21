@@ -14,11 +14,36 @@ type skiSessionStore struct {
 }
 
 func (u *skiSessionStore) Raw(ctx context.Context, query string, wktLine string, result interface{}) error {
-	err := u.db.NewRaw(query, wktLine).Scan(ctx, &result)
+	err := u.db.NewRaw(query, wktLine).Scan(ctx, result)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func (u *skiSessionStore) ListByResortID(ctx context.Context, resortID string) ([]models.SkiSession, error) {
+	var sessions []models.SkiSession
+	err := u.db.NewSelect().
+		Model(&sessions).
+		Where("resort_id = ?", resortID).
+		Order("start_time DESC").
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
+func (u *skiSessionStore) GetByID(ctx context.Context, sessionID uuid.UUID) (*models.SkiSession, error) {
+	var session models.SkiSession
+	err := u.db.NewSelect().
+		Model(&session).
+		Where("id = ?", sessionID).
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
 }
 
 func (u *skiSessionStore) Create(ctx context.Context, session *models.SkiSession) (*models.SkiSession, error) {

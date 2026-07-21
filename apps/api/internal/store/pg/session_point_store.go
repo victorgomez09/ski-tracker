@@ -14,7 +14,12 @@ type sessionPointStore struct {
 
 func (u *sessionPointStore) GetBySessionID(ctx context.Context, sessionID uuid.UUID) ([]models.SessionPoint, error) {
 	var points []models.SessionPoint
-	err := u.db.NewSelect().Model(&points).Where("session_id = ?", sessionID).Scan(ctx)
+	err := u.db.NewSelect().
+		Column("id", "session_id", "altitude", "speed", "timestamp").
+		ColumnExpr("ST_AsText(geom) AS geom").
+		Model(&points).
+		Where("session_id = ?", sessionID).
+		Scan(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -30,10 +35,22 @@ func (u *sessionPointStore) Create(ctx context.Context, point *models.SessionPoi
 }
 
 func (u *sessionPointStore) Bulk(ctx context.Context, points *[]models.SessionPoint) error {
-	_, err := u.db.NewInsert().Model(&points).
-		Value("geom", "ST_GeomFromText(?, 4326)", bun.Ident("geom")).
-		Exec(ctx)
-	return err
+	if points == nil || len(*points) == 0 {
+		return nil
+	}
+
+	for _, p := range *points {
+		_, err := u.db.NewInsert().
+			Model(&p).
+			Value("geom", "ST_GeomFromText(?, 4326)", p.Geom).
+			Exec(ctx)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (u *sessionPointStore) Delete(ctx context.Context, id uuid.UUID) error {

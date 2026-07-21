@@ -30,7 +30,7 @@ func init() {
 
 			-- 2. Session points table with PostGIS geospatial support
 			CREATE TABLE session_points (
-				id SERIAL PRIMARY KEY,
+				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 				session_id UUID REFERENCES ski_sessions(id) ON DELETE CASCADE,
 				geom GEOMETRY(Point, 4326) NOT NULL, -- Stores lat/lon spatially
 				altitude FLOAT,

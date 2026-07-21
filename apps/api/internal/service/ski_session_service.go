@@ -50,9 +50,28 @@ func NewSkiSessionService(store store.Store, jwtManager *auth.JWTManager, logger
 	}
 }
 
-func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID) (*models.SkiSession, error) {
+func (s *SkiSessionService) ListByResort(ctx context.Context, resortID string) ([]models.SkiSession, error) {
+	sessions, err := s.store.SkiSession().ListByResortID(ctx, resortID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list ski sessions by resort: %w", err)
+	}
+
+	return sessions, nil
+}
+
+func (s *SkiSessionService) GetByID(ctx context.Context, sessionID uuid.UUID) (*models.SkiSession, error) {
+	session, err := s.store.SkiSession().GetByID(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ski session by ID: %w", err)
+	}
+
+	return session, nil
+}
+
+func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, resortID uuid.UUID) (*models.SkiSession, error) {
 	session := &models.SkiSession{
 		UserID:    userID,
+		ResortID:  resortID,
 		StartTime: time.Now(),
 	}
 
@@ -269,6 +288,40 @@ func (s *SkiSessionService) processRunEnrichment(ctx context.Context, sessionID 
 // -------------------------------------------------------------------------
 // Auxiliary functions for metrics calculation and map matching
 // -------------------------------------------------------------------------
+func parsePointGeom(geom string) (lon float64, lat float64, ok bool) {
+	if geom == "" {
+		return 0, 0, false
+	}
+
+	var parsedLon, parsedLat float64
+	if _, err := fmt.Sscanf(geom, "POINT(%f %f)", &parsedLon, &parsedLat); err != nil {
+		return 0, 0, false
+	}
+
+	return parsedLon, parsedLat, true
+}
+
+func calculateHaversineDistanceMeters(prev, curr models.SessionPoint) float64 {
+	prevLon, prevLat, okPrev := parsePointGeom(prev.Geom)
+	currLon, currLat, okCurr := parsePointGeom(curr.Geom)
+	if !okPrev || !okCurr {
+		return 0
+	}
+
+	const earthRadiusMeters = 6371000.0
+	prevLatRad := prevLat * math.Pi / 180
+	currLatRad := currLat * math.Pi / 180
+	dLat := (currLat - prevLat) * math.Pi / 180
+	dLon := (currLon - prevLon) * math.Pi / 180
+
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(prevLatRad)*math.Cos(currLatRad)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return earthRadiusMeters * c
+}
+
 func (s *SkiSessionService) calculatePhysicalMetrics(points []models.SessionPoint) EnrichedRunMetrics {
 	startAlt := points[0].Altitude
 	endAlt := points[len(points)-1].Altitude
@@ -287,16 +340,15 @@ func (s *SkiSessionService) calculatePhysicalMetrics(points []models.SessionPoin
 		speedSum += p.Speed
 
 		if i > 0 {
-			altDiff := p.Altitude - points[i-1].Altitude
+			prev := points[i-1]
+			altDiff := p.Altitude - prev.Altitude
 			if altDiff > 0 {
 				elevationGain += altDiff
 			} else {
 				elevationLoss += math.Abs(altDiff)
 			}
 
-			// Approximate accumulated distance between consecutive points
-			// (Or you can extract lat/lon from your WKT geometry or points)
-			// totalDistance += calculateHaversine(...)
+			totalDistance += calculateHaversineDistanceMeters(prev, p)
 		}
 	}
 
@@ -349,6 +401,13 @@ func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []model
 	err := s.store.SkiSession().Raw(ctx, query, wktLine, &result)
 	if err != nil {
 		return nil, "unknown", err
+	}
+
+	if result.ID == "" {
+		return nil, "unknown", nil
+	}
+	if result.Difficulty == "" {
+		result.Difficulty = "unknown"
 	}
 
 	return &result.ID, result.Difficulty, nil

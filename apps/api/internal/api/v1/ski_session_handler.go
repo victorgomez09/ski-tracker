@@ -23,11 +23,44 @@ func NewSkiSessionHandler(svc *service.SkiSessionService, s store.Store) *SkiSes
 	return &SkiSessionHandler{svc: svc, store: s}
 }
 
+func (h *SkiSessionHandler) ListByResort(c *gin.Context) {
+	resortID := c.Query("resort_id")
+	if resortID == "" {
+		httputil.RespondError(c, fmt.Errorf("resort_id query parameter is required"))
+		return
+	}
+
+	ctx := c.Request.Context()
+	sessions, err := h.store.SkiSession().ListByResortID(ctx, resortID)
+	if err != nil {
+		httputil.RespondError(c, fmt.Errorf("failed to list ski sessions: %w", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"sessions": sessions})
+}
+
 func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
+	// Expect JSON body: { "resortId": "<uuid>" }
+	var payload struct {
+		ResortID string `json:"resortId" binding:"required,uuid"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		httpErr := fmt.Errorf("invalid request body: %w", err)
+		httputil.RespondError(c, httpErr)
+		return
+	}
+
+	resortUUID, err := uuid.Parse(payload.ResortID)
+	if err != nil {
+		httputil.RespondError(c, fmt.Errorf("invalid resort ID: %w", err))
+		return
+	}
+
 	ctx := c.Request.Context()
-	session, err := h.svc.StartSession(ctx, userID)
+	session, err := h.svc.StartSession(ctx, userID, resortUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating ski session"})
 		return
