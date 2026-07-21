@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
 
 import { API_BASE_URL } from 'constants/constants';
@@ -26,6 +26,15 @@ export default function InteractiveSkiMap() {
         pitch: 0
     });
     const { token } = useAuth();
+
+    useEffect(() => {
+        const map = mapRef.current?.getMap();
+        console.log('mapRef.current?.getMap()', map);
+        if (!map) return;
+
+        const bounds = map.getBounds();
+        fetchResortsByBounds(bounds);
+    }, []);
 
     // --- Layer styles ---
     const pisteLineStyle: LayerProps = {

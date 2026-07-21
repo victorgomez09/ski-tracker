@@ -8,12 +8,13 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
 import { Platform } from 'react-native';
+import { Eye, EyeOff, Play, Square, Upload } from 'lucide-react';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
-import { clearTrack, getAllPoints, initDB, savePointToLocalDB } from 'tracking/database';
+import { clearTrack, getAllPoints, initDB, savePointToLocalDB, TrackPoint } from 'tracking/database';
 import { startTracking, stopTracking } from 'tracking/task-manager';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
@@ -23,8 +24,7 @@ export default function InteractiveSkiMap() {
     const mapRef = useRef<MapRef>(null);
     const { token } = useAuth();
 
-    const [resorts, setResorts] = useState<ResortDetail[]>([]);
-    const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
+    const [resort, setResort] = useState<ResortDetail>({} as ResortDetail);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
 
@@ -33,6 +33,7 @@ export default function InteractiveSkiMap() {
     const [hasTrackData, setHasTrackData] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
+    const [showLastTracks, setShowLastTracks] = useState(false);
 
     const [viewState, setViewState] = useState({
         longitude: parseFloat(searchParams.lng as string || '-3.971953'),
@@ -42,9 +43,33 @@ export default function InteractiveSkiMap() {
         pitch: 0
     });
 
+    const range = 0.05;
+    const bounds: [number, number, number, number] = [
+        viewState.longitude - range,
+        viewState.latitude - range,
+        viewState.longitude + range,
+        viewState.latitude + range
+    ];
+
     // --- Database initialization and tracking status on mount ---
     useEffect(() => {
         setupDatabaseAndCheckStatus();
+
+        const fetchResortDetails = async () => {
+            try {
+                const request = await axios.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
+                    params: { lat: viewState.latitude, lon: viewState.longitude },
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (request.status === 200) {
+                    setResort(request.data);
+                }
+            } catch (error) {
+                console.error("Error fetching resort details:", error);
+            }
+        };
+
+        fetchResortDetails();
     }, []);
 
     // --- Polling to refresh track points in real-time while recording ---
@@ -76,7 +101,7 @@ export default function InteractiveSkiMap() {
     const loadTrackPoints = async () => {
         try {
             const db = await SQLite.openDatabaseAsync('ski_tracker.db');
-            const points: any = await getAllPoints(db);
+            const points = await getAllPoints(db);
             setTrackPoints(points);
             setHasTrackData(points.length > 0);
         } catch (e) {
@@ -247,11 +272,32 @@ export default function InteractiveSkiMap() {
         }
     };
 
+    const trackDirectionStyle: LayerProps = {
+        id: 'track-directions',
+        type: 'symbol',
+        minzoom: 14,
+        layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 150,
+            'text-field': '>',
+            'text-size': 12,
+            'text-rotation-alignment': 'map',
+            'text-keep-upright': false,
+            'text-allow-overlap': true,
+            'text-ignore-placement': true
+        },
+        paint: {
+            'text-color': '#8e44ad', // purple
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5
+        }
+    };
+
     // --- GeoJSON Data Transformation ---
     const pistesGeoJSON = useMemo(() => {
-        const pistesFeatures = resorts.flatMap(r => {
-            if (!r.pistes || !Array.isArray(r.pistes)) return [];
-            return r.pistes
+        const pistesFeatures = (() => {
+            if (!resort.pistes || !Array.isArray(resort.pistes)) return [];
+            return resort.pistes
                 .filter(p => {
                     const geomType = p.GeometryGeoJSON?.type;
                     return geomType && geomType !== 'Polygon' && geomType !== 'MultiPolygon';
@@ -262,18 +308,18 @@ export default function InteractiveSkiMap() {
                         id: p.ID,
                         difficulty: p.Difficulty,
                         name: p.Name || `Piste #${p.ID.slice(0, 4)}`,
-                        resortName: r.Name
+                        resortName: resort.Name
                     },
                     geometry: p.GeometryGeoJSON
                 }));
         });
-        return { type: 'FeatureCollection' as const, features: pistesFeatures };
-    }, [resorts]);
+        return { type: 'FeatureCollection' as const, features: pistesFeatures() };
+    }, [resort]);
 
     const liftsGeoJSON = useMemo(() => {
-        const liftsFeatures = resorts.flatMap(r => {
-            if (!r.lifts || !Array.isArray(r.lifts)) return [];
-            return r.lifts
+        const liftsFeatures = (() => {
+            if (!resort.lifts || !Array.isArray(resort.lifts)) return [];
+            return resort.lifts
                 .filter(l => {
                     const geomType = l.GeometryGeoJSON?.type;
                     return geomType && geomType !== 'Polygon' && geomType !== 'MultiPolygon';
@@ -284,15 +330,14 @@ export default function InteractiveSkiMap() {
                         id: l.ID,
                         type: l.LiftType,
                         name: l.Name || `Lift #${l.ID.slice(0, 4)}`,
-                        resortName: r.Name
+                        resortName: resort.Name
                     },
                     geometry: l.GeometryGeoJSON
                 }));
         });
-        return { type: 'FeatureCollection' as const, features: liftsFeatures };
-    }, [resorts]);
+        return { type: 'FeatureCollection' as const, features: liftsFeatures() };
+    }, [resort]);
 
-    // GeoJSON for the user's track
     const trackGeoJSON = useMemo(() => ({
         type: 'FeatureCollection' as const,
         features: trackPoints.length > 1 ? [{
@@ -305,38 +350,18 @@ export default function InteractiveSkiMap() {
         }] : []
     }), [trackPoints]);
 
-    // --- Fetchers ---
-    const fetchResortsByBounds = async (bounds: maplibregl.LngLatBounds) => {
-        try {
-            const sw = bounds.getSouthWest();
-            const ne = bounds.getNorthEast();
-            const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
-                params: { minLon: sw.lng, minLat: sw.lat, maxLon: ne.lng, maxLat: ne.lat },
+    const fetchLastTracks = async () => {
+        if (showLastTracks) {
+            const request = await axios.get<TrackPoint[]>(`${API_BASE_URL}/track-points`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            if (request.status === 200) setResorts(request.data);
-        } catch (error) {
-            console.error("Error fetching resorts:", error);
-        }
-    };
-
-    const fetchResortsWithDetails = async (event: ViewStateChangeEvent) => {
-        const map = event.target;
-        const center = map.getCenter();
-        const currentZoom = map.getZoom();
-
-        if (currentZoom > 10) {
-            try {
-                const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
-                    params: { lat: center.lat, lon: center.lng, radius: 50 },
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                if (request.status === 200) setResorts(request.data);
-            } catch (error) {
-                console.error("Error fetching nearby resorts:", error);
+    
+            if (request.status === 200) {
+                setTrackPoints(request.data);
             }
+        } else {
+            await loadTrackPoints();
         }
-        router.setParams({ zoom: currentZoom.toFixed(0) });
     };
 
     // --- Interaction Handlers ---
@@ -371,14 +396,12 @@ export default function InteractiveSkiMap() {
             const featureId = clickedFeature.properties.id;
             const isLift = clickedFeature.layer.id === 'lift-lines';
 
-            for (const resort of resorts) {
-                if (isLift && resort.lifts) {
-                    const foundLift = resort.lifts.find(l => l.ID === featureId);
-                    if (foundLift) { setSelectedFeature(foundLift); return; }
-                } else if (!isLift && resort.pistes) {
-                    const foundPiste = resort.pistes.find(p => p.ID === featureId);
-                    if (foundPiste) { setSelectedFeature(foundPiste); return; }
-                }
+            if (isLift && resort.lifts) {
+                const foundLift = resort.lifts.find(l => l.ID === featureId);
+                if (foundLift) { setSelectedFeature(foundLift); return; }
+            } else if (!isLift && resort.pistes) {
+                const foundPiste = resort.pistes.find(p => p.ID === featureId);
+                if (foundPiste) { setSelectedFeature(foundPiste); return; }
             }
         } catch (error) {
             console.error("Error querying features on click:", error);
@@ -400,17 +423,17 @@ export default function InteractiveSkiMap() {
                 zoom: currentZoom.toFixed(0)
             });
 
-            if (currentZoom < 10) {
-                fetchResortsByBounds(bounds);
-            } else {
-                fetchResortsWithDetails({ target: map } as ViewStateChangeEvent);
-            }
+            // if (currentZoom < 10) {
+            //     fetchResortsByBounds(bounds);
+            // } else {
+            //     fetchResortsWithDetails({ target: map } as ViewStateChangeEvent);
+            // }
         }
     }, []);
 
-    // WEB SIMULATION ONLY
+    // ----- WEB SIMULATION ONLY
     const [isSimulatingWeb, setIsSimulatingWeb] = useState(false);
-    const [simStatusText, setSimStatusText] = useState('⛷️ Iniciar Simulación GPS Real');
+    const [simStatusText, setSimStatusText] = useState("Start simulation");
     const simulationTimerRef = useRef<number | null>(null);
 
     // Refs to track the current path and coordinate index during simulation
@@ -426,7 +449,7 @@ export default function InteractiveSkiMap() {
         if (isSimulatingWeb) {
             if (simulationTimerRef.current) clearInterval(simulationTimerRef.current);
             setIsSimulatingWeb(false);
-            setSimStatusText('⛷️ Iniciar Simulación GPS Real');
+            setSimStatusText('Start simulation');
             return;
         }
 
@@ -434,40 +457,35 @@ export default function InteractiveSkiMap() {
             const rawLifts: { id: string; coords: [number, number][] }[] = [];
             const rawPistes: { id: string; coords: [number, number][] }[] = [];
 
-            resorts.forEach(resort => {
-                if (resort.lifts && Array.isArray(resort.lifts)) {
-                    resort.lifts.forEach((lift, idx) => {
-                        if (lift.GeometryGeoJSON?.type === 'LineString') {
-                            const coords = lift.GeometryGeoJSON.coordinates.map((c: any) => [c[0], c[1]] as [number, number]);
-                            if (coords.length > 1) {
-                                if (coords[0][1] > coords[coords.length - 1][1]) {
-                                    coords.reverse();
-                                }
-                                rawLifts.push({ id: lift.ID || `lift_${idx}`, coords });
+            if (resort.lifts && Array.isArray(resort.lifts)) {
+                resort.lifts.forEach((lift, idx) => {
+                    if (lift.GeometryGeoJSON?.type === 'LineString') {
+                        const coords = lift.GeometryGeoJSON.coordinates.map((c: any) => [c[0], c[1]] as [number, number]);
+                        if (coords.length > 1) {
+                            if (coords[0][1] > coords[coords.length - 1][1]) {
+                                coords.reverse();
                             }
+                            rawLifts.push({ id: lift.ID || `lift_${idx}`, coords });
                         }
-                    });
-                }
-            });
+                    }
+                });
+            }
 
-            resorts.forEach(resort => {
-                if (!resort.pistes || !Array.isArray(resort.pistes)) return;
-
-                resort.pistes
-                    .filter(p => {
-                        const geomType = p.GeometryGeoJSON?.type;
-                        return geomType && geomType !== 'Polygon' && geomType !== 'MultiPolygon';
-                    })
-                    .forEach((p, idx) => {
-                        const geom = p.GeometryGeoJSON;
-                        if (geom?.type === 'LineString' && Array.isArray(geom.coordinates)) {
-                            const coords = geom.coordinates.map((c: any) => [c[0], c[1]] as [number, number]);
-                            if (coords.length > 1) {
-                                rawPistes.push({ id: p.ID || `piste_${idx}`, coords });
-                            }
+            if (!resort.pistes || !Array.isArray(resort.pistes)) return;
+            resort.pistes
+                .filter(p => {
+                    const geomType = p.GeometryGeoJSON?.type;
+                    return geomType && geomType !== 'Polygon' && geomType !== 'MultiPolygon';
+                })
+                .forEach((p, idx) => {
+                    const geom = p.GeometryGeoJSON;
+                    if (geom?.type === 'LineString' && Array.isArray(geom.coordinates)) {
+                        const coords = geom.coordinates.map((c: any) => [c[0], c[1]] as [number, number]);
+                        if (coords.length > 1) {
+                            rawPistes.push({ id: p.ID || `piste_${idx}`, coords });
                         }
-                    });
-            });
+                    }
+                });
 
             if (rawLifts.length === 0 || rawPistes.length === 0) {
                 alert("Make sure to zoom in on a resort to load the visible pistes and lifts.");
@@ -569,11 +587,7 @@ export default function InteractiveSkiMap() {
                 const simulatedSpeed = isLift ? 12.5 : 38.0; // approximate km/h
                 const simulatedPressure = 1013.25;
 
-                setSimStatusText(
-                    isLift
-                        ? `🚡 Ascending Lift (${currentCoordIndexRef.current + 1}/${currentPath.coords.length})`
-                        : `⛷️ Descending Piste (${currentCoordIndexRef.current + 1}/${currentPath.coords.length})`
-                );
+                setSimStatusText("Stop simulation");
 
                 await savePointToLocalDB(
                     currentLat,
@@ -613,25 +627,39 @@ export default function InteractiveSkiMap() {
                 <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
             )}
 
-            {Platform.OS === 'web' && (
-                <div className="absolute bottom-10 left-4 z-1000 flex gap-2">
-                    <button
-                        className="btn btn-primary btn-sm"
-                        onClick={handleToggleWebSimulation}
-                    >
-                        {simStatusText}
-                    </button>
+            <div className="absolute bottom-10 left-4 z-1000 flex gap-2">
+                <button
+                    className="btn btn-primary btn-sm"
+                    onClick={fetchLastTracks}
+                >
+                    <label className="swap">
+                        <input type="checkbox" checked={showLastTracks} onChange={() => setShowLastTracks(!showLastTracks)} />
 
-                    <button className="btn btn-primary btn-sm" onClick={async () => clearTrack(db || await SQLite.openDatabaseAsync('ski_tracker.db'))}>Clear local database</button>
-                </div>
-            )}
+                        <Eye />
+                        <EyeOff />
+                    </label>
+                </button>
+
+                {Platform.OS === 'web' && (
+                    <div className="flex gap-2">
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={handleToggleWebSimulation}
+                        >
+                            {simStatusText}
+                        </button>
+
+                        <button className="btn btn-primary btn-sm" onClick={async () => clearTrack(db || await SQLite.openDatabaseAsync('ski_tracker.db'))}>Clear local database</button>
+                    </div>
+                )}
+            </div>
 
             <div className="absolute bottom-10 right-4 z-1000 flex gap-2">
                 <button className="btn btn-primary btn-sm"
                     onClick={handleToggleTracking}
                 >
                     <span>
-                        {isTracking ? '⏹️' : '▶️'}
+                        {isTracking ? <Square /> : <Play />}
                     </span>
                 </button>
 
@@ -643,7 +671,7 @@ export default function InteractiveSkiMap() {
                         {isLoading ? (
                             <span className="loading loading-spinner"></span>
                         ) : (
-                            <span>☁️</span>
+                            <Upload />
                         )}
                     </button>
                 )}
@@ -657,50 +685,17 @@ export default function InteractiveSkiMap() {
                 onMoveEnd={handleMoveEnd}
                 onMouseLeave={handleMouseLeave}
                 onClick={handleMapClick}
-                onZoomEnd={fetchResortsWithDetails}
+                // onZoomEnd={fetchResortsWithDetails}
                 interactiveLayerIds={['piste-lines', 'lift-lines']}
                 style={{ width: '100%', height: 'calc(100vh - 4rem)' }}
                 mapStyle="https://tiles.openfreemap.org/styles/liberty"
                 mapLib={maplibregl}
                 maplibreLogo={false}
                 attributionControl={false}
+                minZoom={10}
+                maxBounds={bounds}
             >
                 <NavigationControl position="top-right" />
-
-                {/* --- Resort Markers (Zoom < 10) --- */}
-                {viewState.zoom < 10 && resorts.map(resort => (
-                    <Marker
-                        key={resort.ID}
-                        longitude={resort.Longitude}
-                        latitude={resort.Latitude}
-                        anchor="bottom"
-                        onClick={() => {
-                            setViewState(prev => ({ ...prev, longitude: resort.Longitude, latitude: resort.Latitude, zoom: 12 }));
-                        }}
-                    >
-                        <div
-                            className="resort-marker-container"
-                            style={{ cursor: 'pointer', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
-                            onMouseEnter={() => setHoveredResortId(resort.ID)}
-                            onMouseLeave={() => setHoveredResortId(null)}
-                        >
-                            {hoveredResortId === resort.ID && (
-                                <div style={{
-                                    backgroundColor: 'white', padding: '2px 8px', borderRadius: '4px',
-                                    fontSize: '11px', fontWeight: 'bold', color: '#333',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)', marginBottom: '4px', whiteSpace: 'nowrap', zIndex: 10
-                                }}>
-                                    {resort.Name}
-                                </div>
-                            )}
-                            <div className="resort-marker-dot" style={{
-                                background: '#e67e22', width: 12, height: 12, borderRadius: '50%',
-                                border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                                transition: 'transform 0.2s', transform: hoveredResortId === resort.ID ? 'scale(1.2)' : 'scale(1)'
-                            }}></div>
-                        </div>
-                    </Marker>
-                ))}
 
                 {/* --- Detailed Elements (Zoom >= 10) --- */}
                 {viewState.zoom >= 10 && (
@@ -722,6 +717,7 @@ export default function InteractiveSkiMap() {
                         {trackPoints.length > 0 && (
                             <Source id="track-source" type="geojson" data={trackGeoJSON}>
                                 <Layer {...trackLineStyle} />
+                                <Layer {...trackDirectionStyle} />
                             </Source>
                         )}
                     </>

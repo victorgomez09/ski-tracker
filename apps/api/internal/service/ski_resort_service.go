@@ -150,6 +150,69 @@ func (s *SkiResortService) List(ctx context.Context, latStr, lngStr, radStr stri
 	return detailedResorts, nil
 }
 
+func (s *SkiResortService) ListByBBox(ctx context.Context, minLatStr, maxLatStr, minLonStr, maxLonStr string) ([]models.SkiResort, error) {
+	minLat, err1 := strconv.ParseFloat(minLatStr, 64)
+	maxLat, err2 := strconv.ParseFloat(maxLatStr, 64)
+	minLon, err3 := strconv.ParseFloat(minLonStr, 64)
+	maxLon, err4 := strconv.ParseFloat(maxLonStr, 64)
+
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return nil, apierr.ErrBadRequest.WithDetail("minLat, maxLat, minLon and maxLon must be valid numbers")
+	}
+
+	filter := store.SkiResortBBoxFilter{
+		MinLatitude:  &minLat,
+		MaxLatitude:  &maxLat,
+		MinLongitude: &minLon,
+		MaxLongitude: &maxLon,
+	}
+
+	resorts, err := s.store.SkiResort().ListByBBox(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	return resorts, nil
+}
+
+func (s *SkiResortService) GetByCloseness(ctx context.Context, latStr, lngStr string) (*ResortDetailDTO, error) {
+	userLat, err1 := strconv.ParseFloat(latStr, 64)
+	userLng, err2 := strconv.ParseFloat(lngStr, 64)
+
+	if err1 != nil || err2 != nil {
+		return nil, apierr.ErrBadRequest.WithDetail("lat and lng must be valid numbers")
+	}
+
+	resort, err := s.store.SkiResort().GetByCloseness(ctx, userLat, userLng)
+	if err != nil {
+		return nil, err
+	}
+
+	pistes, err := s.store.SkiPiste().GetByResortID(ctx, resort.ID)
+	if err != nil {
+		pistes = []models.SkiPiste{}
+	}
+
+	// Merge contiguous pistes with the same Name, Difficulty, and PisteType
+	pistes = mergeContiguousPistes(pistes)
+
+	lifts, err := s.store.SkiLift().GetByResortID(ctx, resort.ID)
+	if err != nil {
+		lifts = []models.SkiLift{}
+	}
+
+	dist := calculateDistance(userLat, userLng, resort.Latitude, resort.Longitude)
+
+	detailedResort := &ResortDetailDTO{
+		SkiResort:  *resort,
+		DistanceKM: dist,
+		Pistes:     pistes,
+		Lifts:      lifts,
+	}
+
+	return detailedResort, nil
+}
+
 type PistePoint struct {
 	X float64
 	Y float64
@@ -414,31 +477,6 @@ func reverseCoordinates(piste models.SkiPiste) models.SkiPiste {
 	}
 
 	return piste
-}
-
-func (s *SkiResortService) ListByBBox(ctx context.Context, minLatStr, maxLatStr, minLonStr, maxLonStr string) ([]models.SkiResort, error) {
-	minLat, err1 := strconv.ParseFloat(minLatStr, 64)
-	maxLat, err2 := strconv.ParseFloat(maxLatStr, 64)
-	minLon, err3 := strconv.ParseFloat(minLonStr, 64)
-	maxLon, err4 := strconv.ParseFloat(maxLonStr, 64)
-
-	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
-		return nil, apierr.ErrBadRequest.WithDetail("minLat, maxLat, minLon and maxLon must be valid numbers")
-	}
-
-	filter := store.SkiResortBBoxFilter{
-		MinLatitude:  &minLat,
-		MaxLatitude:  &maxLat,
-		MinLongitude: &minLon,
-		MaxLongitude: &maxLon,
-	}
-
-	resorts, err := s.store.SkiResort().ListByBBox(ctx, filter)
-	if err != nil {
-		return nil, err
-	}
-
-	return resorts, nil
 }
 
 func calculateDistance(lat1, lon1, lat2, lon2 float64) float64 {

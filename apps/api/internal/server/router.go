@@ -56,6 +56,7 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.GET("/resorts/bbox", skiResortHandler.ListByBBox)
 			protected.GET("/resorts/nearby", skiResortHandler.ListNearby)
 			protected.GET("/resorts/by-name", skiResortHandler.ListByName)
+			protected.GET("/resorts/closeness", skiResortHandler.GetByCloseness)
 
 			// Tracking routes
 			trackPointHandler := v1.NewTrackPointHandler(deps.Services.TrackPoint, deps.Store)

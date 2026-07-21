@@ -57,6 +57,7 @@ type SkiResortStore interface {
 	ListByName(ctx context.Context, name string) ([]models.SkiResort, error)
 	ListAll(ctx context.Context, filter SkiResortListFilter) ([]models.SkiResort, error)
 	ListByBBox(ctx context.Context, filter SkiResortBBoxFilter) ([]models.SkiResort, error)
+	GetByCloseness(ctx context.Context, lat, lon float64) (*models.SkiResort, error)
 }
 
 type SkiPisteStore interface {

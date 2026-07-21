@@ -68,3 +68,20 @@ func (h *SkiResortHandler) ListByBBox(c *gin.Context) {
 
 	httputil.RespondOK(c, resorts)
 }
+
+func (h *SkiResortHandler) GetByCloseness(c *gin.Context) {
+	latStr := c.Query("lat")
+	lngStr := c.Query("lon")
+	if latStr == "" || lngStr == "" {
+		httputil.RespondError(c, fmt.Errorf("missing required query parameters: lat, lon"))
+		return
+	}
+
+	resort, err := h.svc.GetByCloseness(c.Request.Context(), latStr, lngStr)
+	if err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+
+	httputil.RespondOK(c, resort)
+}

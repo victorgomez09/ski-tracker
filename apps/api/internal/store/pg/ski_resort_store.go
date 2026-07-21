@@ -69,3 +69,25 @@ func (s *skiResortStore) ListByBBox(ctx context.Context, filter store.SkiResortB
 	err := q.Scan(ctx)
 	return resorts, err
 }
+
+func (s *skiResortStore) GetByCloseness(ctx context.Context, latitude, longitude float64) (*models.SkiResort, error) {
+	var resort models.SkiResort
+	distanceFormula := `6371 * acos(
+		cos(radians(?)) * cos(radians(latitude)) * 
+		cos(radians(longitude) - radians(?)) + 
+		sin(radians(?)) * sin(radians(latitude))
+	)`
+
+	err := s.db.NewSelect().
+		Model(&resort).
+		Where("name IS NOT NULL AND name != ? AND tags->>'status' = ?", "No name", "operating").
+		OrderExpr(distanceFormula+" ASC", latitude, longitude, latitude).
+		Limit(1).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &resort, nil
+}
