@@ -1,5 +1,15 @@
 import * as SQLite from 'expo-sqlite';
 
+export interface TrackPoint {
+  id?: number;
+  lat: number;
+  lon: number;
+  alt: number;
+  speed: number;
+  pressure: number | null;
+  timestamp: number;
+}
+
 /**
  * Initializes the SQLite database by creating the necessary table for storing tracking points. This function should be called at the start of the application to ensure that the database is ready for use.
  */
@@ -37,7 +47,7 @@ export const savePointToLocalDB = async (lat: number,
  * Retrieves all location points from the local SQLite database, ordered by timestamp.
  */
 export const getAllPoints = async (db: SQLite.SQLiteDatabase) => {
-  return await db.getAllAsync('SELECT * FROM track_points ORDER BY timestamp ASC');
+  return await db.getAllAsync('SELECT * FROM track_points ORDER BY timestamp ASC') as TrackPoint[];
 };
 
 /**

@@ -13,6 +13,7 @@ type Store interface {
 	SkiPiste() SkiPisteStore
 	SkiLift() SkiLiftStore
 	User() UserStore
+	TrackPoint() TrackPointStore
 }
 
 // Pagination request parameters.
@@ -72,4 +73,11 @@ type UserStore interface {
 	Create(ctx context.Context, user *models.User) error
 	Update(ctx context.Context, user *models.User) error
 	Delete(ctx context.Context, id string) error
+}
+
+type TrackPointStore interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*models.TrackPoint, error)
+	GetByUser(ctx context.Context, userID uuid.UUID) ([]*models.TrackPoint, error)
+	Create(ctx context.Context, trackPoint *models.TrackPoint) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }

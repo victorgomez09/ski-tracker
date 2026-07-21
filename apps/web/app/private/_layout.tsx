@@ -26,6 +26,13 @@ export default function RootLayout() {
         }} 
       />
       <Tabs.Screen 
+        name="tracking" 
+        options={{ 
+          title: 'Tracking', 
+          tabBarIcon: ({ color }) => <Ionicons name="navigate-outline" size={16} color={color} />
+        }} 
+      />
+      <Tabs.Screen 
         name="resorts" 
         options={{ 
           title: 'Resorts', 

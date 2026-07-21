@@ -1,13 +1,17 @@
-import { API_BASE_URL } from "constants/constants";
 import { useRouter } from "expo-router";
-import { Resort } from "models/ski-resort.model";
 import { useState } from "react";
+import axios from "axios";
+
+import { API_BASE_URL } from "constants/constants";
+import { Resort } from "models/ski-resort.model";
+import { useAuth } from "context/auth.context";
 
 export default function ResortsView() {
     const router = useRouter();
 
     const [resorts, setResorts] = useState<Resort[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
+    const { token } = useAuth();
 
     const handleSearch = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const term = event.target.value;
@@ -15,10 +19,16 @@ export default function ResortsView() {
 
         if (term.length > 2) {
             try {
-                const response = await fetch(`${API_BASE_URL}/resorts/by-name?name=${encodeURIComponent(term)}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    setResorts(data);
+                const request = axios.get(`${API_BASE_URL}/resorts/by-name`, {
+                    params: { name: term },
+                    headers: {
+                        "Content-Type": "application/json",
+                        'Authorization': `Bearer ${token}`
+                    },
+                });
+                const response = await request;
+                if (response.status === 200) {
+                    setResorts(response.data);
                 } else {
                     console.error("Error fetching resorts:", response.statusText);
                 }
@@ -63,13 +73,13 @@ export default function ResortsView() {
                                 </div>
                                 <div className="text-xs uppercase font-semibold opacity-60 badge badge-soft badge-primary">{resort.Country}</div>
                                 <div className="flex flex-col gap-2">
-                                <a href={resort.Website} className="text-xs opacity-60 link link-primary">{resort.Website}</a>
-                                <button
-                                    className="btn btn-sm btn-primary"
-                                    onClick={() => router.push(`/?lat=${resort.Latitude}&lng=${resort.Longitude}&zoom=13`)}
-                                >
-                                    View on map
-                                </button>
+                                    <a href={resort.Website} className="text-xs opacity-60 link link-primary">{resort.Website}</a>
+                                    <button
+                                        className="btn btn-sm btn-primary"
+                                        onClick={() => router.push(`/private?lat=${resort.Latitude}&lng=${resort.Longitude}&zoom=13`)}
+                                    >
+                                        View on map
+                                    </button>
                                 </div>
                             </li>
                         ))}

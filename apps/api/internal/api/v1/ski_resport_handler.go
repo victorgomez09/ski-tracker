@@ -37,7 +37,7 @@ func (h *SkiResortHandler) ListByName(c *gin.Context) {
 
 func (h *SkiResortHandler) ListNearby(c *gin.Context) {
 	latStr := c.Query("lat")
-	lngStr := c.Query("lng")
+	lngStr := c.Query("lon")
 	radStr := c.DefaultQuery("radius", "50")
 
 	resorts, err := h.svc.List(c.Request.Context(), latStr, lngStr, radStr)

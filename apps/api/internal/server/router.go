@@ -53,9 +53,15 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		{
 			// Resort routes
 			skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
+			protected.GET("/resorts/bbox", skiResortHandler.ListByBBox)
 			protected.GET("/resorts/nearby", skiResortHandler.ListNearby)
 			protected.GET("/resorts/by-name", skiResortHandler.ListByName)
-			protected.GET("/resorts/bbox", skiResortHandler.ListByBBox)
+
+			// Tracking routes
+			trackPointHandler := v1.NewTrackPointHandler(deps.Services.TrackPoint, deps.Store)
+			protected.POST("/track-points", trackPointHandler.Create)
+			protected.GET("/track-points", trackPointHandler.GetByUser)
+			protected.GET("/track-points/:id", trackPointHandler.GetByID)
 
 			// User routes
 			userHandler := v1.NewUserHandler(deps.Services.User, deps.Store)

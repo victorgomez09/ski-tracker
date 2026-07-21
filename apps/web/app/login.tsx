@@ -1,7 +1,6 @@
-import { SubmitHandler, useForm } from "react-hook-form";
-import * as SecureStore from 'expo-secure-store';
 import { useRouter } from "expo-router";
-import { Platform } from "react-native";
+import { SubmitHandler, useForm } from "react-hook-form";
+import axios from "axios";
 
 import { API_BASE_URL } from "constants/constants";
 import { useAuth } from "context/auth.context";
@@ -27,16 +26,21 @@ export default function LoginView() {
     } = useForm<Login>({ mode: "onTouched" })
 
     const onSubmit: SubmitHandler<Login> = async (data) => {
-        const request = await fetch(`${API_BASE_URL}/auth/login`, {
-            body: JSON.stringify(data),
-            method: "POST",
+        const request = await axios.post(`${API_BASE_URL}/auth/login`, data, {
             headers: {
                 "Content-Type": "application/json"
             }
-        })
+        });
+        // const request = await fetch(`${API_BASE_URL}/auth/login`, {
+        //     body: JSON.stringify(data),
+        //     method: "POST",
+        //     headers: {
+        //         "Content-Type": "application/json"
+        //     }
+        // })
 
-        if (request.ok) {
-            const data = await request.json() as LoginResponse;
+        if (request.status === 200) {
+            const data = request.data as LoginResponse;
             
             signIn(data.access_token);
             router.push("/private");

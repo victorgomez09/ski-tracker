@@ -14,6 +14,7 @@
     "@expo/vector-icons": "^15.0.2",
     "@tailwindcss/postcss": "^4.1.13",
     "@types/leaflet": "^1.9.21",
+    "axios": "^1.18.1",
     "daisyui": "^5.6.18",
     "expo": "~56.0.4",
     "expo-location": "~56.0.21",
