@@ -20,7 +20,8 @@ func init() {
 					alt DOUBLE PRECISION,
 					speed DOUBLE PRECISION,
 					timestamp BIGINT NOT NULL,
-					user_id UUID REFERENCES users(id) ON DELETE CASCADE
+					user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+					resort_id TEXT REFERENCES ski_resorts(id) ON DELETE SET NULL
 				);
 			`,
 		}

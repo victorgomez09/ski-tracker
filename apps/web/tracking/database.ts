@@ -22,6 +22,7 @@ export const initDB = async (db: SQLite.SQLiteDatabase) => {
       alt REAL,
       speed REAL,
       pressure REAL,
+      resort_id TEXT,
       timestamp INTEGER
     );
   `);
@@ -36,10 +37,11 @@ export const savePointToLocalDB = async (lat: number,
   alt: number, 
   speed: number,
   pressure: number | null,
+  resortId: string | null,
   timestamp: number, db: SQLite.SQLiteDatabase) => {
   await db.runAsync(
-    'INSERT INTO track_points (lat, lon, alt, speed, pressure, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
-    [lat, lon, alt, speed, pressure, timestamp]
+    'INSERT INTO track_points (lat, lon, alt, speed, pressure, resort_id, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [lat, lon, alt, speed, pressure, resortId, timestamp]
   );
 };
 
@@ -54,5 +56,6 @@ export const getAllPoints = async (db: SQLite.SQLiteDatabase) => {
  * Clears all tracking points from the local SQLite database. This function should be called at the start of a new ski session.
  */
 export const clearTrack = async (db: SQLite.SQLiteDatabase) => {
+  // await db.runAsync('DROP TABLE IF EXISTS track_points');
   await db.execAsync('DELETE FROM track_points');
 };

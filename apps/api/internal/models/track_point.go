@@ -6,7 +6,7 @@ import (
 )
 
 type TrackPoint struct {
-	bun.BaseModel `bun:"table:track_point,alias:tp"`
+	bun.BaseModel `bun:"table:track_points,alias:tp"`
 
 	ID        uuid.UUID `bun:"id,pk,default:gen_random_uuid()" json:"id"`
 	Lat       float64   `bun:"lat" json:"lat" binding:"required"`
@@ -15,5 +15,6 @@ type TrackPoint struct {
 	Speed     float64   `bun:"speed" json:"speed"`
 	Timestamp int64     `bun:"timestamp" json:"timestamp" binding:"required"`
 
-	UserID uuid.UUID `bun:"user_id" json:"user_id"`
+	UserID   uuid.UUID `bun:"user_id" json:"user_id"`
+	ResortID string    `bun:"resort_id" json:"resort_id"`
 }

@@ -19,7 +19,7 @@ export default function InteractiveSkiMap() {
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
     const [viewState, setViewState] = useState({
-        longitude: parseFloat(searchParams.lng as string || '-3.971953'),
+        longitude: parseFloat(searchParams.lon as string || '-3.971953'),
         latitude: parseFloat(searchParams.lat as string || '40.797891'),
         zoom: parseInt(searchParams.zoom as string || '13'),
         bearing: 0,
@@ -28,12 +28,53 @@ export default function InteractiveSkiMap() {
     const { token } = useAuth();
 
     useEffect(() => {
-        const map = mapRef.current?.getMap();
-        console.log('mapRef.current?.getMap()', map);
-        if (!map) return;
+        const loadInitial = async () => {
+            if (Number(searchParams.zoom) < 10) {
+                try {
+                    const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
+                        params: {
+                            minLon: searchParams.minLon,
+                            minLat: searchParams.minLat,
+                            maxLon: searchParams.maxLon,
+                            maxLat: searchParams.maxLat
+                        },
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
+                    });
+                    if (request.status !== 200) {
+                        throw new Error(`HTTP error! status: ${request.status}`);
+                    }
+                    setResorts(request.data);
+                } catch (error) {
+                    console.error("Error fetching resorts:", error);
+                }
+            } else {
+                try {
+                    const lat = parseFloat(searchParams.lat as string || '40.797891');
+                    const lon = parseFloat(searchParams.lon as string || '-3.971953');
 
-        const bounds = map.getBounds();
-        fetchResortsByBounds(bounds);
+                    const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                        params: {
+                            lat: lat,
+                            lon: lon,
+                            radius: 50
+                        },
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
+                    });
+                    if (request.status !== 200) {
+                        throw new Error(`HTTP error! status: ${request.status}`);
+                    }
+                    setResorts(request.data);
+                } catch (error) {
+                    console.error("Error fetching resorts:", error);
+                }
+            }
+        }
+
+        loadInitial();
     }, []);
 
     // --- Layer styles ---
@@ -77,6 +118,34 @@ export default function InteractiveSkiMap() {
         }
     };
 
+    const pisteDirectionStyle: LayerProps = {
+        id: 'piste-directions',
+        type: 'symbol',
+        minzoom: 14,
+        layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 150,
+            'text-field': '>',
+            'text-size': 12,
+            'text-rotation-alignment': 'map',
+            'text-keep-upright': false,
+            'text-allow-overlap': false,
+            'text-ignore-placement': false
+        },
+        paint: {
+            'text-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00e676',
+                'easy', '#2979ff',
+                'intermediate', '#ff1744',
+                'advanced', '#212121',
+                '#9e9e9e'
+            ],
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5
+        }
+    }
+
     const liftLabelStyle: LayerProps = {
         id: 'lift-labels',
         type: 'symbol',
@@ -107,34 +176,6 @@ export default function InteractiveSkiMap() {
                 3
             ],
             'line-dasharray': [2, 2]
-        }
-    };
-
-    const pisteDirectionStyle: LayerProps = {
-        id: 'piste-directions',
-        type: 'symbol',
-        minzoom: 14,
-        layout: {
-            'symbol-placement': 'line',
-            'symbol-spacing': 150,
-            'text-field': '>',
-            'text-size': 12,
-            'text-rotation-alignment': 'map',
-            'text-keep-upright': false,
-            'text-allow-overlap': true,
-            'text-ignore-placement': true
-        },
-        paint: {
-            'text-color': [
-                'match', ['get', 'difficulty'],
-                'novice', '#00e676',
-                'easy', '#2979ff',
-                'intermediate', '#ff1744',
-                'advanced', '#212121',
-                '#9e9e9e'
-            ],
-            'text-halo-color': '#ffffff',
-            'text-halo-width': 1.5
         }
     };
 
@@ -316,8 +357,14 @@ export default function InteractiveSkiMap() {
         const currentZoom = map.getZoom();
 
         if (center && typeof center.lng === 'number' && typeof center.lat === 'number' && typeof currentZoom === 'number') {
+            const sw = bounds.getSouthWest();
+            const ne = bounds.getNorthEast();
             router.setParams({
-                lng: center.lng.toFixed(4),
+                minLon: sw.lng,
+                minLat: sw.lat,
+                maxLon: ne.lng,
+                maxLat: ne.lat,
+                lon: center.lng.toFixed(4),
                 lat: center.lat.toFixed(4),
                 zoom: currentZoom.toFixed(0)
             });

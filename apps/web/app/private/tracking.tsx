@@ -34,7 +34,6 @@ export default function InteractiveSkiMap() {
     const [isLoading, setIsLoading] = useState(false);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
     const [showLastTracks, setShowLastTracks] = useState(false);
-
     const [viewState, setViewState] = useState({
         longitude: parseFloat(searchParams.lng as string || '-3.971953'),
         latitude: parseFloat(searchParams.lat as string || '40.797891'),
@@ -45,10 +44,10 @@ export default function InteractiveSkiMap() {
 
     const range = 0.05;
     const bounds: [number, number, number, number] = [
-        viewState.longitude - range,
-        viewState.latitude - range,
-        viewState.longitude + range,
-        viewState.latitude + range
+        parseFloat(searchParams.lng as string || '-3.971953') - range,
+        parseFloat(searchParams.lat as string || '40.797891') - range,
+        parseFloat(searchParams.lng as string || '-3.971953') + range,
+        parseFloat(searchParams.lat as string || '40.797891') + range
     ];
 
     // --- Database initialization and tracking status on mount ---
@@ -58,7 +57,7 @@ export default function InteractiveSkiMap() {
         const fetchResortDetails = async () => {
             try {
                 const request = await axios.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
-                    params: { lat: viewState.latitude, lon: viewState.longitude },
+                    params: { lat: searchParams.lat, lon: searchParams.lng },
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 if (request.status === 200) {
@@ -146,9 +145,9 @@ export default function InteractiveSkiMap() {
             if (response.status === 200 || response.status === 201) {
                 alert("Track uploaded successfully to the backend!");
                 // Optional: clear after successful upload:
-                // await clearTrack(db);
-                // setTrackPoints([]);
-                // setHasTrackData(false);
+                await clearTrack(db);
+                setTrackPoints([]);
+                setHasTrackData(false);
             }
         } catch (error) {
             console.error("Error uploading track:", error);
@@ -199,6 +198,34 @@ export default function InteractiveSkiMap() {
         }
     };
 
+    const pisteDirectionStyle: LayerProps = {
+        id: 'piste-directions',
+        type: 'symbol',
+        minzoom: 14,
+        layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 150,
+            'text-field': '>',
+            'text-size': 12,
+            'text-rotation-alignment': 'map',
+            'text-keep-upright': false,
+            'text-allow-overlap': false,
+            'text-ignore-placement': false
+        },
+        paint: {
+            'text-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00e676',
+                'easy', '#2979ff',
+                'intermediate', '#ff1744',
+                'advanced', '#212121',
+                '#9e9e9e'
+            ],
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5
+        }
+    };
+
     const liftLabelStyle: LayerProps = {
         id: 'lift-labels',
         type: 'symbol',
@@ -229,34 +256,6 @@ export default function InteractiveSkiMap() {
                 3
             ],
             'line-dasharray': [2, 2]
-        }
-    };
-
-    const pisteDirectionStyle: LayerProps = {
-        id: 'piste-directions',
-        type: 'symbol',
-        minzoom: 14,
-        layout: {
-            'symbol-placement': 'line',
-            'symbol-spacing': 150,
-            'text-field': '>',
-            'text-size': 12,
-            'text-rotation-alignment': 'map',
-            'text-keep-upright': false,
-            'text-allow-overlap': true,
-            'text-ignore-placement': true
-        },
-        paint: {
-            'text-color': [
-                'match', ['get', 'difficulty'],
-                'novice', '#00e676',
-                'easy', '#2979ff',
-                'intermediate', '#ff1744',
-                'advanced', '#212121',
-                '#9e9e9e'
-            ],
-            'text-halo-color': '#ffffff',
-            'text-halo-width': 1.5
         }
     };
 
@@ -350,12 +349,13 @@ export default function InteractiveSkiMap() {
         }] : []
     }), [trackPoints]);
 
+    // --- FETCHERS ---
     const fetchLastTracks = async () => {
         if (showLastTracks) {
             const request = await axios.get<TrackPoint[]>(`${API_BASE_URL}/track-points`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-    
+
             if (request.status === 200) {
                 setTrackPoints(request.data);
             }
@@ -367,7 +367,7 @@ export default function InteractiveSkiMap() {
     // --- Interaction Handlers ---
     const handleMouseMove = (event: any) => {
         const map = event.target;
-        if (!map.isStyleLoaded() || viewState.zoom < 10) return;
+        if (!map.isStyleLoaded() || viewState?.zoom < 10) return;
         try {
             const features = map.queryRenderedFeatures(event.point, { layers: ['piste-lines', 'lift-lines'] });
             if (features.length > 0) {
@@ -377,6 +377,8 @@ export default function InteractiveSkiMap() {
                 map.getCanvas().style.cursor = '';
                 setHoveredFeatureId(null);
             }
+
+            setViewState(event.viewState);
         } catch (error) { }
     };
 
@@ -387,7 +389,7 @@ export default function InteractiveSkiMap() {
 
     const handleMapClick = (event: any) => {
         const map = event.target;
-        if (!map.isStyleLoaded() || viewState.zoom < 10) return;
+        if (!map.isStyleLoaded() || viewState?.zoom < 10) return;
         try {
             const features = map.queryRenderedFeatures(event.point, { layers: ['piste-lines', 'lift-lines'] });
             if (!features.length) return;
@@ -595,6 +597,7 @@ export default function InteractiveSkiMap() {
                     simulatedAlt,
                     simulatedSpeed,
                     simulatedPressure,
+                    resort.ID || null,
                     Date.now(),
                     db
                 );
@@ -635,8 +638,7 @@ export default function InteractiveSkiMap() {
                     <label className="swap">
                         <input type="checkbox" checked={showLastTracks} onChange={() => setShowLastTracks(!showLastTracks)} />
 
-                        <Eye />
-                        <EyeOff />
+                        {showLastTracks ? <Eye /> : <EyeOff />}
                     </label>
                 </button>
 
@@ -680,7 +682,7 @@ export default function InteractiveSkiMap() {
             <Map
                 ref={mapRef}
                 {...viewState}
-                onMove={evt => setViewState(evt.viewState)}
+                initialViewState={viewState}
                 onMouseMove={handleMouseMove}
                 onMoveEnd={handleMoveEnd}
                 onMouseLeave={handleMouseLeave}
@@ -698,7 +700,7 @@ export default function InteractiveSkiMap() {
                 <NavigationControl position="top-right" />
 
                 {/* --- Detailed Elements (Zoom >= 10) --- */}
-                {viewState.zoom >= 10 && (
+                {(viewState?.zoom || Number(searchParams.zoom)) >= 10 && (
                     <>
                         {/* Piste Layer */}
                         <Source id="pistes-source" type="geojson" data={pistesGeoJSON}>

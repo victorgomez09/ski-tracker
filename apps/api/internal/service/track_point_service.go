@@ -16,6 +16,7 @@ type CreateTrackPointInput struct {
 	Lon       float64 `json:"lon" binding:"required"`
 	Alt       float64 `json:"alt"`
 	Speed     float64 `json:"speed"`
+	ResortID  string  `json:"resort_id"`
 	Timestamp int64   `json:"timestamp" binding:"required"`
 }
 
@@ -60,6 +61,7 @@ func (s *TrackPointService) Create(ctx context.Context, input []CreateTrackPoint
 			Speed:     tp.Speed,
 			Timestamp: tp.Timestamp,
 			UserID:    userID,
+			ResortID:  tp.ResortID,
 		}
 
 		err := s.store.TrackPoint().Create(ctx, trackPoint)
@@ -101,25 +103,4 @@ func (s *TrackPointService) calculateDistance(lat1, lon1, lat2, lon2 float64) fl
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 
 	return earthRadius * c
-}
-
-// CalculateSpeed calcula la velocidad en km/h
-// p1: punto anterior, p2: punto actual
-func (s *TrackPointService) calculateSpeed(lat1, lon1 float64, time1 int64, lat2, lon2 float64, time2 int64) float64 {
-	distanceMeters := s.calculateDistance(lat1, lon1, lat2, lon2)
-
-	// Tiempo en segundos
-	timeSeconds := float64(time2-time1) / 1000.0
-
-	if timeSeconds <= 0 {
-		return 0.0
-	}
-
-	// Metros por segundo (m/s)
-	speedMps := distanceMeters / timeSeconds
-
-	// Convertir a Kilómetros por hora (km/h)
-	speedKmh := speedMps * 3.6
-
-	return speedKmh
 }
