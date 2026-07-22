@@ -15,4 +15,5 @@ type User struct {
 	DisplayName  string    `bun:"display_name" json:"display_name"`
 	FirstName    string    `bun:"first_name,default:''" json:"first_name"`
 	LastName     string    `bun:"last_name,default:''" json:"last_name"`
+	ActivityType string    `bun:"activity_type,default:'ski'" json:"activity_type"`
 }

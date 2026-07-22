@@ -69,13 +69,22 @@ func (s *SkiSessionService) GetByID(ctx context.Context, sessionID uuid.UUID) (*
 }
 
 func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, resortID string) (*models.SkiSession, error) {
-	session := &models.SkiSession{
-		UserID:    userID,
-		ResortID:  resortID,
-		StartTime: time.Now(),
+	user, err := s.store.User().GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve user: %w", err)
 	}
 
-	_, err := s.store.SkiSession().Create(ctx, session)
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	session := &models.SkiSession{
+		UserID:       userID,
+		ResortID:     resortID,
+		StartTime:    time.Now(),
+		ActivityType: user.ActivityType,
+	}
+
+	_, err = s.store.SkiSession().Create(ctx, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start ski session: %w", err)
 	}

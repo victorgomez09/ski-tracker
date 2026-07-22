@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Platform } from "react-native";
 import * as SecureStore from 'expo-secure-store';
+import axios from "axios";
 
 import { API_BASE_URL } from "constants/constants";
 import type { User } from "models/user.model";
+import { useAuth } from "context/auth.context";
 
 const themes: { [key: string]: string } = {
     "light": "Default",
@@ -27,20 +29,50 @@ const themes: { [key: string]: string } = {
 
 export default function ProfileView() {
     const [user, setUser] = useState<User | null>(null);
-    const [theme, setTheme] = useState(
-        JSON.parse(localStorage.getItem('theme') || '{}') || "winter"
-    );
+    const [theme, setTheme] = useState(() => {
+        const saved = localStorage.getItem('theme');
+        return saved ? JSON.parse(saved) : "winter";
+    });
+    const [snowSport, setSnowSport] = useState(user?.activity_type || "ski");
+    const { token } = useAuth();
 
     useEffect(() => {
         localStorage.setItem('theme', JSON.stringify(theme));
+        document.documentElement.setAttribute('data-theme', theme);
     }, [theme]);
+
+    useEffect(() => {
+        const updateActivityType = async () => {
+            if (user && user.activity_type !== snowSport) {
+                try {
+                    const request = await axios.patch<User>(`${API_BASE_URL}/users/me`, {
+                        activity_type: snowSport,
+                    }, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                        },
+                    });
+
+                    if (request.status === 200) {
+                        setUser(request.data);
+                    }
+                } catch (error) {
+                    console.error("Error updating activity type:", error);
+                }
+            }
+        };
+        updateActivityType();
+    }, [snowSport]);
 
     useEffect(() => {
         const fetchProfile = async () => {
             try {
-                const token = localStorage.getItem('jwt_key');
+                const token = Platform.OS === 'web' 
+                    ? localStorage.getItem('jwt_key') 
+                    : await SecureStore.getItemAsync('jwt_key');
+
                 if (!token) {
-                    console.error("No JWT token found in localStorage");
+                    console.error("No JWT token found");
                     return;
                 }
 
@@ -64,66 +96,96 @@ export default function ProfileView() {
         fetchProfile();
     }, []);
 
+    const handleLogout = async () => {
+        if (Platform.OS === 'web') {
+            localStorage.removeItem('jwt_key');
+        } else {
+            await SecureStore.deleteItemAsync('jwt_key');
+        }
+        window.location.reload();
+    };
+
     return (
-        <div className="hero bg-base-200 min-h-screen">
-            <div className="hero-content flex-col">
-                <div className="card bg-base-100 w-80 shrink-0 shadow-md">
-                    <div className="card-body">
-                        <div className="flex items-center gap-2">
-                            <div className="dropdown">
-                                <div tabIndex={0} role="button" className="btn m-1">
-                                    Change!
-                                    <svg
-                                        width="12px"
-                                        height="12px"
-                                        className="inline-block h-2 w-2 fill-current opacity-60"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        viewBox="0 0 2048 2048">
-                                        <path d="M1799 349l242 241-1017 1017L7 590l242-241 775 775 775-775z"></path>
-                                    </svg>
-                                </div>
-                                <ul tabIndex={-1} className="dropdown-content bg-base-300 rounded-box z-1 w-52 h-32 overflow-y-auto p-2 shadow-2xl">
-                                    {Object.entries(themes).map(([key, value]) => (
-                                        <li key={key}>
-                                            <input
-                                                type="radio"
-                                                name="theme-dropdown"
-                                                className="theme-controller w-full btn btn-sm btn-block btn-ghost justify-start"
-                                                aria-label={value}
-                                                value={key}
-                                                onClick={() => setTheme(key)} />
-                                        </li>
-                                    ))}
-                                </ul>
+        <div className="hero bg-base-200 max-h-[calc(100vh-4rem)] py-8">
+            <div className="hero-content flex-col w-full max-w-md gap-6">
+                
+                {/* USER INFORMATION CARD */}
+                <div className="card bg-base-100 w-full shadow-xl">
+                    <div className="card-body items-center text-center">
+                        <div className="avatar placeholder mb-2">
+                            <div className="flex items-center justify-center bg-neutral text-neutral-content w-20 rounded-full text-2xl font-bold">
+                                {user?.first_name ? user.first_name[0].toUpperCase() : "⛷️"}
                             </div>
-
-                            <p>Current theme: <span className="ml-2">{themes[theme]}</span></p>
                         </div>
-                    </div>
-                </div>
-
-                <div className="card bg-base-100 w-80 shrink-0 shadow-md">
-                    <div className="card-body">
-                        <h1 className="card-title">Profile</h1>
                         {user ? (
-                            <div>
-                                <p>Display Name: {user.display_name}</p>
-                                <p>Email: {user.email}</p>
-                                <p>First Name: {user.first_name}</p>
-                                <p>Last Name: {user.last_name}</p>
-                            </div>
+                            <>
+                                <h2 className="card-title text-xl font-bold">{user.display_name || `${user.first_name} ${user.last_name}`}</h2>
+                                <p className="text-sm opacity-70">{user.email}</p>
+                            </>
                         ) : (
-                            <p>Loading profile...</p>
+                            <div className="flex flex-col gap-2 w-full animate-pulse">
+                                <div className="h-4 bg-base-300 rounded w-3/4 mx-auto"></div>
+                                <div className="h-3 bg-base-300 rounded w-1/2 mx-auto"></div>
+                            </div>
                         )}
                     </div>
                 </div>
 
-                <div className="card bg-error/20 w-80 shrink-0 shadow-md cursor-pointer hover:boder-2 hover:border-error" onClick={async () => {
-                    Platform.OS === 'web' ? localStorage.removeItem('jwt_key') : await SecureStore.deleteItemAsync('jwt_key');
-                    window.location.reload();
-                }}>
-                    <div className="card-body font-semibold">
-                        <p>Logout</p>
+                {/* SNOW SPORT SELECTOR */}
+                <div className="card bg-base-100 w-full shadow-xl">
+                    <div className="card-body">
+                        <h3 className="card-title text-base font-semibold mb-2">Snow modality</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button 
+                                className={`btn ${snowSport === 'ski' ? 'btn-primary' : 'btn-outline'}`}
+                                onClick={() => setSnowSport('ski')}
+                            >
+                                🎿 Ski
+                            </button>
+                            <button 
+                                className={`btn ${snowSport === 'snow' ? 'btn-primary' : 'btn-outline'}`}
+                                onClick={() => setSnowSport('snow')}
+                            >
+                                🏂 Snowboard
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* THEME SELECTOR */}
+                <div className="card bg-base-100 w-full shadow-xl">
+                    <div className="card-body flex-row items-center justify-between py-4">
+                        <div>
+                            <h3 className="font-semibold">Appearance</h3>
+                            <p className="text-xs opacity-60">Actual theme: <span className="font-bold">{themes[theme]}</span></p>
+                        </div>
+                        <div className="dropdown dropdown-end">
+                            <div tabIndex={0} role="button" className="btn btn-sm m-1">
+                                Change theme
+                                <svg width="10px" height="10px" className="inline-block h-2 w-2 fill-current opacity-60 ml-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048">
+                                    <path d="M1799 349l242 241-1017 1017L7 590l242-241 775 775 775-775z"></path>
+                                </svg>
+                            </div>
+                            <ul tabIndex={0} className="dropdown-content bg-base-300 rounded-box z-50 w-52 h-48 overflow-y-auto p-2 shadow-2xl">
+                                {Object.entries(themes).map(([key, value]) => (
+                                    <li key={key} className="my-1">
+                                        <button 
+                                            className={`btn btn-sm btn-block justify-start ${theme === key ? 'btn-active btn-primary' : 'btn-ghost'}`}
+                                            onClick={() => setTheme(key)}
+                                        >
+                                            {value}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                {/* LOGOUT BUTTON */}
+                <div className="card bg-error text-error-content w-full shadow-md cursor-pointer hover:opacity-90 transition-opacity" onClick={handleLogout}>
+                    <div className="card-body py-4 flex-row justify-center items-center font-semibold gap-2">
+                        <span>Logout</span>
                     </div>
                 </div>
             </div>

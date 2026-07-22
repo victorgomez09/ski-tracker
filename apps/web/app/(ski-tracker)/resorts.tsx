@@ -127,7 +127,7 @@ export default function ResortsView() {
     }, [selectedResort]);
 
     return (
-        <div className="flex h-[calc(100vh-20rem)] flex-col gap-4 p-2 pb-24">
+        <div className="flex h-[calc(100vh-20rem)] flex-col gap-4 p-2 pb-24 bg-base-200">
             <label className="input input-bordered flex w-full min-h-10 items-center gap-2">
                 <svg className="h-[1em] w-[1em] opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                     <g strokeLinejoin="round" strokeLinecap="round" strokeWidth="2.5" fill="none" stroke="currentColor">
@@ -224,7 +224,7 @@ export default function ResortsView() {
                                                 key={session.id}
                                                 type="button"
                                                 onClick={() => handleSessionClick(session)}
-                                                className="w-full text-left p-3 rounded-lg bg-base-200 hover:bg-base-300 transition flex justify-between items-center border border-base-300"
+                                                className="w-full text-left p-3 rounded-lg cursor-pointer bg-base-200 hover:bg-base-300 hover:border-primary transition flex justify-between items-center border border-base-300"
                                             >
                                                 <div>
                                                     <div className="font-medium text-xs text-base-content">
@@ -233,9 +233,12 @@ export default function ResortsView() {
                                                     <div className="text-[10px] text-base-content/75 mt-0.5">
                                                         Dist: {(session.total_distance / 1000).toFixed(2)} km | Max Speed: {(session.max_speed * 3.6).toFixed(1)} km/h
                                                     </div>
+                                                    <div className="text-[10px] text-base-content/75 mt-0.5">
+                                                        Activity type: {session.activity_type.toUpperCase()}
+                                                    </div>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
-                                                    <span className="badge badge-sm badge-info badge-soft">{session.runs?.length || 0} runs</span>
+                                                    <span className="badge badge-sm badge-primary badge-soft">{session.runs?.length || 0} runs</span>
                                                     <span className="text-xs text-primary font-semibold">View map</span>
                                                 </div>
                                             </button>

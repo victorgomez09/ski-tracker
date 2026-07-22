@@ -14,6 +14,20 @@ import (
 	"github.com/victorgomez09/ski-tracker/internal/store"
 )
 
+type SkiSessionDto struct {
+	ID            uuid.UUID  `json:"id"`
+	StartTime     time.Time  `json:"start_time"`
+	EndTime       *time.Time `json:"end_time"`
+	TotalDistance float64    `json:"total_distance"`
+	MaxSpeed      float64    `json:"max_speed"`
+	VerticalDrop  float64    `json:"vertical_drop"`
+	CreatedAt     time.Time  `json:"created_at"`
+
+	User   models.User           `json:"user"`
+	Points []models.SessionPoint `json:"points,omitempty"`
+	Runs   []models.SkiRun       `json:"runs,omitempty"`
+}
+
 type SkiSessionHandler struct {
 	svc   *service.SkiSessionService
 	store store.Store

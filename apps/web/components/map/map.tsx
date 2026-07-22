@@ -11,10 +11,13 @@ import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
 import { MapDetailPanel } from './map-detail-panel';
+import { AltitudeTooltip } from './altitude-tooltip';
+import { SpeedTooltip } from './speed-tooltip';
 
 export default function InteractiveSkiMap() {
     const searchParams = useLocalSearchParams();
     const mapRef = useRef<MapRef>(null);
+    const isInternalMoveRef = useRef(false);
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
@@ -87,7 +90,13 @@ export default function InteractiveSkiMap() {
     });
     const { token } = useAuth();
 
-    useEffect(() => {
+useEffect(() => {
+        // Si el cambio de URL fue provocado por el propio mapa, lo ignoramos para evitar el bucle/tirón
+        if (isInternalMoveRef.current) {
+            isInternalMoveRef.current = false; // Reseteamos la bandera
+            return;
+        }
+
         if (searchParams.lat && searchParams.lon) {
             const lat = parseFloat(searchParams.lat as string);
             const lon = parseFloat(searchParams.lon as string);
@@ -217,6 +226,17 @@ export default function InteractiveSkiMap() {
                     'advanced', '#212121',
                     '#9e9e9e'
                 ]
+            ],
+            'line-dasharray': [
+                'case',
+                [
+                    'any',
+                    ['==', ['get', 'pisteType'], 'hike'],
+                    ['==', ['get', 'pisteType'], 'skitour'],
+                    ['==', ['get', 'grooming'], 'backcountry']
+                ],
+                ['literal', [2, 2]],
+                ['literal', [1, 0]]
             ],
             // if selected or hovered, increase width
             'line-width': [
@@ -377,6 +397,8 @@ export default function InteractiveSkiMap() {
                     properties: {
                         id: p.ID,
                         difficulty: p.Difficulty,
+                        pisteType: p.PisteType,
+                        grooming: p.Tags?.grooming,
                         name: p.Name || `Piste #${p.ID.slice(0, 4)}`,
                         resortName: r.Name
                     },
@@ -494,6 +516,7 @@ export default function InteractiveSkiMap() {
             }
         }
 
+        isInternalMoveRef.current = true;
         router.setParams({ zoom: currentZoom.toFixed(0) })
     };
 
@@ -574,6 +597,9 @@ export default function InteractiveSkiMap() {
         if (center && typeof center.lng === 'number' && typeof center.lat === 'number' && typeof currentZoom === 'number') {
             const sw = bounds.getSouthWest();
             const ne = bounds.getNorthEast();
+
+            isInternalMoveRef.current = true;
+
             router.setParams({
                 minLon: sw.lng,
                 minLat: sw.lat,
@@ -761,7 +787,7 @@ export default function InteractiveSkiMap() {
                                         <AreaChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, alt: p.altitude }))}>
                                             <XAxis dataKey="name" hide />
                                             <YAxis domain={['dataMin - 10', 'dataMax + 10']} hide />
-                                            <Tooltip formatter={(value) => [`${Math.round(Number(value))}m`, 'Altitude']} />
+                                            <Tooltip content={<AltitudeTooltip />} />
                                             <Area type="monotone" dataKey="alt" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
                                         </AreaChart>
                                     </ResponsiveContainer>
@@ -773,7 +799,7 @@ export default function InteractiveSkiMap() {
                                         <LineChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, speed: p.speed * 3.6 }))}>
                                             <XAxis dataKey="name" hide />
                                             <YAxis hide />
-                                            <Tooltip formatter={(value) => [`${Number(value).toFixed(1)} km/h`, 'Speed']} />
+                                            <Tooltip content={<SpeedTooltip />} />
                                             <Line type="monotone" dataKey="speed" stroke="#ef4444" strokeWidth={2} dot={false} />
                                         </LineChart>
                                     </ResponsiveContainer>
@@ -850,7 +876,7 @@ export default function InteractiveSkiMap() {
                                             <AreaChart data={trackPoints.map((p, idx) => ({ name: idx, alt: p.altitude }))}>
                                                 <XAxis dataKey="name" hide />
                                                 <YAxis domain={['dataMin - 20', 'dataMax + 20']} hide />
-                                                <Tooltip formatter={(value) => [`${Math.round(Number(value))}m`, 'Altitude']} />
+                                                <Tooltip content={<AltitudeTooltip />} />
                                                 <Area type="monotone" dataKey="alt" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
                                             </AreaChart>
                                         </ResponsiveContainer>
@@ -866,7 +892,7 @@ export default function InteractiveSkiMap() {
                                             <LineChart data={trackPoints.map((p, idx) => ({ name: idx, speed: p.speed * 3.6 }))}>
                                                 <XAxis dataKey="name" hide />
                                                 <YAxis hide />
-                                                <Tooltip formatter={(value) => [`${Number(value).toFixed(1)} km/h`, 'Speed']} />
+                                                <Tooltip content={<SpeedTooltip />} />
                                                 <Line type="monotone" dataKey="speed" stroke="#ef4444" strokeWidth={2} dot={false} />
                                             </LineChart>
                                         </ResponsiveContainer>
