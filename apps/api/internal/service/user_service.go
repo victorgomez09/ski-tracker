@@ -118,7 +118,18 @@ func (s *UserService) Login(ctx context.Context, input LoginInput) (*AuthResult,
 }
 
 func (s *UserService) Update(ctx context.Context, user *models.User) error {
-	err := s.store.User().Update(ctx, user)
+	userToUpdate, err := s.store.User().GetByID(ctx, user.ID)
+	if err != nil {
+		s.logger.Error("failed to get user by ID", "user_id", user.ID, "error", err)
+		return err
+	}
+
+	userToUpdate.DisplayName = user.DisplayName
+	userToUpdate.FirstName = user.FirstName
+	userToUpdate.LastName = user.LastName
+	userToUpdate.ActivityType = user.ActivityType
+
+	err = s.store.User().Update(ctx, userToUpdate)
 	if err != nil {
 		s.logger.Error("failed to update user", "user_id", user.ID, "error", err)
 		return err

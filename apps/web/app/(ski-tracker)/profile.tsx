@@ -33,7 +33,6 @@ export default function ProfileView() {
         const saved = localStorage.getItem('theme');
         return saved ? JSON.parse(saved) : "winter";
     });
-    const [snowSport, setSnowSport] = useState(user?.activity_type || "ski");
     const { token } = useAuth();
 
     useEffect(() => {
@@ -41,41 +40,30 @@ export default function ProfileView() {
         document.documentElement.setAttribute('data-theme', theme);
     }, [theme]);
 
-    useEffect(() => {
-        const updateActivityType = async () => {
-            if (user && user.activity_type !== snowSport) {
-                try {
-                    const request = await axios.patch<User>(`${API_BASE_URL}/users/me`, {
-                        activity_type: snowSport,
-                    }, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                        },
-                    });
+    const updateActivityType = async (type: "snow" | "ski") => {
+        if (user) {
+            try {
+                const request = await axios.put<User>(`${API_BASE_URL}/users/${user.id}`, {
+                    ...user,
+                    activity_type: type,
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                    },
+                });
 
-                    if (request.status === 200) {
-                        setUser(request.data);
-                    }
-                } catch (error) {
-                    console.error("Error updating activity type:", error);
+                if (request.status === 200) {
+                    setUser({...user!, activity_type: type});
                 }
+            } catch (error) {
+                console.error("Error updating activity type:", error);
             }
-        };
-        updateActivityType();
-    }, [snowSport]);
+        }
+    };
 
     useEffect(() => {
         const fetchProfile = async () => {
             try {
-                const token = Platform.OS === 'web' 
-                    ? localStorage.getItem('jwt_key') 
-                    : await SecureStore.getItemAsync('jwt_key');
-
-                if (!token) {
-                    console.error("No JWT token found");
-                    return;
-                }
-
                 const response = await fetch(`${API_BASE_URL}/users/me`, {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -108,7 +96,6 @@ export default function ProfileView() {
     return (
         <div className="hero bg-base-200 max-h-[calc(100vh-4rem)] py-8">
             <div className="hero-content flex-col w-full max-w-md gap-6">
-                
                 {/* USER INFORMATION CARD */}
                 <div className="card bg-base-100 w-full shadow-xl">
                     <div className="card-body items-center text-center">
@@ -137,14 +124,14 @@ export default function ProfileView() {
                         <h3 className="card-title text-base font-semibold mb-2">Snow modality</h3>
                         <div className="grid grid-cols-2 gap-3">
                             <button 
-                                className={`btn ${snowSport === 'ski' ? 'btn-primary' : 'btn-outline'}`}
-                                onClick={() => setSnowSport('ski')}
+                                className={`btn ${user?.activity_type === 'ski' ? 'btn-primary' : 'btn-outline'}`}
+                                onClick={() => { updateActivityType("ski"); }}
                             >
                                 🎿 Ski
                             </button>
                             <button 
-                                className={`btn ${snowSport === 'snow' ? 'btn-primary' : 'btn-outline'}`}
-                                onClick={() => setSnowSport('snow')}
+                                className={`btn ${user?.activity_type === 'snow' ? 'btn-primary' : 'btn-outline'}`}
+                                onClick={() => { updateActivityType("snow"); }}
                             >
                                 🏂 Snowboard
                             </button>

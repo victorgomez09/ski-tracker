@@ -2,7 +2,7 @@ import { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tab
 
 export default function BottomTabs({ state, descriptors, navigation }: BottomTabBarProps) {
     return (
-        <div className="dock">
+        <div className="dock bg-base-300">
             {state.routes.map((route, index) => {
                 const isFocused = state.index === index;
                 const descriptor = descriptors[route.key];
