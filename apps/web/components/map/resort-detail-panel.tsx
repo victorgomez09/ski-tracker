@@ -175,7 +175,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
     }, [stats]);
 
     return (
-        <div className="absolute top-4 left-4 z-1000 w-95 bg-white rounded-lg shadow-xl border border-gray-100 p-5 font-sans text-gray-800 max-h-[85vh] overflow-y-auto">
+        <div className="absolute top-4 left-4 z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow-2xl rounded-2xl p-4 w-96 max-h-[85vh] overflow-y-auto flex flex-col gap-3">
             <div className="flex justify-between items-start mb-2">
                 <div className="text-xs text-gray-500 font-medium tracking-wide">
                     {resort.Country || "Ski Resort"}

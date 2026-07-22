@@ -137,6 +137,12 @@ func (s *SkiSessionService) processSkiRunsAsync(ctx context.Context, sessionID u
 		}
 	}
 
+	// 5. Calculate and save session-wide metrics
+	sessionMetrics := s.calculatePhysicalMetrics(smoothedPoints)
+	if err := s.store.SkiSession().UpdateMetrics(ctx, sessionID, sessionMetrics.TotalDistance, sessionMetrics.MaxSpeed, sessionMetrics.VerticalDrop); err != nil {
+		s.logger.Error("failed to update session metrics", "session_id", sessionID, "error", err)
+	}
+
 	s.logger.Info("ski runs processing completed", "session_id", sessionID)
 	return nil
 }

@@ -23,6 +23,7 @@ export default function InteractiveSkiMap() {
     const [matchedPisteIds, setMatchedPisteIds] = useState<string[]>([]);
     const [activeTab, setActiveTab] = useState<'runs' | 'elevation' | 'speed'>('runs');
     const [selectedRun, setSelectedRun] = useState<any | null>(null);
+    const [hoveredRun, setHoveredRun] = useState<any | null>(null);
     const [sessionDetails, setSessionDetails] = useState<any | null>(null);
 
     const detectedRuns = useMemo(() => {
@@ -235,7 +236,7 @@ export default function InteractiveSkiMap() {
         paint: {
             'line-color': '#8e44ad', // purple
             'line-width': 4,
-            'line-opacity': 0.9
+            'line-opacity': (hoveredRun || selectedRun) ? 0.35 : 0.9
         }
     };
 
@@ -256,7 +257,30 @@ export default function InteractiveSkiMap() {
         paint: {
             'text-color': '#8e44ad', // purple
             'text-halo-color': '#ffffff',
-            'text-halo-width': 1.5
+            'text-halo-width': 1.5,
+            'text-opacity': (hoveredRun || selectedRun) ? 0.35 : 0.9
+        }
+    };
+
+    const highlightedRunCaseStyle: LayerProps = {
+        id: 'highlighted-run-case',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': '#1a052e', // darker purple/black outline
+            'line-width': 10,
+            'line-opacity': 0.8
+        }
+    };
+
+    const highlightedRunLineStyle: LayerProps = {
+        id: 'highlighted-run-line',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': '#e67e22', // orange highlight
+            'line-width': 5,
+            'line-opacity': 1.0
         }
     };
 
@@ -396,6 +420,24 @@ export default function InteractiveSkiMap() {
             }
         }] : []
     }), [trackPoints]);
+
+    const highlightedRunGeoJSON = useMemo(() => {
+        const run = hoveredRun || selectedRun;
+        if (!run || !run.points || run.points.length === 0) {
+            return { type: 'FeatureCollection' as const, features: [] };
+        }
+        return {
+            type: 'FeatureCollection' as const,
+            features: [{
+                type: 'Feature' as const,
+                properties: {},
+                geometry: {
+                    type: 'LineString' as const,
+                    coordinates: run.points.map((p: any) => [p.lon, p.lat])
+                }
+            }]
+        };
+    }, [hoveredRun, selectedRun]);
 
     // --- Fetchers ---
     const fetchResortsByBounds = async (bounds: maplibregl.LngLatBounds) => {
@@ -654,10 +696,18 @@ export default function InteractiveSkiMap() {
                         </Source>
 
                         {trackPoints.length > 0 && (
-                            <Source id="track-source" type="geojson" data={trackGeoJSON}>
-                                <Layer {...trackLineStyle} />
-                                <Layer {...trackDirectionStyle} />
-                            </Source>
+                            <>
+                                <Source id="track-source" type="geojson" data={trackGeoJSON}>
+                                    <Layer {...trackLineStyle} />
+                                    <Layer {...trackDirectionStyle} />
+                                </Source>
+                                {(hoveredRun || selectedRun) && (
+                                    <Source id="highlighted-run-source" type="geojson" data={highlightedRunGeoJSON}>
+                                        <Layer {...highlightedRunCaseStyle} />
+                                        <Layer {...highlightedRunLineStyle} />
+                                    </Source>
+                                )}
+                            </>
                         )}
                     </>
                 )}
@@ -765,6 +815,8 @@ export default function InteractiveSkiMap() {
                                                 key={run.id}
                                                 type="button"
                                                 className="w-full text-left p-2.5 rounded-xl bg-base-200 hover:bg-base-300 transition flex justify-between items-center border border-base-300 cursor-pointer"
+                                                onMouseEnter={() => setHoveredRun(run)}
+                                                onMouseLeave={() => setHoveredRun(null)}
                                                 onClick={() => {
                                                     setSelectedRun(run);
                                                     // Fly/Center map on this run's starting point

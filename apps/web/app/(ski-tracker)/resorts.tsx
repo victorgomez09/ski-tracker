@@ -111,7 +111,7 @@ export default function ResortsView() {
 
     const handleSessionClick = (session: any) => {
         if (!selectedResort) return;
-        router.push(`/?sessionId=${session.id}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=14`);
+        router.push(`/map?sessionId=${session.id}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=14`);
     }
 
     const selectedResortSummary = useMemo(() => {
@@ -181,7 +181,7 @@ export default function ResortsView() {
 
             {selectedResort && (
                 <div className="fixed inset-x-0 bottom-16 z-50 flex justify-center px-2 pb-2 w-full">
-                    <div className="w-full rounded-2xl border border-info bg-base-100 max-h-[70vh] flex flex-col shadow-xl">
+                    <div className="w-full rounded-2xl border border-info bg-base-300 h-full flex flex-col shadow-xl">
                         <div className="flex items-center justify-between border-b border-base-300 px-4 py-3 shrink-0">
                             <div>
                                 <h4 className="font-semibold">{selectedResort.Name}</h4>

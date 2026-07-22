@@ -84,3 +84,15 @@ func (u *skiSessionStore) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := u.db.NewDelete().Model((*models.SkiSession)(nil)).Where("id = ?", id).Exec(ctx)
 	return err
 }
+
+func (u *skiSessionStore) UpdateMetrics(ctx context.Context, sessionID uuid.UUID, totalDistance, maxSpeed, verticalDrop float64) error {
+	_, err := u.db.NewUpdate().
+		Model((*models.SkiSession)(nil)).
+		Set("total_distance = ?", totalDistance).
+		Set("max_speed = ?", maxSpeed).
+		Set("vertical_drop = ?", verticalDrop).
+		Where("id = ?", sessionID).
+		Exec(ctx)
+
+	return err
+}

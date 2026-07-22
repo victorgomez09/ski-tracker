@@ -216,6 +216,9 @@ def simulate_full_day():
     current_lift = random.choice(valid_lifts)
     current_alt = 1800.0
 
+    recent_pistes = []
+    recent_lifts = [current_lift["id"]]
+
     print(f"\n⛷️ Starting day at {RESORT_TARGET} at {current_time.strftime('%H:%M')}...")
 
     while current_time < end_time and simulated_runs < 8:
@@ -266,7 +269,20 @@ def simulate_full_day():
         # ---------------------------------------------------------
         # STEP C: Choose a real piste starting near the summit
         # ---------------------------------------------------------
-        chosen_piste = min(valid_pistes, key=lambda p: get_distance(p["coords"][0], current_pos))
+        # Find candidates starting near the summit (sorted by distance)
+        sorted_pistes = sorted(valid_pistes, key=lambda p: get_distance(p["coords"][0], current_pos))
+        
+        # Select from the top 5 closest pistes, avoiding recently visited ones if possible
+        piste_candidates = [p for p in sorted_pistes[:5] if p["id"] not in recent_pistes]
+        if not piste_candidates:
+            piste_candidates = sorted_pistes[:3]
+        chosen_piste = random.choice(piste_candidates)
+
+        # Update history
+        recent_pistes.append(chosen_piste["id"])
+        if len(recent_pistes) > 3:
+            recent_pistes.pop(0)
+
         print(f"[{current_time.strftime('%H:%M')}] 🏂 Descending piste: '{chosen_piste['name']}' (Difficulty: {chosen_piste['difficulty']})")
 
         piste_coords = chosen_piste["coords"]
@@ -307,8 +323,19 @@ def simulate_full_day():
             current_time += timedelta(seconds=30)
         send_points_batch(session_id, base_points, auth_headers)
 
-        # Find the next lift starting near current position
-        current_lift = min(valid_lifts, key=lambda l: get_distance(l["coords"][0], current_pos))
+        # Find the next lift starting near current position (sorted by distance)
+        sorted_lifts = sorted(valid_lifts, key=lambda l: get_distance(l["coords"][0], current_pos))
+        
+        # Select from the top 3 closest lifts, avoiding recently visited ones if possible
+        lift_candidates = [l for l in sorted_lifts[:3] if l["id"] not in recent_lifts]
+        if not lift_candidates:
+            lift_candidates = sorted_lifts[:2]
+        current_lift = random.choice(lift_candidates)
+
+        # Update history
+        recent_lifts.append(current_lift["id"])
+        if len(recent_lifts) > 2:
+            recent_lifts.pop(0)
 
     # 2. Finish session
     print(f"\n🏁 Day finished. Closing session in the API...")
