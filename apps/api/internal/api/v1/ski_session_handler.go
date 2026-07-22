@@ -25,13 +25,18 @@ func NewSkiSessionHandler(svc *service.SkiSessionService, s store.Store) *SkiSes
 
 func (h *SkiSessionHandler) ListByResort(c *gin.Context) {
 	resortID := c.Query("resort_id")
+	userID := middleware.GetUserID(c)
+	ctx := c.Request.Context()
+
+	var sessions []models.SkiSession
+	var err error
+
 	if resortID == "" {
-		httputil.RespondError(c, fmt.Errorf("resort_id query parameter is required"))
-		return
+		sessions, err = h.store.SkiSession().ListByUserID(ctx, userID)
+	} else {
+		sessions, err = h.store.SkiSession().ListByResortID(ctx, resortID)
 	}
 
-	ctx := c.Request.Context()
-	sessions, err := h.store.SkiSession().ListByResortID(ctx, resortID)
 	if err != nil {
 		httputil.RespondError(c, fmt.Errorf("failed to list ski sessions: %w", err))
 		return
@@ -45,7 +50,7 @@ func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 
 	// Expect JSON body: { "resortId": "<uuid>" }
 	var payload struct {
-		ResortID string `json:"resortId" binding:"required,uuid"`
+		ResortID string `json:"resortId" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		httpErr := fmt.Errorf("invalid request body: %w", err)
@@ -53,14 +58,8 @@ func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 		return
 	}
 
-	resortUUID, err := uuid.Parse(payload.ResortID)
-	if err != nil {
-		httputil.RespondError(c, fmt.Errorf("invalid resort ID: %w", err))
-		return
-	}
-
 	ctx := c.Request.Context()
-	session, err := h.svc.StartSession(ctx, userID, resortUUID)
+	session, err := h.svc.StartSession(ctx, userID, payload.ResortID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating ski session"})
 		return
@@ -132,4 +131,30 @@ func (h *SkiSessionHandler) FinishSession(c *gin.Context) {
 		"sessionId": sessionID,
 		"endTime":   now,
 	})
+}
+
+func (h *SkiSessionHandler) GetSession(c *gin.Context) {
+	sessionIDStr := c.Param("id")
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		httputil.RespondError(c, fmt.Errorf("invalid session ID: %w", err))
+		return
+	}
+
+	ctx := c.Request.Context()
+	session, err := h.store.SkiSession().GetByID(ctx, sessionID)
+	if err != nil {
+		httputil.RespondError(c, fmt.Errorf("failed to get session: %w", err))
+		return
+	}
+
+	points, err := h.store.SessionPoint().GetBySessionID(ctx, sessionID)
+	if err != nil {
+		httputil.RespondError(c, fmt.Errorf("failed to get session points: %w", err))
+		return
+	}
+
+	session.Points = points
+
+	httputil.RespondOK(c, session)
 }

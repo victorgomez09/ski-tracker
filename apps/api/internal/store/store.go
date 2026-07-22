@@ -82,6 +82,7 @@ type UserStore interface {
 type SkiSessionStore interface {
 	Raw(ctx context.Context, query string, wktLine string, result interface{}) error
 	ListByResortID(ctx context.Context, resortID string) ([]models.SkiSession, error)
+	ListByUserID(ctx context.Context, userID uuid.UUID) ([]models.SkiSession, error)
 	GetByID(ctx context.Context, sessionID uuid.UUID) (*models.SkiSession, error)
 	Create(ctx context.Context, skiSession *models.SkiSession) (*models.SkiSession, error)
 	Update(ctx context.Context, sessionID uuid.UUID, now time.Time) error

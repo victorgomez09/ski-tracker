@@ -12,6 +12,7 @@ export default function ResortsView() {
     const [resorts, setResorts] = useState<Resort[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedResort, setSelectedResort] = useState<Resort | null>(null);
+    const [sessions, setSessions] = useState<any[]>([]);
     const { token } = useAuth();
 
     const handleSearch = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,19 +47,29 @@ export default function ResortsView() {
 
     const handleResortSelect = async (resort: Resort) => {
         setSelectedResort(resort);
+        setSessions([]);
 
-        const request = await axios.get(`${API_BASE_URL}/ski-sessions`, {
-            params: { resort_id: resort.ID },
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-            },
-        });
+        try {
+            const request = await axios.get(`${API_BASE_URL}/ski-sessions`, {
+                params: { resort_id: resort.ID },
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+            });
 
-        if (request.status === 200) {
-            const sessions = request.data;
-            console.log("Ski sessions for resort:", resort.Name, sessions);
+            if (request.status === 200) {
+                setSessions(request.data.sessions || []);
+            }
+        } catch (err) {
+            console.error("Error fetching sessions:", err);
+            setSessions([]);
         }
+    }
+
+    const handleSessionClick = (session: any) => {
+        if (!selectedResort) return;
+        router.push(`/private?sessionId=${session.id}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=14`);
     }
 
     const selectedResortSummary = useMemo(() => {
@@ -75,7 +86,7 @@ export default function ResortsView() {
 
     return (
         <div className="flex h-[calc(100vh-20rem)] flex-col gap-4 p-2 pb-24">
-            <label className="input input-bordered flex w-full min-h-14 items-center gap-2">
+            <label className="input input-bordered flex w-full min-h-10 items-center gap-2">
                 <svg className="h-[1em] w-[1em] opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                     <g strokeLinejoin="round" strokeLinecap="round" strokeWidth="2.5" fill="none" stroke="currentColor">
                         <circle cx="11" cy="11" r="8"></circle>
@@ -95,14 +106,14 @@ export default function ResortsView() {
                             <button
                                 key={resort.ID}
                                 type="button"
-                                className="card border border-base-300 bg-base-100 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                                className="card border border-base-300 bg-base-100 shadow-sm transition cursor-pointer hover:-translate-y-0.5 hover:shadow-md"
                                 onClick={() => handleResortSelect(resort)}
                             >
                                 <div className="card-body p-4">
                                     <div className="flex items-start justify-between gap-3">
-                                        <div>
+                                        <div className="flex gap-1">
                                             <h3 className="card-title text-base">{resort.Name}</h3>
-                                            <p className="text-sm opacity-70">{resort.Country}</p>
+                                            <span className="badge badge-soft badge-info">{resort.Country}</span>
                                         </div>
                                         <div className="badge badge-primary badge-soft">{resort.total_lifts ?? 0} lifts</div>
                                     </div>
@@ -111,18 +122,6 @@ export default function ResortsView() {
                                         <span className="badge badge-ghost">{resort.total_pistes ?? 0} pistes</span>
                                         <span className="badge badge-ghost">{resort.distance_km?.toFixed(2) ?? "0.00"} km</span>
                                     </div>
-
-                                    {resort.Website ? (
-                                        <a
-                                            href={resort.Website}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="mt-2 text-sm link link-primary"
-                                            onClick={(event) => event.stopPropagation()}
-                                        >
-                                            Visit website
-                                        </a>
-                                    ) : null}
                                 </div>
                             </button>
                         ))}
@@ -139,9 +138,9 @@ export default function ResortsView() {
             )}
 
             {selectedResort && (
-                <div className="fixed inset-x-0 bottom-16 z-50 flex justify-center px-2 pb-2 w-full h-6/12">
-                    <div className="w-full rounded-t-2xl border border-base-300 bg-base-100 shadow-2xl">
-                        <div className="flex items-center justify-between border-b border-base-300 px-4 py-3">
+                <div className="fixed inset-x-0 bottom-16 z-50 flex justify-center px-2 pb-2 w-full">
+                    <div className="w-full rounded-2xl border border-info bg-base-100 max-h-[70vh] flex flex-col shadow-xl">
+                        <div className="flex items-center justify-between border-b border-base-300 px-4 py-3 shrink-0">
                             <div>
                                 <h4 className="font-semibold">{selectedResort.Name}</h4>
                                 <p className="text-sm opacity-70">{selectedResort.Country}</p>
@@ -151,8 +150,8 @@ export default function ResortsView() {
                             </button>
                         </div>
 
-                        <div className="space-y-3 p-4 text-sm">
-                            <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="overflow-y-auto p-4 space-y-4 flex-1">
+                            <div className="grid gap-2 grid-cols-3">
                                 <div className="rounded-box bg-base-200 p-3">
                                     <div className="text-xs uppercase opacity-60">Lifts</div>
                                     <div className="mt-1 text-lg font-semibold">{selectedResortSummary?.lifts ?? 0}</div>
@@ -168,15 +167,47 @@ export default function ResortsView() {
                             </div>
 
                             {selectedResortSummary?.website ? (
-                                <a href={selectedResortSummary.website} target="_blank" rel="noreferrer" className="link link-primary">
+                                <a href={selectedResortSummary.website} target="_blank" rel="noreferrer" className="link link-primary inline-block">
                                     Open official website
                                 </a>
                             ) : null}
 
-                            <div className="flex gap-2">
+                            {/* Sessions section */}
+                            <div>
+                                <h5 className="font-semibold text-sm mb-2 opacity-80">Ski Sessions ({sessions.length})</h5>
+                                {sessions.length > 0 ? (
+                                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                        {sessions.map((session) => (
+                                            <button
+                                                key={session.id}
+                                                type="button"
+                                                onClick={() => handleSessionClick(session)}
+                                                className="w-full text-left p-3 rounded-lg bg-base-200 hover:bg-base-300 transition flex justify-between items-center border border-base-300"
+                                            >
+                                                <div>
+                                                    <div className="font-medium text-xs text-base-content">
+                                                        Session: {new Date(session.start_time).toLocaleDateString()} {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </div>
+                                                    <div className="text-[10px] text-base-content/75 mt-0.5">
+                                                        Dist: {(session.total_distance / 1000).toFixed(2)} km | Max Speed: {(session.max_speed * 3.6).toFixed(1)} km/h
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="badge badge-sm badge-info badge-soft">{session.runs?.length || 0} runs</span>
+                                                    <span className="text-xs text-primary font-semibold">View map</span>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-xs opacity-60 italic text-center py-2">No recorded sessions for this resort.</div>
+                                )}
+                            </div>
+
+                            <div className="flex gap-2 pt-2 border-t border-base-200 shrink-0">
                                 <button
                                     type="button"
-                                    className="btn btn-primary btn-sm"
+                                    className="btn btn-primary btn-sm flex-1"
                                     onClick={() => router.push(`/private?minLat=${selectedResort.Latitude}&maxLat=${selectedResort.Latitude}&minLon=${selectedResort.Longitude}&maxLon=${selectedResort.Longitude}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=13`)}
                                 >
                                     View on map

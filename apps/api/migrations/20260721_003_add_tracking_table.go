@@ -20,6 +20,7 @@ func init() {
 			CREATE TABLE ski_sessions (
 				id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 				user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				resort_id TEXT REFERENCES ski_resorts(id) ON DELETE SET NULL,
 				start_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 				end_time TIMESTAMP WITH TIME ZONE,
 				total_distance FLOAT DEFAULT 0,

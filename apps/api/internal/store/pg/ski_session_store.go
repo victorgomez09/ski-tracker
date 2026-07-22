@@ -25,7 +25,22 @@ func (u *skiSessionStore) ListByResortID(ctx context.Context, resortID string) (
 	var sessions []models.SkiSession
 	err := u.db.NewSelect().
 		Model(&sessions).
+		Relation("Runs").
 		Where("resort_id = ?", resortID).
+		Order("start_time DESC").
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
+func (u *skiSessionStore) ListByUserID(ctx context.Context, userID uuid.UUID) ([]models.SkiSession, error) {
+	var sessions []models.SkiSession
+	err := u.db.NewSelect().
+		Model(&sessions).
+		Relation("Runs").
+		Where("user_id = ?", userID).
 		Order("start_time DESC").
 		Scan(ctx)
 	if err != nil {
@@ -38,6 +53,7 @@ func (u *skiSessionStore) GetByID(ctx context.Context, sessionID uuid.UUID) (*mo
 	var session models.SkiSession
 	err := u.db.NewSelect().
 		Model(&session).
+		Relation("Runs").
 		Where("id = ?", sessionID).
 		Scan(ctx)
 	if err != nil {

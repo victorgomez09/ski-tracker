@@ -68,7 +68,7 @@ func (s *SkiSessionService) GetByID(ctx context.Context, sessionID uuid.UUID) (*
 	return session, nil
 }
 
-func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, resortID uuid.UUID) (*models.SkiSession, error) {
+func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, resortID string) (*models.SkiSession, error) {
 	session := &models.SkiSession{
 		UserID:    userID,
 		ResortID:  resortID,

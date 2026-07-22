@@ -3,19 +3,19 @@ import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
+import { Play, Square, Upload } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
+import Map, { Layer, LayerProps, MapRef, NavigationControl, Source } from 'react-map-gl/maplibre';
 import { Platform } from 'react-native';
-import { Eye, EyeOff, Play, Square, Upload } from 'lucide-react';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
-import { clearTrack, getAllPoints, initDB, savePointToLocalDB, TrackPoint } from 'tracking/database';
-import { startTracking, stopTracking } from 'tracking/task-manager';
+import { clearTrack, getAllPoints, initDB } from 'tracking/database';
+import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
@@ -33,7 +33,6 @@ export default function InteractiveSkiMap() {
     const [hasTrackData, setHasTrackData] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
-    const [showLastTracks, setShowLastTracks] = useState(false);
     const [viewState, setViewState] = useState({
         longitude: parseFloat(searchParams.lng as string || '-3.971953'),
         latitude: parseFloat(searchParams.lat as string || '40.797891'),
@@ -53,20 +52,6 @@ export default function InteractiveSkiMap() {
     // --- Database initialization and tracking status on mount ---
     useEffect(() => {
         setupDatabaseAndCheckStatus();
-
-        const fetchResortDetails = async () => {
-            try {
-                const request = await axios.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
-                    params: { lat: searchParams.lat, lon: searchParams.lng },
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                if (request.status === 200) {
-                    setResort(request.data);
-                }
-            } catch (error) {
-                console.error("Error fetching resort details:", error);
-            }
-        };
 
         fetchResortDetails();
     }, []);
@@ -138,13 +123,56 @@ export default function InteractiveSkiMap() {
                 return;
             }
 
-            const response = await axios.post(`${API_BASE_URL}/track-points`, points, {
-                headers: { Authorization: `Bearer ${token}` }
+            const resortIdToUse = resort.ID || points[0].resort_id || "sierra-nevada"; // fallback if not set
+
+            // 1. Start session
+            const startResponse = await axios.post(`${API_BASE_URL}/ski-sessions`, {
+                resortId: resortIdToUse
+            }, {
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                }
             });
 
-            if (response.status === 200 || response.status === 201) {
-                alert("Track uploaded successfully to the backend!");
-                // Optional: clear after successful upload:
+            if (startResponse.status !== 201) {
+                throw new Error("Failed to start session on backend");
+            }
+
+            const sessionId = startResponse.data.sessionId;
+
+            // 2. Upload points
+            const payload = {
+                points: points.map(p => ({
+                    lat: p.lat,
+                    lon: p.lon,
+                    altitude: p.alt,
+                    speed: p.speed,
+                    timestamp: new Date(p.timestamp).toISOString()
+                }))
+            };
+
+            const pointsResponse = await axios.post(`${API_BASE_URL}/ski-sessions/${sessionId}/points`, payload, {
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                }
+            });
+
+            if (pointsResponse.status !== 200) {
+                throw new Error("Failed to upload points");
+            }
+
+            // 3. Finish session
+            const finishResponse = await axios.post(`${API_BASE_URL}/ski-sessions/${sessionId}/finish`, {}, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+
+            if (finishResponse.status === 200 || finishResponse.status === 201) {
+                alert("Track uploaded successfully to the backend and processed!");
+                // Clear after successful upload:
                 await clearTrack(db);
                 setTrackPoints([]);
                 setHasTrackData(false);
@@ -349,26 +377,12 @@ export default function InteractiveSkiMap() {
         }] : []
     }), [trackPoints]);
 
-    // --- FETCHERS ---
-    const fetchLastTracks = async () => {
-        if (showLastTracks) {
-            const request = await axios.get<TrackPoint[]>(`${API_BASE_URL}/track-points`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-
-            if (request.status === 200) {
-                setTrackPoints(request.data);
-            }
-        } else {
-            await loadTrackPoints();
-        }
-    };
-
     // --- Interaction Handlers ---
     const handleMouseMove = (event: any) => {
         const map = event.target;
         if (!map.isStyleLoaded() || viewState?.zoom < 10) return;
         try {
+            if (!map.getLayer('piste-lines') || !map.getLayer('lift-lines')) return;
             const features = map.queryRenderedFeatures(event.point, { layers: ['piste-lines', 'lift-lines'] });
             if (features.length > 0) {
                 map.getCanvas().style.cursor = 'pointer';
@@ -391,6 +405,7 @@ export default function InteractiveSkiMap() {
         const map = event.target;
         if (!map.isStyleLoaded() || viewState?.zoom < 10) return;
         try {
+            if (!map.getLayer('piste-lines') || !map.getLayer('lift-lines')) return;
             const features = map.queryRenderedFeatures(event.point, { layers: ['piste-lines', 'lift-lines'] });
             if (!features.length) return;
 
@@ -414,7 +429,6 @@ export default function InteractiveSkiMap() {
         const map = mapRef.current?.getMap();
         if (!map) return;
 
-        const bounds = map.getBounds();
         const center = map.getCenter();
         const currentZoom = map.getZoom();
 
@@ -425,236 +439,42 @@ export default function InteractiveSkiMap() {
                 zoom: currentZoom.toFixed(0)
             });
 
-            // if (currentZoom < 10) {
-            //     fetchResortsByBounds(bounds);
-            // } else {
-            //     fetchResortsWithDetails({ target: map } as ViewStateChangeEvent);
-            // }
+            if (!Object.keys(resort).length) {
+                fetchResortDetails(center.lng, center.lat);
+            }
         }
     }, []);
 
-    // ----- WEB SIMULATION ONLY
-    const [isSimulatingWeb, setIsSimulatingWeb] = useState(false);
-    const [simStatusText, setSimStatusText] = useState("Start simulation");
-    const simulationTimerRef = useRef<number | null>(null);
+    const fetchResortDetails = async (lon?: number, lat?: number) => {
+        try {
+            let latitude = lat ?? searchParams.lat;
+            let longitude = lon ?? searchParams.lng;
 
-    // Refs to track the current path and coordinate index during simulation
-    const currentPathIndexRef = useRef(0);
-    const currentCoordIndexRef = useRef(0);
-    const cachedPathsRef = useRef<{ type: 'LIFT' | 'RUN'; coords: [number, number][] }[]>([]);
-    const [db, setDb] = useState<SQLite.SQLiteDatabase | null>(null);
+            if (!latitude || !longitude) {
+                const location = await getCurrentLocation();
+                if (location) {
+                    latitude = location.coords.latitude;
+                    longitude = location.coords.longitude;
+                }
+            }
 
-    const handleToggleWebSimulation = async () => {
-        const db = await SQLite.openDatabaseAsync('ski_tracker.db');
-        setDb(db);
-
-        if (isSimulatingWeb) {
-            if (simulationTimerRef.current) clearInterval(simulationTimerRef.current);
-            setIsSimulatingWeb(false);
-            setSimStatusText('Start simulation');
-            return;
+            const request = await axios.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
+                params: { lat: latitude, lon: longitude },
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (request.status === 200) {
+                setResort(request.data);
+            }
+        } catch (error) {
+            console.error("Error fetching resort details:", error);
         }
-
-        if (cachedPathsRef.current.length === 0) {
-            const rawLifts: { id: string; coords: [number, number][] }[] = [];
-            const rawPistes: { id: string; coords: [number, number][] }[] = [];
-
-            if (resort.lifts && Array.isArray(resort.lifts)) {
-                resort.lifts.forEach((lift, idx) => {
-                    if (lift.GeometryGeoJSON?.type === 'LineString') {
-                        const coords = lift.GeometryGeoJSON.coordinates.map((c: any) => [c[0], c[1]] as [number, number]);
-                        if (coords.length > 1) {
-                            if (coords[0][1] > coords[coords.length - 1][1]) {
-                                coords.reverse();
-                            }
-                            rawLifts.push({ id: lift.ID || `lift_${idx}`, coords });
-                        }
-                    }
-                });
-            }
-
-            if (!resort.pistes || !Array.isArray(resort.pistes)) return;
-            resort.pistes
-                .filter(p => {
-                    const geomType = p.GeometryGeoJSON?.type;
-                    return geomType && geomType !== 'Polygon' && geomType !== 'MultiPolygon';
-                })
-                .forEach((p, idx) => {
-                    const geom = p.GeometryGeoJSON;
-                    if (geom?.type === 'LineString' && Array.isArray(geom.coordinates)) {
-                        const coords = geom.coordinates.map((c: any) => [c[0], c[1]] as [number, number]);
-                        if (coords.length > 1) {
-                            rawPistes.push({ id: p.ID || `piste_${idx}`, coords });
-                        }
-                    }
-                });
-
-            if (rawLifts.length === 0 || rawPistes.length === 0) {
-                alert("Make sure to zoom in on a resort to load the visible pistes and lifts.");
-                return;
-            }
-
-            const getDistance = (p1: [number, number], p2: [number, number]) => {
-                const dx = p1[0] - p2[0];
-                const dy = p1[1] - p2[1];
-                return Math.sqrt(dx * dx + dy * dy);
-            };
-
-            // 3. LOGICAL ROUTE CONSTRUCTION BY PROXIMITY
-            const organizedPaths: { type: 'LIFT' | 'RUN'; coords: [number, number][] }[] = [];
-            const visitedPistes = new Set<string>();
-            const visitedLifts = new Set<string>();
-
-            let currentTrack = rawPistes[0];
-            visitedPistes.add(currentTrack.id);
-            organizedPaths.push({ type: 'RUN', coords: currentTrack.coords });
-
-            for (let step = 0; step < Math.min(rawPistes.length, 15); step++) {
-                const lastPointOfPiste = currentTrack.coords[currentTrack.coords.length - 1];
-
-                let closestLift = null;
-                let minLiftDist = Infinity;
-
-                rawLifts.forEach(lift => {
-                    if (visitedLifts.has(lift.id)) return;
-                    const startPointOfLift = lift.coords[0];
-                    const dist = getDistance(lastPointOfPiste, startPointOfLift);
-                    if (dist < minLiftDist) {
-                        minLiftDist = dist;
-                        closestLift = lift;
-                    }
-                });
-
-                if (!closestLift) break;
-
-                visitedLifts.add((closestLift as any).id);
-                organizedPaths.push({ type: 'LIFT', coords: (closestLift as any).coords });
-
-                const lastPointOfLift = (closestLift as any).coords[(closestLift as any).coords.length - 1];
-
-                let closestPiste = null;
-                let minPisteDist = Infinity;
-
-                rawPistes.forEach(piste => {
-                    if (visitedPistes.has(piste.id)) return;
-                    const startPointOfPiste = piste.coords[0];
-                    const dist = getDistance(lastPointOfLift, startPointOfPiste);
-                    if (dist < minPisteDist) {
-                        minPisteDist = dist;
-                        closestPiste = piste;
-                    }
-                });
-
-                if (!closestPiste) break;
-
-                visitedPistes.add((closestPiste as any).id);
-                organizedPaths.push({ type: 'RUN', coords: (closestPiste as any).coords });
-                currentTrack = closestPiste;
-            }
-
-            cachedPathsRef.current = organizedPaths;
-            currentPathIndexRef.current = 0;
-            currentCoordIndexRef.current = 0;
-        }
-
-        setIsSimulatingWeb(true);
-
-        // Initial simulated altitude control
-        let simulatedAlt = 2000;
-
-        simulationTimerRef.current = setInterval(async () => {
-            try {
-                const paths = cachedPathsRef.current;
-                const currentPath = paths[currentPathIndexRef.current];
-
-                if (!currentPath || currentPath.coords.length === 0) {
-                    currentPathIndexRef.current = 0;
-                    currentCoordIndexRef.current = 0;
-                    return;
-                }
-
-                const targetPoint = currentPath.coords[currentCoordIndexRef.current];
-                const currentLon = targetPoint[0];
-                const currentLat = targetPoint[1];
-
-                const isLift = currentPath.type === 'LIFT';
-
-                // Simulate altitude and speed variation according to the activity
-                if (isLift) {
-                    simulatedAlt += 3; // Ascend 3 meters per iteration on the lift
-                } else {
-                    simulatedAlt -= 4; // Descend 4 meters per iteration on the piste
-                }
-
-                const simulatedSpeed = isLift ? 12.5 : 38.0; // approximate km/h
-                const simulatedPressure = 1013.25;
-
-                setSimStatusText("Stop simulation");
-
-                await savePointToLocalDB(
-                    currentLat,
-                    currentLon,
-                    simulatedAlt,
-                    simulatedSpeed,
-                    simulatedPressure,
-                    resort.ID || null,
-                    Date.now(),
-                    db
-                );
-
-                await loadTrackPoints();
-
-                currentCoordIndexRef.current += 1;
-
-                if (currentCoordIndexRef.current >= currentPath.coords.length) {
-                    currentPathIndexRef.current = (currentPathIndexRef.current + 1) % paths.length;
-                    currentCoordIndexRef.current = 0;
-                }
-
-            } catch (err) {
-                console.error("Error in simulation:", err);
-            }
-        }, 300);
     };
-
-    // Clear the simulation timer on unmount
-    useEffect(() => {
-        return () => {
-            if (simulationTimerRef.current) clearInterval(simulationTimerRef.current);
-        };
-    }, []);
 
     return (
         <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 2.5rem)' }}>
             {selectedFeature && (
                 <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
             )}
-
-            <div className="absolute bottom-10 left-4 z-1000 flex gap-2">
-                <button
-                    className="btn btn-primary btn-sm"
-                    onClick={fetchLastTracks}
-                >
-                    <label className="swap">
-                        <input type="checkbox" checked={showLastTracks} onChange={() => setShowLastTracks(!showLastTracks)} />
-
-                        {showLastTracks ? <Eye /> : <EyeOff />}
-                    </label>
-                </button>
-
-                {Platform.OS === 'web' && (
-                    <div className="flex gap-2">
-                        <button
-                            className="btn btn-primary btn-sm"
-                            onClick={handleToggleWebSimulation}
-                        >
-                            {simStatusText}
-                        </button>
-
-                        <button className="btn btn-primary btn-sm" onClick={async () => clearTrack(db || await SQLite.openDatabaseAsync('ski_tracker.db'))}>Clear local database</button>
-                    </div>
-                )}
-            </div>
 
             <div className="absolute bottom-10 right-4 z-1000 flex gap-2">
                 <button className="btn btn-primary btn-sm"

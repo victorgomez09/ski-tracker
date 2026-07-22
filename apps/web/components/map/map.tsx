@@ -5,6 +5,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
+import { Area, AreaChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
@@ -18,6 +19,64 @@ export default function InteractiveSkiMap() {
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
+    const [trackPoints, setTrackPoints] = useState<any[]>([]);
+    const [matchedPisteIds, setMatchedPisteIds] = useState<string[]>([]);
+    const [activeTab, setActiveTab] = useState<'runs' | 'elevation' | 'speed'>('runs');
+    const [selectedRun, setSelectedRun] = useState<any | null>(null);
+    const [sessionDetails, setSessionDetails] = useState<any | null>(null);
+
+    const detectedRuns = useMemo(() => {
+        if (trackPoints.length === 0) return [];
+        let currentType = 'unknown';
+        let currentPoints: any[] = [];
+        const result: { type: string; points: any[] }[] = [];
+
+        for (let i = 0; i < trackPoints.length; i++) {
+            const p = trackPoints[i];
+            let pType = currentType;
+            if (i > 0) {
+                const prev = trackPoints[i - 1];
+                const altDiff = p.altitude - prev.altitude;
+                if (altDiff > 0.8) {
+                    pType = 'lift';
+                } else if (altDiff < -0.8 && p.speed > 1.0) {
+                    pType = 'run';
+                }
+            }
+            if (currentType === 'unknown') currentType = pType;
+
+            if (currentType === pType) {
+                currentPoints.push(p);
+            } else {
+                if (currentPoints.length > 0) {
+                    result.push({ type: currentType, points: currentPoints });
+                }
+                currentType = pType;
+                currentPoints = [p];
+            }
+        }
+        if (currentPoints.length > 0) {
+            result.push({ type: currentType, points: currentPoints });
+        }
+
+        return result
+            .filter(r => r.type === 'run' && r.points.length > 5)
+            .map((r, idx) => {
+                const startAlt = r.points[0].altitude;
+                const endAlt = r.points[r.points.length - 1].altitude;
+                const drop = Math.max(0, startAlt - endAlt);
+                const maxSpd = Math.max(...r.points.map(p => p.speed)) * 3.6; // km/h
+                return {
+                    id: `run-${idx}`,
+                    index: idx + 1,
+                    points: r.points,
+                    verticalDrop: drop,
+                    maxSpeed: maxSpd,
+                    pointsCount: r.points.length,
+                };
+            });
+    }, [trackPoints]);
+
     const [viewState, setViewState] = useState({
         longitude: parseFloat(searchParams.lon as string || '-3.971953'),
         latitude: parseFloat(searchParams.lat as string || '40.797891'),
@@ -26,6 +85,54 @@ export default function InteractiveSkiMap() {
         pitch: 0
     });
     const { token } = useAuth();
+
+    useEffect(() => {
+        const loadSessionData = async () => {
+            if (searchParams.sessionId) {
+                try {
+                    const res = await axios.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (res.status === 200 && res.data) {
+                        const session = res.data.data || res.data; // Handle either wrap or raw
+                        setSessionDetails(session);
+                        if (session.points && Array.isArray(session.points) && session.points.length > 0) {
+                            const parsedPoints = session.points.map((p: any) => {
+                                const match = p.geom?.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/i);
+                                return {
+                                    lat: match ? parseFloat(match[2]) : p.lat,
+                                    lon: match ? parseFloat(match[1]) : p.lon,
+                                    altitude: p.altitude,
+                                    speed: p.speed,
+                                    timestamp: p.timestamp
+                                };
+                            });
+                            setTrackPoints(parsedPoints);
+
+                            // Center map on first track point
+                            if (parsedPoints.length > 0) {
+                                setViewState(prev => ({
+                                    ...prev,
+                                    longitude: parsedPoints[0].lon,
+                                    latitude: parsedPoints[0].lat,
+                                    zoom: 14
+                                }));
+                            }
+                        }
+                        if (session.runs && Array.isArray(session.runs)) {
+                            const ids = session.runs
+                                .map((r: any) => r.matched_piste_id)
+                                .filter(Boolean);
+                            setMatchedPisteIds(ids);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error loading session track on map:", error);
+                }
+            }
+        };
+        loadSessionData();
+    }, [searchParams.sessionId, token]);
 
     useEffect(() => {
         const loadInitial = async () => {
@@ -84,20 +191,57 @@ export default function InteractiveSkiMap() {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
             'line-color': [
-                'match', ['get', 'difficulty'],
-                'novice', '#00e676',
-                'easy', '#2979ff',
-                'intermediate', '#ff1744',
-                'advanced', '#212121',
-                '#9e9e9e'
+                'case',
+                ['in', ['get', 'id'], ['literal', matchedPisteIds]], '#f1c40f', // yellow for matched pistes
+                [
+                    'match', ['get', 'difficulty'],
+                    'novice', '#00e676',
+                    'easy', '#2979ff',
+                    'intermediate', '#ff1744',
+                    'advanced', '#212121',
+                    '#9e9e9e'
+                ]
             ],
             // if selected or hovered, increase width
             'line-width': [
                 'case',
                 ['==', ['get', 'id'], selectedFeature?.ID || ''], 9,
                 ['==', ['get', 'id'], hoveredFeatureId || ''], 8,
+                ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7, // thicker for matched pistes
                 5
             ]
+        }
+    };
+
+    const trackLineStyle: LayerProps = {
+        id: 'track-line',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': '#8e44ad', // purple
+            'line-width': 4,
+            'line-opacity': 0.9
+        }
+    };
+
+    const trackDirectionStyle: LayerProps = {
+        id: 'track-directions',
+        type: 'symbol',
+        minzoom: 14,
+        layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 150,
+            'text-field': '>',
+            'text-size': 12,
+            'text-rotation-alignment': 'map',
+            'text-keep-upright': false,
+            'text-allow-overlap': true,
+            'text-ignore-placement': true
+        },
+        paint: {
+            'text-color': '#8e44ad', // purple
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5
         }
     };
 
@@ -226,6 +370,18 @@ export default function InteractiveSkiMap() {
         return { type: 'FeatureCollection' as const, features: liftsFeatures };
     }, [resorts]);
 
+    const trackGeoJSON = useMemo(() => ({
+        type: 'FeatureCollection' as const,
+        features: trackPoints.length > 1 ? [{
+            type: 'Feature' as const,
+            properties: {},
+            geometry: {
+                type: 'LineString' as const,
+                coordinates: trackPoints.map(p => [p.lon, p.lat])
+            }
+        }] : []
+    }), [trackPoints]);
+
     // --- Fetchers ---
     const fetchResortsByBounds = async (bounds: maplibregl.LngLatBounds) => {
         try {
@@ -291,6 +447,7 @@ export default function InteractiveSkiMap() {
         if (!map.isStyleLoaded() || viewState.zoom < 10) return;
 
         try {
+            if (!map.getLayer('piste-lines') || !map.getLayer('lift-lines')) return;
             const features = map.queryRenderedFeatures(event.point, {
                 layers: ['piste-lines', 'lift-lines']
             });
@@ -318,6 +475,7 @@ export default function InteractiveSkiMap() {
         if (!map.isStyleLoaded() || viewState.zoom < 10) return;
 
         try {
+            if (!map.getLayer('piste-lines') || !map.getLayer('lift-lines')) return;
             const features = map.queryRenderedFeatures(event.point, {
                 layers: ['piste-lines', 'lift-lines']
             });
@@ -399,6 +557,8 @@ export default function InteractiveSkiMap() {
                 style={{ width: '100%', height: 'calc(100vh - 4rem)' }}
                 mapStyle="https://tiles.openfreemap.org/styles/liberty"
                 mapLib={maplibregl}
+                maplibreLogo={false}
+                attributionControl={false}
             >
                 <NavigationControl position="bottom-right" />
 
@@ -478,31 +638,178 @@ export default function InteractiveSkiMap() {
                             <Layer {...liftLabelStyle} />
                         </Source>
 
-                        {/* Optional: Show resort marker with pistes and lifts */}
-                        {/* {resorts.map(resort => (
-                        <Marker
-                            key={`label-${resort.ID}`}
-                            longitude={resort.Longitude}
-                            latitude={resort.Latitude}
-                            anchor="top"
-                        >
-                            <div style={{
-                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                                padding: '3px 8px',
-                                borderRadius: '6px',
-                                fontSize: '12px',
-                                fontWeight: 'bold',
-                                color: '#2c3e50',
-                                boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
-                                pointerEvents: 'none'
-                            }}>
-                                ⛷️ {resort.Name}
-                            </div>
-                        </Marker>
-                    ))} */}
+                        {trackPoints.length > 0 && (
+                            <Source id="track-source" type="geojson" data={trackGeoJSON}>
+                                <Layer {...trackLineStyle} />
+                                <Layer {...trackDirectionStyle} />
+                            </Source>
+                        )}
                     </>
                 )}
             </Map>
+
+            {searchParams.sessionId && trackPoints.length > 0 && (
+                <div className="absolute top-4 left-4 z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow-2xl rounded-2xl p-4 w-96 max-h-[85vh] overflow-y-auto flex flex-col gap-3">
+                    <div className="flex justify-between items-center border-b border-base-300 pb-2">
+                        <div>
+                            <h3 className="font-bold text-sm text-base-content">Session Analyser</h3>
+                            <p className="text-[10px] opacity-70">
+                                {sessionDetails ? `Date: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            className="btn btn-xs btn-circle btn-ghost font-bold"
+                            onClick={() => {
+                                setTrackPoints([]);
+                                setMatchedPisteIds([]);
+                                setSelectedRun(null);
+                                setSessionDetails(null);
+                                router.setParams({ sessionId: '' });
+                            }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    {selectedRun ? (
+                        <div className="space-y-3">
+                            <button
+                                type="button"
+                                className="btn btn-xs btn-secondary"
+                                onClick={() => setSelectedRun(null)}
+                            >
+                                ← Back to list
+                            </button>
+                            <div className="p-2 bg-base-200 rounded-lg">
+                                <h4 className="font-bold text-xs">Run #{selectedRun.index} Details</h4>
+                                <div className="grid grid-cols-2 gap-2 mt-1 text-[11px] opacity-80">
+                                    <div>Drop: {selectedRun.verticalDrop.toFixed(1)} m</div>
+                                    <div>Max Speed: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="text-[11px] font-semibold opacity-70 uppercase">Elevation Profile (m)</div>
+                                <div className="h-32 bg-base-200/50 rounded-lg p-1">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, alt: p.altitude }))}>
+                                            <XAxis dataKey="name" hide />
+                                            <YAxis domain={['dataMin - 10', 'dataMax + 10']} hide />
+                                            <Tooltip formatter={(value) => [`${Math.round(Number(value))}m`, 'Altitude']} />
+                                            <Area type="monotone" dataKey="alt" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                <div className="text-[11px] font-semibold opacity-70 uppercase">Speed Profile (km/h)</div>
+                                <div className="h-32 bg-base-200/50 rounded-lg p-1">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, speed: p.speed * 3.6 }))}>
+                                            <XAxis dataKey="name" hide />
+                                            <YAxis hide />
+                                            <Tooltip formatter={(value) => [`${Number(value).toFixed(1)} km/h`, 'Speed']} />
+                                            <Line type="monotone" dataKey="speed" stroke="#ef4444" strokeWidth={2} dot={false} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="tabs tabs-boxed tabs-sm w-full grid grid-cols-3">
+                                <button
+                                    type="button"
+                                    className={`tab ${activeTab === 'runs' ? 'tab-active' : ''}`}
+                                    onClick={() => setActiveTab('runs')}
+                                >
+                                    Runs
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`tab ${activeTab === 'elevation' ? 'tab-active' : ''}`}
+                                    onClick={() => setActiveTab('elevation')}
+                                >
+                                    Elevation
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`tab ${activeTab === 'speed' ? 'tab-active' : ''}`}
+                                    onClick={() => setActiveTab('speed')}
+                                >
+                                    Speed
+                                </button>
+                            </div>
+
+                            {activeTab === 'runs' && (
+                                <div className="space-y-2">
+                                    <div className="text-xs font-semibold opacity-75">Detected Descents ({detectedRuns.length})</div>
+                                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                        {detectedRuns.map((run) => (
+                                            <button
+                                                key={run.id}
+                                                type="button"
+                                                className="w-full text-left p-2.5 rounded-xl bg-base-200 hover:bg-base-300 transition flex justify-between items-center border border-base-300 cursor-pointer"
+                                                onClick={() => {
+                                                    setSelectedRun(run);
+                                                    // Fly/Center map on this run's starting point
+                                                    if (run.points.length > 0 && mapRef.current) {
+                                                        mapRef.current.getMap().flyTo({
+                                                            center: [run.points[0].lon, run.points[0].lat],
+                                                            zoom: 15,
+                                                            essential: true
+                                                        });
+                                                    }
+                                                }}
+                                            >
+                                                <div>
+                                                    <div className="font-bold text-xs">Run #{run.index}</div>
+                                                    <div className="text-[10px] opacity-70 mt-0.5">
+                                                        Drop: {run.verticalDrop.toFixed(0)}m | Max Speed: {run.maxSpeed.toFixed(1)} km/h
+                                                    </div>
+                                                </div>
+                                                <span className="text-[11px] text-primary font-medium">Charts →</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'elevation' && (
+                                <div className="space-y-2">
+                                    <div className="text-xs font-semibold opacity-75">Full Session Elevation (m)</div>
+                                    <div className="h-44 bg-base-200/50 rounded-xl p-1">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={trackPoints.map((p, idx) => ({ name: idx, alt: p.altitude }))}>
+                                                <XAxis dataKey="name" hide />
+                                                <YAxis domain={['dataMin - 20', 'dataMax + 20']} hide />
+                                                <Tooltip formatter={(value) => [`${Math.round(Number(value))}m`, 'Altitude']} />
+                                                <Area type="monotone" dataKey="alt" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'speed' && (
+                                <div className="space-y-2">
+                                    <div className="text-xs font-semibold opacity-75">Full Session Speed Profile (km/h)</div>
+                                    <div className="h-44 bg-base-200/50 rounded-xl p-1">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <LineChart data={trackPoints.map((p, idx) => ({ name: idx, speed: p.speed * 3.6 }))}>
+                                                <XAxis dataKey="name" hide />
+                                                <YAxis hide />
+                                                <Tooltip formatter={(value) => [`${Number(value).toFixed(1)} km/h`, 'Speed']} />
+                                                <Line type="monotone" dataKey="speed" stroke="#ef4444" strokeWidth={2} dot={false} />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

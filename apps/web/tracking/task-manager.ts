@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { savePointToLocalDB } from './database';
 
-const LOCATION_TASK_NAME = 'background-location-task';
+const LOCATION_TASK_NAME = 'ski-background-location-task';
 
 /**
  * Background location task for tracking ski sessions even when the app is in the background. This task is defined using Expo's TaskManager and will be triggered whenever the device's location changes based on the specified accuracy and intervals.
@@ -20,33 +20,20 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
     const resortId = await AsyncStorage.getItem('ACTIVE_RESORT_ID');
     const database = await SQLite.openDatabaseAsync('ski_tracker.db');
     const { locations } = data as { locations: Location.LocationObject[] };
-    const location = locations[0];
 
-    let currentPressure: number | null = null;
-
-    try {
-      const baroData = await Barometer.getPermissionsAsync();
-      if (baroData.granted) {
-        const barometerSubscription = Barometer.addListener(data => {
-          currentPressure = data.pressure;
-          barometerSubscription.remove(); // Stop listening after getting the first reading
-        });
-      }
-    } catch (e) {
-      console.log('Barometer sensor not available in the background');
+    for (const location of locations) {
+      console.log('Gps saved to sqlite:', location.coords.latitude, location.coords.longitude);
+      await savePointToLocalDB(
+        location.coords.latitude,
+        location.coords.longitude,
+        location.coords.altitude || 0,
+        location.coords.speed || 0,
+        null, // Barometer not read synchronously in background loop
+        resortId,
+        location.timestamp,
+        database
+      );
     }
-
-    console.log('Gps saved to sqlite:', location.coords.latitude, location.coords.longitude);
-    savePointToLocalDB(
-      location.coords.latitude,
-      location.coords.longitude,
-      location.coords.altitude || 0,
-      location.coords.speed || 0,
-      currentPressure,
-      resortId,
-      location.timestamp,
-      database
-    );
   }
 });
 
@@ -80,5 +67,23 @@ export const stopTracking = async () => {
   const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
   if (isRegistered) {
     await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+  }
+};
+
+export const getCurrentLocation = async (): Promise<Location.LocationObject | null> => {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') {
+    console.error('Location permission not granted');
+    return null;
+  }
+
+  try {
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+    return location;
+  } catch (error) {
+    console.error('Error getting current location:', error);
+    return null;
   }
 };

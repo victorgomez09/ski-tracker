@@ -155,10 +155,40 @@ def send_points_batch(session_id, points, auth_headers):
         print(f"⚠️ HTTP exception while sending points: {e}")
 
 
+def get_distance(p1, p2):
+    """Calculates Euclidean distance between two (lat, lon) coordinates."""
+    return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
+
+
+def interpolate_altitudes(start_alt, end_alt, num_points):
+    """Linearly interpolates altitudes between a start and end value."""
+    if num_points <= 1:
+        return [start_alt] * num_points
+    step = (end_alt - start_alt) / (num_points - 1)
+    return [start_alt + i * step for i in range(num_points)]
+
+
 def simulate_full_day():
-    resort_id, pistes, _ = get_resort_data_from_db(RESORT_TARGET)
-    if not pistes:
-        print("❌ No pistes available to simulate. Make sure you imported data into PostGIS.")
+    resort_id, pistes, lifts = get_resort_data_from_db(RESORT_TARGET)
+    if not pistes or not lifts:
+        print("❌ No pistes or lifts available to simulate. Make sure you imported data into PostGIS.")
+        return
+
+    # Filter out empty elements
+    valid_lifts = []
+    for l in lifts:
+        c = extract_coordinates_from_geojson(l["geojson"])
+        if len(c) > 1:
+            valid_lifts.append({"id": l["id"], "name": l["name"], "coords": c})
+
+    valid_pistes = []
+    for p in pistes:
+        c = extract_coordinates_from_geojson(p["geojson"])
+        if len(c) > 1:
+            valid_pistes.append({"id": p["id"], "name": p["name"], "difficulty": p["difficulty"], "coords": c})
+
+    if not valid_lifts or not valid_pistes:
+        print("❌ Not enough valid lifts or pistes to build a continuous trace.")
         return
 
     user_id, auth_headers = create_or_login_user()
@@ -183,6 +213,8 @@ def simulate_full_day():
     end_time = current_time.replace(hour=16, minute=0)
 
     simulated_runs = 0
+    current_lift = random.choice(valid_lifts)
+    current_alt = 1800.0
 
     print(f"\n⛷️ Starting day at {RESORT_TARGET} at {current_time.strftime('%H:%M')}...")
 
@@ -190,40 +222,40 @@ def simulate_full_day():
         simulated_runs += 1
 
         # ---------------------------------------------------------
-        # STEP A: Simulate chairlift ascent
+        # STEP A: Simulate chairlift ascent using real lift coordinates
         # ---------------------------------------------------------
-        print(f"\n[Day {current_time.strftime('%H:%M')}] 🚠 Riding the lift up...")
-        current_alt = 1800.0  # Approximate base altitude in Sierra de Madrid
+        lift_coords = current_lift["coords"]
+        top_alt = current_alt + random.uniform(200, 300)
 
-        # Generate simulated ascent points (around 10 points)
+        print(f"\n[Day {current_time.strftime('%H:%M')}] 🚠 Riding lift '{current_lift['name']}' up...")
         lift_points = []
-        base_lat, base_lon = 40.800, -3.880
-        for _ in range(12):
-            base_lat += 0.00015
-            base_lon += 0.0001
-            current_alt += 25.0  # Elevation gain
+        lift_alts = interpolate_altitudes(current_alt, top_alt, len(lift_coords))
 
+        for idx, (lat, lon) in enumerate(lift_coords):
             lift_points.append({
-                "lat": base_lat,
-                "lon": base_lon,
-                "altitude": current_alt,
+                "lat": lat,
+                "lon": lon,
+                "altitude": lift_alts[idx],
                 "speed": 2.5,  # Slow lift speed
                 "timestamp": current_time.isoformat() + "Z",
             })
-            current_time += timedelta(seconds=30)
+            current_time += timedelta(seconds=20)
 
         send_points_batch(session_id, lift_points, auth_headers)
-        time.sleep(0.1)  # Small execution pause for the script
+        time.sleep(0.05)
+
+        current_pos = lift_coords[-1]
+        current_alt = top_alt
 
         # ---------------------------------------------------------
-        # STEP B: Short pause at the summit (lodge)
+        # STEP B: Short pause at the summit
         # ---------------------------------------------------------
-        print(f"[{current_time.strftime('%H:%M')}] ☕ Short break at the lodge/summit...")
+        print(f"[{current_time.strftime('%H:%M')}] ☕ Short break at the summit...")
         pause_points = []
         for _ in range(4):
             pause_points.append({
-                "lat": base_lat,
-                "lon": base_lon,
+                "lat": current_pos[0],
+                "lon": current_pos[1],
                 "altitude": current_alt,
                 "speed": 0.0,
                 "timestamp": current_time.isoformat() + "Z",
@@ -232,50 +264,53 @@ def simulate_full_day():
         send_points_batch(session_id, pause_points, auth_headers)
 
         # ---------------------------------------------------------
-        # STEP C: Choose a real piste from the database and descend it
+        # STEP C: Choose a real piste starting near the summit
         # ---------------------------------------------------------
-        chosen_piste = random.choice(pistes)
+        chosen_piste = min(valid_pistes, key=lambda p: get_distance(p["coords"][0], current_pos))
         print(f"[{current_time.strftime('%H:%M')}] 🏂 Descending piste: '{chosen_piste['name']}' (Difficulty: {chosen_piste['difficulty']})")
 
-        # Extract real coordinates from the piste GeoJSON geometry
-        piste_coords = extract_coordinates_from_geojson(chosen_piste["geojson"])
-
+        piste_coords = chosen_piste["coords"]
+        bottom_alt = max(1500.0, current_alt - random.uniform(200, 300))
         run_points = []
-        if len(piste_coords) > 5:
-            # Use them if detailed real geometries are available
-            step = max(1, len(piste_coords) // 15)  # Sample representative points
-            for idx in range(0, len(piste_coords), step):
-                lat, lon = piste_coords[idx]
-                current_alt = max(1500, current_alt - 30.0)  # Altitude descent
-                speed = random.uniform(8.0, 22.0)  # Ski speed between ~30 and 80 km/h
+        piste_alts = interpolate_altitudes(current_alt, bottom_alt, len(piste_coords))
 
-                run_points.append({
-                    "lat": lat,
-                    "lon": lon,
-                    "altitude": current_alt,
-                    "speed": speed,
-                    "timestamp": current_time.isoformat() + "Z",
-                })
-                current_time += timedelta(seconds=10)
-        else:
-            # Fallback if the piste has too few GeoJSON points
-            for _ in range(15):
-                base_lat -= 0.00025
-                base_lon -= 0.00015
-                current_alt -= 40.0
-                run_points.append({
-                    "lat": base_lat,
-                    "lon": base_lon,
-                    "altitude": current_alt,
-                    "speed": random.uniform(10.0, 18.0),
-                    "timestamp": current_time.isoformat() + "Z",
-                })
-                current_time += timedelta(seconds=10)
+        for idx, (lat, lon) in enumerate(piste_coords):
+            speed = random.uniform(8.0, 20.0)  # Ski speed
+            run_points.append({
+                "lat": lat,
+                "lon": lon,
+                "altitude": piste_alts[idx],
+                "speed": speed,
+                "timestamp": current_time.isoformat() + "Z",
+            })
+            current_time += timedelta(seconds=10)
 
         send_points_batch(session_id, run_points, auth_headers)
-        time.sleep(0.1)
+        time.sleep(0.05)
 
-    # 2. Finish session (triggers the Go goroutine for map matching and metrics computation)
+        current_pos = piste_coords[-1]
+        current_alt = bottom_alt
+
+        # ---------------------------------------------------------
+        # STEP D: Short pause at the base before next lift
+        # ---------------------------------------------------------
+        print(f"[{current_time.strftime('%H:%M')}] 🥤 Short break at the base...")
+        base_points = []
+        for _ in range(3):
+            base_points.append({
+                "lat": current_pos[0],
+                "lon": current_pos[1],
+                "altitude": current_alt,
+                "speed": 0.0,
+                "timestamp": current_time.isoformat() + "Z",
+            })
+            current_time += timedelta(seconds=30)
+        send_points_batch(session_id, base_points, auth_headers)
+
+        # Find the next lift starting near current position
+        current_lift = min(valid_lifts, key=lambda l: get_distance(l["coords"][0], current_pos))
+
+    # 2. Finish session
     print(f"\n🏁 Day finished. Closing session in the API...")
     resp = requests.post(
         f"{API_BASE_URL}/api/v1/ski-sessions/{session_id}/finish",
@@ -283,7 +318,7 @@ def simulate_full_day():
     )
     if resp.status_code == 200:
         print("✅ Session closed successfully.")
-        print("✨ Check your Go server logs: you should see noise filtering, segmentation, and how the map-matching algorithm assigns each descent to its real OpenStreetMap piste.")
+        print("✨ Check your Go server logs to verify run-detection and map-matching.")
     else:
         print(f"❌ Error closing session: {resp.text}")
 

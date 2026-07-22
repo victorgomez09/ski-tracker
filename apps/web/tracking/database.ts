@@ -7,6 +7,7 @@ export interface TrackPoint {
   alt: number;
   speed: number;
   pressure: number | null;
+  resort_id: string | null;
   timestamp: number;
 }
 
