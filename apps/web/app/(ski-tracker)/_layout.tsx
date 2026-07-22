@@ -19,7 +19,7 @@ export default function RootLayout() {
   return (
     <Tabs tabBar={(props) => <BottomTabs {...props} />} screenOptions={{headerShown: false}}>
       <Tabs.Screen 
-        name="index" 
+        name="map" 
         options={{ 
           title: 'Map', 
           tabBarIcon: ({ color }) => <Ionicons name="map" size={16} color={color} /> 

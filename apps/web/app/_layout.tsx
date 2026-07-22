@@ -3,7 +3,7 @@ import { Slot } from 'expo-router';
 import { useState, useEffect } from 'react';
 
 export default function RootLayout() {
-    const [theme, setTheme] = useState(
+    const [theme, _] = useState(
         JSON.parse(localStorage.getItem('theme') || '{}') || "winter"
     );
 

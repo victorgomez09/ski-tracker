@@ -1,53 +1,95 @@
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
 import { API_BASE_URL } from "constants/constants";
 import { Resort } from "models/ski-resort.model";
 import { useAuth } from "context/auth.context";
 
+// Cache state to survive tab navigation / component remounting
+let cachedResorts: Resort[] = [];
+let cachedSearchTerm = "";
+let cachedSelectedResort: Resort | null = null;
+let cachedSessions: any[] = [];
+let lastFetchedSearchTerm = cachedSearchTerm;
+
 export default function ResortsView() {
     const router = useRouter();
 
-    const [resorts, setResorts] = useState<Resort[]>([]);
-    const [searchTerm, setSearchTerm] = useState("");
-    const [selectedResort, setSelectedResort] = useState<Resort | null>(null);
-    const [sessions, setSessions] = useState<any[]>([]);
+    const [resorts, setResorts] = useState<Resort[]>(cachedResorts);
+    const [searchTerm, setSearchTerm] = useState(cachedSearchTerm);
+    const [selectedResort, setSelectedResort] = useState<Resort | null>(cachedSelectedResort);
+    const [sessions, setSessions] = useState<any[]>(cachedSessions);
     const { token } = useAuth();
 
-    const handleSearch = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const term = event.target.value;
-        setSearchTerm(term);
-        setSelectedResort(null);
+    // Cache sync helpers
+    const setResortsWithCache = (val: Resort[]) => {
+        cachedResorts = val;
+        setResorts(val);
+    };
 
-        if (term.trim().length <= 2) {
-            setResorts([]);
+    const setSearchTermWithCache = (val: string) => {
+        cachedSearchTerm = val;
+        setSearchTerm(val);
+    };
+
+    const setSelectedResortWithCache = (val: Resort | null) => {
+        cachedSelectedResort = val;
+        setSelectedResort(val);
+    };
+
+    const setSessionsWithCache = (val: any[]) => {
+        cachedSessions = val;
+        setSessions(val);
+    };
+
+    // Debounce search API call
+    useEffect(() => {
+        // If the current search term already matches what we last fetched, skip calling API
+        if (searchTerm === lastFetchedSearchTerm) {
             return;
         }
 
-        try {
-            const response = await axios.get(`${API_BASE_URL}/resorts/by-name`, {
-                params: { name: term },
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-
-            if (response.status === 200) {
-                setResorts(response.data);
-            } else {
-                console.error("Error fetching resorts:", response.statusText);
-            }
-        } catch (error) {
-            console.error("Error fetching resorts:", error);
-            setResorts([]);
+        if (searchTerm.trim().length <= 2) {
+            setResortsWithCache([]);
+            lastFetchedSearchTerm = "";
+            return;
         }
+
+        const delayDebounceFn = setTimeout(async () => {
+            try {
+                const response = await axios.get(`${API_BASE_URL}/resorts/by-name`, {
+                    params: { name: searchTerm },
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+
+                if (response.status === 200) {
+                    setResortsWithCache(response.data);
+                    lastFetchedSearchTerm = searchTerm;
+                } else {
+                    console.error("Error fetching resorts:", response.statusText);
+                }
+            } catch (error) {
+                console.error("Error fetching resorts:", error);
+                setResortsWithCache([]);
+            }
+        }, 350); // 350ms debounce
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchTerm, token]);
+
+    const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const term = event.target.value;
+        setSearchTermWithCache(term);
+        setSelectedResortWithCache(null);
     };
 
     const handleResortSelect = async (resort: Resort) => {
-        setSelectedResort(resort);
-        setSessions([]);
+        setSelectedResortWithCache(resort);
+        setSessionsWithCache([]);
 
         try {
             const request = await axios.get(`${API_BASE_URL}/ski-sessions`, {
@@ -59,17 +101,17 @@ export default function ResortsView() {
             });
 
             if (request.status === 200) {
-                setSessions(request.data.sessions || []);
+                setSessionsWithCache(request.data.sessions || []);
             }
         } catch (err) {
             console.error("Error fetching sessions:", err);
-            setSessions([]);
+            setSessionsWithCache([]);
         }
     }
 
     const handleSessionClick = (session: any) => {
         if (!selectedResort) return;
-        router.push(`/private?sessionId=${session.id}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=14`);
+        router.push(`/?sessionId=${session.id}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=14`);
     }
 
     const selectedResortSummary = useMemo(() => {
@@ -145,7 +187,7 @@ export default function ResortsView() {
                                 <h4 className="font-semibold">{selectedResort.Name}</h4>
                                 <p className="text-sm opacity-70">{selectedResort.Country}</p>
                             </div>
-                            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedResort(null)}>
+                            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedResortWithCache(null)}>
                                 Close
                             </button>
                         </div>
@@ -208,11 +250,11 @@ export default function ResortsView() {
                                 <button
                                     type="button"
                                     className="btn btn-primary btn-sm flex-1"
-                                    onClick={() => router.push(`/private?minLat=${selectedResort.Latitude}&maxLat=${selectedResort.Latitude}&minLon=${selectedResort.Longitude}&maxLon=${selectedResort.Longitude}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=13`)}
+                                    onClick={() => router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`)}
                                 >
                                     View on map
                                 </button>
-                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedResort(null)}>
+                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedResortWithCache(null)}>
                                     Dismiss
                                 </button>
                             </div>

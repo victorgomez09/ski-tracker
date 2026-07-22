@@ -83,6 +83,6 @@ v
 ### Phase 5: Frontend Results Visualization
 *Objective: Display a detailed summary of the day and each individual run to the user.*
 
-*   [ ] **Session History Screen:** Chronologically grouped list of runs (Run 1, Run 2, etc.).
-*   [ ] **Map Trace Rendering:** Render the exact path line of the run over your `InteractiveSkiMap` component with distinct or highlighted colors.
-*   [ ] **Statistics Panel:** Show speed vs. altitude graphs for each selected run.
+*   [x] **Session History Screen:** Chronologically grouped list of runs (Run 1, Run 2, etc.).
+*   [x] **Map Trace Rendering:** Render the exact path line of the run over your `InteractiveSkiMap` component with distinct or highlighted colors.
+*   [x] **Statistics Panel:** Show speed vs. altitude graphs for each selected run.

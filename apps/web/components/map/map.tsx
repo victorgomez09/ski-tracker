@@ -87,6 +87,21 @@ export default function InteractiveSkiMap() {
     const { token } = useAuth();
 
     useEffect(() => {
+        if (searchParams.lat && searchParams.lon) {
+            const lat = parseFloat(searchParams.lat as string);
+            const lon = parseFloat(searchParams.lon as string);
+            if (!isNaN(lat) && !isNaN(lon)) {
+                setViewState(prev => ({
+                    ...prev,
+                    latitude: lat,
+                    longitude: lon,
+                    zoom: searchParams.zoom ? parseInt(searchParams.zoom as string) : prev.zoom
+                }));
+            }
+        }
+    }, [searchParams.lat, searchParams.lon, searchParams.zoom]);
+
+    useEffect(() => {
         const loadSessionData = async () => {
             if (searchParams.sessionId) {
                 try {
@@ -182,7 +197,7 @@ export default function InteractiveSkiMap() {
         }
 
         loadInitial();
-    }, []);
+    }, [searchParams.lat, searchParams.lon, searchParams.zoom, searchParams.minLon, searchParams.minLat, searchParams.maxLon, searchParams.maxLat, token]);
 
     // --- Layer styles ---
     const pisteLineStyle: LayerProps = {
@@ -325,7 +340,7 @@ export default function InteractiveSkiMap() {
 
     // --- Data transformation ---
     const pistesGeoJSON = useMemo(() => {
-        const pistesFeatures = resorts.flatMap(r => {
+        const pistesFeatures = resorts?.flatMap(r => {
             if (!r.pistes || !Array.isArray(r.pistes)) return [];
 
             return r.pistes
@@ -348,7 +363,7 @@ export default function InteractiveSkiMap() {
     }, [resorts]);
 
     const liftsGeoJSON = useMemo(() => {
-        const liftsFeatures = resorts.flatMap(r => {
+        const liftsFeatures = resorts?.flatMap(r => {
             if (!r.lifts || !Array.isArray(r.lifts)) return [];
 
             return r.lifts
@@ -571,7 +586,7 @@ export default function InteractiveSkiMap() {
                 )}
 
                 {/* Resort markers */}
-                {viewState.zoom < 10 && resorts.map(resort => (
+                {viewState.zoom < 10 && resorts?.map(resort => (
                     <Marker
                         key={resort.ID}
                         longitude={resort.Longitude}

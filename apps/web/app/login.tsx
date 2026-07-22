@@ -36,7 +36,7 @@ export default function LoginView() {
             const data = request.data as LoginResponse;
             
             signIn(data.access_token);
-            router.push("/private");
+            router.push("/map");
         } else {
             console.error("Login failed:", request.status, request.statusText);
         }
