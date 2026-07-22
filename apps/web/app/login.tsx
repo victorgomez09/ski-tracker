@@ -31,13 +31,6 @@ export default function LoginView() {
                 "Content-Type": "application/json"
             }
         });
-        // const request = await fetch(`${API_BASE_URL}/auth/login`, {
-        //     body: JSON.stringify(data),
-        //     method: "POST",
-        //     headers: {
-        //         "Content-Type": "application/json"
-        //     }
-        // })
 
         if (request.status === 200) {
             const data = request.data as LoginResponse;

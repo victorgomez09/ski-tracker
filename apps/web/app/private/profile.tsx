@@ -5,8 +5,35 @@ import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from "constants/constants";
 import type { User } from "models/user.model";
 
+const themes: { [key: string]: string } = {
+    "light": "Default",
+    "dark": "Dark",
+    "winter": "Winter",
+    "forest": "Forest",
+    "dracula": "Dracula",
+    "cyberpunk": "Cyberpunk",
+    "synthwave": "Synthwave",
+    "valentine": "Valentine",
+    "night": "Night",
+    "retro": "Retro",
+    "halloween": "Halloween",
+    "garden": "Garden",
+    "business": "Business",
+    "acid": "Acid",
+    "lemonade": "Lemonade",
+    "coffee": "Coffee",
+    "cupcake": "Cupcake"
+};
+
 export default function ProfileView() {
     const [user, setUser] = useState<User | null>(null);
+    const [theme, setTheme] = useState(
+        JSON.parse(localStorage.getItem('theme') || '{}') || "winter"
+    );
+
+    useEffect(() => {
+        localStorage.setItem('theme', JSON.stringify(theme));
+    }, [theme]);
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -42,69 +69,35 @@ export default function ProfileView() {
             <div className="hero-content flex-col">
                 <div className="card bg-base-100 w-80 shrink-0 shadow-md">
                     <div className="card-body">
-
-                        <div className="dropdown">
-                            <div tabIndex={0} role="button" className="btn m-1">
-                                Theme
-                                <svg
-                                    width="12px"
-                                    height="12px"
-                                    className="inline-block h-2 w-2 fill-current opacity-60"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 2048 2048">
-                                    <path d="M1799 349l242 241-1017 1017L7 590l242-241 775 775 775-775z"></path>
-                                </svg>
+                        <div className="flex items-center gap-2">
+                            <div className="dropdown">
+                                <div tabIndex={0} role="button" className="btn m-1">
+                                    Change!
+                                    <svg
+                                        width="12px"
+                                        height="12px"
+                                        className="inline-block h-2 w-2 fill-current opacity-60"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        viewBox="0 0 2048 2048">
+                                        <path d="M1799 349l242 241-1017 1017L7 590l242-241 775 775 775-775z"></path>
+                                    </svg>
+                                </div>
+                                <ul tabIndex={-1} className="dropdown-content bg-base-300 rounded-box z-1 w-52 h-32 overflow-y-auto p-2 shadow-2xl">
+                                    {Object.entries(themes).map(([key, value]) => (
+                                        <li key={key}>
+                                            <input
+                                                type="radio"
+                                                name="theme-dropdown"
+                                                className="theme-controller w-full btn btn-sm btn-block btn-ghost justify-start"
+                                                aria-label={value}
+                                                value={key}
+                                                onClick={() => setTheme(key)} />
+                                        </li>
+                                    ))}
+                                </ul>
                             </div>
-                            <ul tabIndex={-1} className="dropdown-content bg-base-300 rounded-box z-1 w-52 p-2 shadow-2xl">
-                                <li>
-                                    <input
-                                        type="radio"
-                                        name="theme-dropdown"
-                                        className="theme-controller w-full btn btn-sm btn-block btn-ghost justify-start"
-                                        aria-label="Default"
-                                        value="default" />
-                                </li>
-                                <li>
-                                    <input
-                                        type="radio"
-                                        name="theme-dropdown"
-                                        className="theme-controller w-full btn btn-sm btn-block btn-ghost justify-start"
-                                        aria-label="Retro"
-                                        value="retro" />
-                                </li>
-                                <li>
-                                    <input
-                                        type="radio"
-                                        name="theme-dropdown"
-                                        className="theme-controller w-full btn btn-sm btn-block btn-ghost justify-start"
-                                        aria-label="Cyberpunk"
-                                        value="cyberpunk" />
-                                </li>
-                                <li>
-                                    <input
-                                        type="radio"
-                                        name="theme-dropdown"
-                                        className="theme-controller w-full btn btn-sm btn-block btn-ghost justify-start"
-                                        aria-label="Valentine"
-                                        value="valentine" />
-                                </li>
-                                <li>
-                                    <input
-                                        type="radio"
-                                        name="theme-dropdown"
-                                        className="theme-controller w-full btn btn-sm btn-block btn-ghost justify-start"
-                                        aria-label="Aqua"
-                                        value="aqua" />
-                                </li>
-                                <li>
-                                    <input
-                                        type="radio"
-                                        name="theme-dropdown"
-                                        className="theme-controller w-full btn btn-sm btn-block btn-ghost justify-start"
-                                        aria-label="Winter"
-                                        value="winter" />
-                                </li>
-                            </ul>
+
+                            <p>Current theme: <span className="ml-2">{themes[theme]}</span></p>
                         </div>
                     </div>
                 </div>
