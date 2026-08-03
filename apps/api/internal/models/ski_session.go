@@ -19,8 +19,10 @@ type SkiSession struct {
 	MaxSpeed      float64    `bun:"max_speed,default:0" json:"max_speed"`
 	VerticalDrop  float64    `bun:"vertical_drop,default:0" json:"vertical_drop"`
 	ActivityType  string     `bun:"activity_type,default:'ski'" json:"activity_type"`
+	IsPublic      bool       `bun:"is_public,default:true" json:"is_public"`
 	CreatedAt     time.Time  `bun:"created_at,default:current_timestamp" json:"created_at"`
 
+	User   *User          `bun:"rel:belongs-to,join:user_id=id" json:"user,omitempty"`
 	Points []SessionPoint `bun:"rel:has-many,join:id=session_id" json:"points,omitempty"`
 	Runs   []SkiRun       `bun:"rel:has-many,join:id=session_id" json:"runs,omitempty"`
 }

@@ -29,6 +29,74 @@ func NewSkiResortService(s store.Store, logger *slog.Logger) *SkiResortService {
 	return &SkiResortService{store: s, logger: logger}
 }
 
+func (s *SkiResortService) GetByID(ctx context.Context, id string) (ResortDetailDTO, error) {
+	resort, err := s.store.SkiResort().GetByID(ctx, id)
+	if err != nil {
+		return ResortDetailDTO{}, err
+	}
+
+	result := ResortDetailDTO{
+		SkiResort:  resort,
+		DistanceKM: 0, // Distance is not calculated in this method
+	}
+
+	// Get total number of pistes for each resort
+	pistes, err := s.store.SkiPiste().GetByResortID(ctx, resort.ID)
+	if err != nil {
+		s.logger.Error("failed to get pistes for resort", "resort_id", resort.ID, "error", err)
+		return ResortDetailDTO{}, err
+	}
+
+	// calculate total distance of pistes for the resort, filter only by pistes with name
+	pistes = mergeContiguousPistes(pistes)
+	filterPistes := make([]models.SkiPiste, 0, len(pistes))
+	for _, piste := range pistes {
+		if piste.Name != "" {
+			filterPistes = append(filterPistes, piste)
+		}
+	}
+	result.TotalPistes = len(filterPistes)
+	totalKmOfPistes := 0.0
+	for _, piste := range filterPistes {
+		coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{})
+		if !ok || len(coords) < 2 {
+			continue
+		}
+
+		// Calculate the total distance of the piste by summing the distances between consecutive points
+		for j := 0; j < len(coords)-1; j++ {
+			pointA, okA := coords[j].([]interface{})
+			pointB, okB := coords[j+1].([]interface{})
+			if !okA || !okB || len(pointA) < 2 || len(pointB) < 2 {
+				continue
+			}
+
+			latA, okLatA := pointA[1].(float64)
+			lonA, okLonA := pointA[0].(float64)
+			latB, okLatB := pointB[1].(float64)
+			lonB, okLonB := pointB[0].(float64)
+
+			if !okLatA || !okLonA || !okLatB || !okLonB {
+				continue
+			}
+
+			totalKmOfPistes += calculateDistance(latA, lonA, latB, lonB)
+		}
+	}
+	result.DistanceKM = totalKmOfPistes
+
+	lifts, err := s.store.SkiLift().GetByResortID(ctx, resort.ID)
+	if err != nil {
+		s.logger.Error("failed to get lifts for resort", "resort_id", resort.ID, "error", err)
+		return ResortDetailDTO{}, err
+	}
+	result.TotalLifts = len(lifts)
+	result.Pistes = filterPistes
+	result.Lifts = lifts
+
+	return result, nil
+}
+
 func (s *SkiResortService) ListByName(ctx context.Context, name string) ([]ResortDetailDTO, error) {
 	resorts, err := s.store.SkiResort().ListByName(ctx, name)
 	if err != nil {
@@ -95,6 +163,8 @@ func (s *SkiResortService) ListByName(ctx context.Context, name string) ([]Resor
 			continue
 		}
 		result[i].TotalLifts = len(lifts)
+		result[i].Pistes = filterPistes
+		result[i].Lifts = lifts
 	}
 
 	return result, nil

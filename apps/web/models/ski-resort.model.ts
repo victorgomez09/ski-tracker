@@ -171,8 +171,8 @@ export interface Resort {
             wikidataID: null;
         },
         CreatedAt: string;
-        Pistes: Piste[] | null;
-        Lifts: Lift[] | null;
+        pistes: Piste[] | null;
+        lifts: Lift[] | null;
         distance_km: number | null;
         total_pistes: number | null;
         total_lifts: number | null;

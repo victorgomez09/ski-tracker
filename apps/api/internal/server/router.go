@@ -56,6 +56,7 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.GET("/resorts/bbox", skiResortHandler.ListByBBox)
 			protected.GET("/resorts/nearby", skiResortHandler.ListNearby)
 			protected.GET("/resorts/by-name", skiResortHandler.ListByName)
+			protected.GET("/resorts/by-id/:id", skiResortHandler.GetByID)
 			protected.GET("/resorts/closeness", skiResortHandler.GetByCloseness)
 
 			// Ski session routes

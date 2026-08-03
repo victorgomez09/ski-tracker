@@ -9,8 +9,9 @@ import { Area, AreaChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, 
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
-import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
+import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
 import { MapDetailPanel } from './map-detail-panel';
+import { ResortDetailPanel } from './resort-detail-panel';
 import { AltitudeTooltip } from './altitude-tooltip';
 import { SpeedTooltip } from './speed-tooltip';
 
@@ -21,6 +22,7 @@ export default function InteractiveSkiMap() {
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
+    const [selectedResort, setSelectedResort] = useState<Resort | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
     const [matchedPisteIds, setMatchedPisteIds] = useState<string[]>([]);
@@ -90,7 +92,7 @@ export default function InteractiveSkiMap() {
     });
     const { token } = useAuth();
 
-useEffect(() => {
+    useEffect(() => {
         // Si el cambio de URL fue provocado por el propio mapa, lo ignoramos para evitar el bucle/tirón
         if (isInternalMoveRef.current) {
             isInternalMoveRef.current = false; // Reseteamos la bandera
@@ -216,16 +218,12 @@ useEffect(() => {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
             'line-color': [
-                'case',
-                ['in', ['get', 'id'], ['literal', matchedPisteIds]], '#f1c40f', // yellow for matched pistes
-                [
-                    'match', ['get', 'difficulty'],
-                    'novice', '#00e676',
-                    'easy', '#2979ff',
-                    'intermediate', '#ff1744',
-                    'advanced', '#212121',
-                    '#9e9e9e'
-                ]
+                'match', ['get', 'difficulty'],
+                'novice', '#00e676',
+                'easy', '#2979ff',
+                'intermediate', '#ff1744',
+                'advanced', '#212121',
+                '#9e9e9e'
             ],
             'line-dasharray': [
                 'case',
@@ -243,6 +241,7 @@ useEffect(() => {
                 'case',
                 ['==', ['get', 'id'], selectedFeature?.ID || ''], 9,
                 ['==', ['get', 'id'], hoveredFeatureId || ''], 8,
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
                 ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7, // thicker for matched pistes
                 5
             ]
@@ -376,6 +375,7 @@ useEffect(() => {
                 'case',
                 ['==', ['get', 'id'], selectedFeature?.ID || ''], 6,
                 ['==', ['get', 'id'], hoveredFeatureId || ''], 5,
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
                 3
             ],
             'line-dasharray': [2, 2]
@@ -400,7 +400,8 @@ useEffect(() => {
                         pisteType: p.PisteType,
                         grooming: p.Tags?.grooming,
                         name: p.Name || `Piste #${p.ID.slice(0, 4)}`,
-                        resortName: r.Name
+                        resortName: r.Name,
+                        resortId: r.ID
                     },
                     geometry: p.GeometryGeoJSON
                 }));
@@ -423,7 +424,8 @@ useEffect(() => {
                         id: l.ID,
                         type: l.LiftType, // Ej: chairlift, gondola, ski_lift, etc.
                         name: l.Name || `Lift #${l.ID.slice(0, 4)}`,
-                        resortName: r.Name
+                        resortName: r.Name,
+                        resortId: r.ID
                     },
                     geometry: l.GeometryGeoJSON
                 }));
@@ -520,6 +522,56 @@ useEffect(() => {
         router.setParams({ zoom: currentZoom.toFixed(0) })
     };
 
+    const fetchResortWithDetails = async (resortId: string) => {
+        try {
+            const request = await axios.get<Resort>(`${API_BASE_URL}/resorts/by-id/${resortId}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+            if (request.status !== 200) {
+                throw new Error(`HTTP error! status: ${request.status}`);
+            }
+            setSelectedResort(request.data);
+            const map = mapRef.current?.getMap();
+            if (!map) return;
+            
+            try {
+                const lat = request.data.Latitude;
+                const lon = request.data.Longitude;
+
+                const requestResorts = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                    params: {
+                        lat: lat,
+                        lon: lon,
+                        radius: 50
+                    },
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                });
+                if (requestResorts.status !== 200) {
+                    throw new Error(`HTTP error! status: ${requestResorts.status}`);
+                }
+                setResorts(requestResorts.data);
+            } catch (error) {
+                console.error("Error fetching resorts:", error);
+            }
+
+            setSelectedFeature(null);
+            if (viewState.zoom < 10) {
+                setViewState(prev => ({
+                    ...prev,
+                    longitude: request.data.Longitude,
+                    latitude: request.data.Latitude,
+                    zoom: 12
+                }));
+            }
+        } catch (error) {
+            console.error("Error fetching resort details:", error);
+        }
+    };
+
     // --- Handler when the user finishes moving/zooming the map ---
     const handleMouseMove = (event: any) => {
         const map = event.target;
@@ -560,7 +612,11 @@ useEffect(() => {
                 layers: ['piste-lines', 'lift-lines']
             });
 
-            if (!features.length) return;
+            if (!features.length) {
+                setSelectedFeature(null);
+                setSelectedResort(null);
+                return;
+            }
 
             const clickedFeature = features[0];
             const featureId = clickedFeature.properties.id;
@@ -571,12 +627,14 @@ useEffect(() => {
                     const foundLift = resort.lifts.find(l => l.ID === featureId);
                     if (foundLift) {
                         setSelectedFeature(foundLift);
+                        setSelectedResort(null); // Clear resort selection when selecting specific feature
                         return;
                     }
                 } else if (!isLift && resort.pistes) {
                     const foundPiste = resort.pistes.find(p => p.ID === featureId);
                     if (foundPiste) {
                         setSelectedFeature(foundPiste);
+                        setSelectedResort(null); // Clear resort selection when selecting specific feature
                         return;
                     }
                 }
@@ -619,12 +677,19 @@ useEffect(() => {
     }, []);
 
     return (
-        <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 2.5rem)' }}>
+        <div className="w-full h-[calc(100vh-4rem)] lg:h-screen relative lg:pl-64">
             {/* Pistes and lifts details panel */}
             {selectedFeature && (
                 <MapDetailPanel
                     data={selectedFeature}
                     onClose={() => setSelectedFeature(null)}
+                />
+            )}
+            {/* Resort details panel */}
+            {selectedResort && (
+                <ResortDetailPanel
+                    resort={selectedResort}
+                    onClose={() => setSelectedResort(null)}
                 />
             )}
             <Map
@@ -637,7 +702,7 @@ useEffect(() => {
                 onClick={handleMapClick}
                 onZoomEnd={fetchResortsWithDetails}
                 interactiveLayerIds={['piste-lines', 'lift-lines']}
-                style={{ width: '100%', height: 'calc(100vh - 4rem)' }}
+                style={{ width: '100%', height: '100%' }}
                 mapStyle="https://tiles.openfreemap.org/styles/liberty"
                 mapLib={maplibregl}
                 maplibreLogo={false}
@@ -645,29 +710,18 @@ useEffect(() => {
             >
                 <NavigationControl position="bottom-right" />
 
-                {/* Pistes Layer */}
-                {viewState.zoom >= 10 && (
-                    <Source id="pistes-source" type="geojson" data={pistesGeoJSON}>
-                        <Layer {...pisteLineStyle} />
-                        <Layer {...pisteLabelStyle} />
-                    </Source>
-                )}
-
                 {/* Resort markers */}
-                {viewState.zoom < 10 && resorts?.map(resort => (
+                {resorts?.map(resort => (
                     <Marker
                         key={resort.ID}
                         longitude={resort.Longitude}
                         latitude={resort.Latitude}
                         anchor="bottom"
-                        onClick={() => {
-                            console.log("Estación seleccionada:", resort.Name);
-                            setViewState(prev => ({
-                                ...prev,
-                                longitude: resort.Longitude,
-                                latitude: resort.Latitude,
-                                zoom: 12
-                            }));
+                        onClick={async (e) => {
+                            if (e && e.originalEvent) {
+                                e.originalEvent.stopPropagation();
+                            }
+                            await fetchResortWithDetails(resort.ID);
                         }}
                     >
                         <div
@@ -676,33 +730,30 @@ useEffect(() => {
                             onMouseEnter={() => setHoveredResortId(resort.ID)}
                             onMouseLeave={() => setHoveredResortId(null)}
                         >
-                            {hoveredResortId === resort.ID && (
+                            {(viewState.zoom >= 10 || hoveredResortId === resort.ID || selectedResort?.ID === resort.ID) && (
                                 <div style={{
-                                    backgroundColor: 'white',
-                                    padding: '2px 8px',
-                                    borderRadius: '4px',
+                                    backgroundColor: 'transparent',
                                     fontSize: '11px',
                                     fontWeight: 'bold',
-                                    color: '#333',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                                    marginBottom: '4px',
+                                    color: selectedResort?.ID === resort.ID ? '#3b82f6' : '#2c3e50',
+                                    textShadow: '0 0 3px #ffffff, 0 0 3px #ffffff, 0 0 3px #ffffff',
                                     whiteSpace: 'nowrap',
-                                    zIndex: 10
+                                    marginBottom: '2px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
                                 }}>
                                     {resort.Name}
                                 </div>
                             )}
-
-                            <div className="resort-marker-dot" style={{
-                                background: '#e67e22',
-                                width: 12,
-                                height: 12,
-                                borderRadius: '50%',
-                                border: '2px solid white',
-                                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                                transition: 'transform 0.2s',
-                                transform: hoveredResortId === resort.ID ? 'scale(1.2)' : 'scale(1)'
-                            }}></div>
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center border shadow transition-all duration-200 ${selectedResort?.ID === resort.ID
+                                    ? 'bg-primary border-primary text-white scale-110'
+                                    : 'bg-white border-primary/30 text-primary hover:scale-105'
+                                }`}>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                                    <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.157-1.127C18.061 17.7 22 13.666 22 9.5 22 4.253 17.523 0 12 0S2 4.253 2 9.5c0 4.166 3.939 8.2 8.18 11.724a16.977 16.977 0 001.36 1.127zm-1.54-12.85a2 2 0 114 0 2 2 0 01-4 0z" clipRule="evenodd" />
+                                </svg>
+                            </div>
                         </div>
                     </Marker>
                 ))}

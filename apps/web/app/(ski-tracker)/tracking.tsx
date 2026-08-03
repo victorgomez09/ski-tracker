@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
-import { Play, Square, Upload } from 'lucide-react';
+import { Play, Square, Upload, Eye, EyeOff, Activity } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -33,6 +33,7 @@ export default function InteractiveSkiMap() {
     const [hasTrackData, setHasTrackData] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
+    const [isPublic, setIsPublic] = useState(true);
     const [viewState, setViewState] = useState({
         longitude: parseFloat(searchParams.lng as string || '-3.971953'),
         latitude: parseFloat(searchParams.lat as string || '40.797891'),
@@ -127,7 +128,8 @@ export default function InteractiveSkiMap() {
 
             // 1. Start session
             const startResponse = await axios.post(`${API_BASE_URL}/ski-sessions`, {
-                resortId: resortIdToUse
+                resortId: resortIdToUse,
+                isPublic: isPublic
             }, {
                 headers: {
                     "Content-Type": "application/json",
@@ -471,32 +473,77 @@ export default function InteractiveSkiMap() {
     };
 
     return (
-        <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 2.5rem)' }}>
+        <div className="w-full h-[calc(100vh-4rem)] lg:h-screen relative lg:pl-64">
             {selectedFeature && (
                 <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
             )}
 
-            <div className="absolute bottom-10 right-4 z-1000 flex gap-2">
-                <button className="btn btn-primary btn-sm"
-                    onClick={handleToggleTracking}
-                >
-                    <span>
-                        {isTracking ? <Square /> : <Play />}
-                    </span>
-                </button>
-
+            <div className="absolute bottom-10 right-4 z-1000 flex flex-col items-end gap-3">
+                {/* Save Session Card */}
                 {!isTracking && hasTrackData && (
-                    <button className="btn btn-primary btn-sm"
-                        onClick={handleUploadTrack}
-                        disabled={isLoading}
-                    >
-                        {isLoading ? (
-                            <span className="loading loading-spinner"></span>
-                        ) : (
-                            <Upload />
-                        )}
-                    </button>
+                    <div className="bg-base-100/95 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-base-200 w-72 flex flex-col gap-3 transition-all duration-300">
+                        <div className="flex flex-col gap-0.5">
+                            <h4 className="font-bold text-sm text-base-content flex items-center gap-1.5">
+                                <Activity className="w-4 h-4 text-primary animate-pulse" />
+                                Session recorded
+                            </h4>
+                            <p className="text-[11px] text-base-content/60">
+                                {trackPoints.length} points recorded at {resort.Name}
+                            </p>
+                        </div>
+                        
+                        <div className="divider my-0"></div>
+
+                        {/* Privacy Toggle */}
+                        <div className="flex flex-col gap-1">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-base-content flex items-center gap-1">
+                                    {isPublic ? <Eye className="w-3.5 h-3.5 text-success" /> : <EyeOff className="w-3.5 h-3.5 text-base-content/40" />}
+                                    Privacy
+                                </span>
+                                <input
+                                    type="checkbox"
+                                    className="toggle toggle-sm toggle-primary"
+                                    checked={isPublic}
+                                    onChange={(e) => setIsPublic(e.target.checked)}
+                                />
+                            </div>
+                            <span className="text-[10px] text-base-content/50 leading-tight">
+                                {isPublic 
+                                    ? "Public: visible to everyone in the resort details."
+                                    : "Private: only you can see it in the resort details."
+                                }
+                            </span>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-2 mt-1">
+                            <button 
+                                className="btn btn-primary btn-sm flex-1 font-bold gap-1.5 shadow"
+                                onClick={handleUploadTrack}
+                                disabled={isLoading}
+                            >
+                                {isLoading ? (
+                                    <span className="loading loading-spinner loading-xs"></span>
+                                ) : (
+                                    <>
+                                        <Upload className="w-3.5 h-3.5" />
+                                        Upload
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
                 )}
+
+                {/* Tracking Action Buttons */}
+                <div className="flex gap-2">
+                    <button className={`btn btn-circle shadow-lg ${isTracking ? 'btn-error animate-pulse' : 'btn-primary'}`}
+                        onClick={handleToggleTracking}
+                    >
+                        {isTracking ? <Square className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white fill-white" />}
+                    </button>
+                </div>
             </div>
 
             <Map
@@ -509,7 +556,7 @@ export default function InteractiveSkiMap() {
                 onClick={handleMapClick}
                 // onZoomEnd={fetchResortsWithDetails}
                 interactiveLayerIds={['piste-lines', 'lift-lines']}
-                style={{ width: '100%', height: 'calc(100vh - 4rem)' }}
+                style={{ width: '100%', height: '100%' }}
                 mapStyle="https://tiles.openfreemap.org/styles/liberty"
                 mapLib={maplibregl}
                 maplibreLogo={false}

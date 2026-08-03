@@ -94,7 +94,7 @@ export default function ProfileView() {
     };
 
     return (
-        <div className="hero bg-base-200 max-h-[calc(100vh-4rem)] py-8">
+        <div className="hero bg-base-200 min-h-screen pt-8 pb-24 lg:pb-8 lg:pl-64">
             <div className="hero-content flex-col w-full max-w-md gap-6">
                 {/* USER INFORMATION CARD */}
                 <div className="card bg-base-100 w-full shadow-xl">

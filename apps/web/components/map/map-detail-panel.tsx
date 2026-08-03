@@ -1,6 +1,6 @@
 import { Lift, Piste } from 'models/ski-resort.model';
 import React, { useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface MapDetailPanelProps {
     data: Piste | Lift;
@@ -29,9 +29,7 @@ const getDifficultyMeta = (difficulty: string) => {
 };
 
 export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose }) => {
-    if (!data) return null;
-
-    const tags = data.Tags || {};
+    const tags = data?.Tags || {};
     const elevationProfile = tags.elevationProfile || {};
     const heights = elevationProfile.heights || [];
     const resolution = elevationProfile.resolution || 25;
@@ -141,8 +139,10 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
         }
     }
 
+    if (!data) return null;
+
     return (
-        <div className="absolute top-4 left-4 z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow-2xl rounded-2xl p-4 w-96 max-h-[85vh] overflow-y-auto flex flex-col gap-3">
+        <div className="absolute bottom-20 left-4 right-4 lg:bottom-auto lg:top-4 lg:left-72 lg:right-auto z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow-2xl rounded-2xl p-4 w-auto lg:w-96 max-h-[45vh] lg:max-h-[85vh] overflow-y-auto flex flex-col gap-3">
             <div className="flex justify-between items-start mb-2">
                 <div className="text-xs text-gray-500 font-medium tracking-wide">
                     {country} <span className="mx-1">›</span> {region} <span className="mx-1">›</span>
@@ -208,29 +208,33 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
                     <div className="h-44 w-full mb-3">
                         {chartData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                                <AreaChart data={chartData} margin={{ top: 15, right: 15, left: -10, bottom: 5 }}>
                                     <defs>
                                         <linearGradient id="slopeColorGradient" x1="0" y1="0" x2="1" y2="0">
                                             {gradientStops}
                                         </linearGradient>
                                         <linearGradient id="verticalOpacity" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#9ca3af" stopOpacity={0.2} />
-                                            <stop offset="95%" stopColor="#9ca3af" stopOpacity={0.0} />
+                                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
                                         </linearGradient>
                                     </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.05)" vertical={false} />
                                     <XAxis
                                         dataKey="distance"
                                         tickFormatter={(val) => `${val} km`}
-                                        fontSize={10}
+                                        fontSize={9}
                                         tickLine={false}
-                                        axisLine={{ stroke: '#e5e7eb' }}
+                                        axisLine={{ stroke: 'rgba(0, 0, 0, 0.08)' }}
+                                        tick={{ fill: '#6b7280', fontWeight: '500' }}
                                     />
                                     <YAxis
-                                        domain={['auto', 'auto']}
+                                        domain={['dataMin - 20', 'dataMax + 20']}
                                         tickFormatter={(val) => `${val}m`}
-                                        fontSize={10}
+                                        fontSize={9}
                                         tickLine={false}
-                                        axisLine={{ stroke: '#e5e7eb' }}
+                                        axisLine={{ stroke: 'rgba(0, 0, 0, 0.08)' }}
+                                        tick={{ fill: '#6b7280', fontWeight: '500' }}
+                                        width={50}
                                     />
 
                                     <Tooltip
@@ -239,18 +243,18 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
                                                 const data = payload[0].payload;
                                                 const slopeDeg = pctToDegrees(data.slope);
                                                 return (
-                                                    <div className="bg-white p-3 border border-gray-100 rounded-lg shadow-md text-xs font-sans">
-                                                        <p className="text-gray-500 font-medium mb-1.5">Distance: <span className="text-gray-800 font-bold">{label} km</span></p>
+                                                    <div className="bg-base-100/95 backdrop-blur-md p-3 border border-base-200 rounded-xl shadow-lg text-xs font-sans">
+                                                        <p className="text-base-content/50 font-medium mb-1.5">Distance: <span className="text-base-content font-bold">{label} km</span></p>
                                                         <div className="space-y-1">
                                                             <div className="flex items-center gap-1.5">
-                                                                {/* <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: diffMeta.hex }}></span> */}
-                                                                <span className="text-gray-500">Elevation:</span>
-                                                                <span className="text-gray-950 font-semibold">{data.elevation}m</span>
+                                                                <span className="w-2 h-2 rounded-full bg-primary"></span>
+                                                                <span className="text-base-content/65">Height:</span>
+                                                                <span className="text-base-content font-semibold">{data.elevation}m</span>
                                                             </div>
                                                             <div className="flex items-center gap-1.5">
-                                                                {/* <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: data.color }}></span> */}
-                                                                <span className="text-gray-500">Slope:</span>
-                                                                <span className="text-gray-950 font-semibold">{data.slope}% ({slopeDeg}°)</span>
+                                                                <span className="w-2 h-2 rounded-full bg-secondary"></span>
+                                                                <span className="text-base-content/65">Slope:</span>
+                                                                <span className="text-base-content font-semibold">{data.slope}% ({slopeDeg}°)</span>
                                                             </div>
                                                         </div>
                                                     </div>

@@ -48,7 +48,7 @@ func (h *SkiSessionHandler) ListByResort(c *gin.Context) {
 	if resortID == "" {
 		sessions, err = h.store.SkiSession().ListByUserID(ctx, userID)
 	} else {
-		sessions, err = h.store.SkiSession().ListByResortID(ctx, resortID)
+		sessions, err = h.store.SkiSession().ListByResortID(ctx, resortID, userID)
 	}
 
 	if err != nil {
@@ -62,9 +62,10 @@ func (h *SkiSessionHandler) ListByResort(c *gin.Context) {
 func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
-	// Expect JSON body: { "resortId": "<uuid>" }
+	// Expect JSON body: { "resortId": "<uuid>", "isPublic": true }
 	var payload struct {
 		ResortID string `json:"resortId" binding:"required"`
+		IsPublic *bool  `json:"isPublic"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		httpErr := fmt.Errorf("invalid request body: %w", err)
@@ -72,8 +73,13 @@ func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 		return
 	}
 
+	isPublic := true
+	if payload.IsPublic != nil {
+		isPublic = *payload.IsPublic
+	}
+
 	ctx := c.Request.Context()
-	session, err := h.svc.StartSession(ctx, userID, payload.ResortID)
+	session, err := h.svc.StartSession(ctx, userID, payload.ResortID, isPublic)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating ski session"})
 		return
@@ -159,6 +165,12 @@ func (h *SkiSessionHandler) GetSession(c *gin.Context) {
 	session, err := h.store.SkiSession().GetByID(ctx, sessionID)
 	if err != nil {
 		httputil.RespondError(c, fmt.Errorf("failed to get session: %w", err))
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	if !session.IsPublic && session.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "This session is private"})
 		return
 	}
 

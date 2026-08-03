@@ -70,7 +70,7 @@ export default function LoginView() {
                                 {/* SUBMIT */}
                                 <button className="btn btn-neutral mt-4" type="submit" disabled={Object.keys(errors).length > 0}>Login</button>
 
-                                <a href="/register" className="link link-secondary text-center">If you don't have an account, register here!</a>
+                                <a href="/register" className="link link-secondary text-center">If you do not have an account, register here!</a>
                             </fieldset>
                         </form>
                     </div>

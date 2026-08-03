@@ -12,6 +12,14 @@ type skiResortStore struct {
 	db *bun.DB
 }
 
+func (s *skiResortStore) GetByID(ctx context.Context, id string) (models.SkiResort, error) {
+	var resort models.SkiResort
+	q := s.db.NewSelect().Model(&resort).Where("id = ?", id).Where("name IS NOT NULL AND name != ? AND tags->>'status' = ?", "No name", "operating")
+
+	err := q.Scan(ctx)
+	return resort, err
+}
+
 func (s *skiResortStore) ListByName(ctx context.Context, name string) ([]models.SkiResort, error) {
 	var resorts []models.SkiResort
 	q := s.db.NewSelect().Model(&resorts)

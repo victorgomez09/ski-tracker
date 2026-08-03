@@ -18,6 +18,22 @@ func NewSkiResortHandler(svc *service.SkiResortService, s store.Store) *SkiResor
 	return &SkiResortHandler{svc: svc, store: s}
 }
 
+func (h *SkiResortHandler) GetByID(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		httputil.RespondError(c, fmt.Errorf("missing required query parameter: id"))
+		return
+	}
+
+	resort, err := h.svc.GetByID(c.Request.Context(), id)
+	if err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+
+	httputil.RespondOK(c, resort)
+}
+
 func (h *SkiResortHandler) ListByName(c *gin.Context) {
 	name := c.Query("name")
 	if name == "" {

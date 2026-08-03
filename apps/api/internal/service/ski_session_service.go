@@ -50,8 +50,8 @@ func NewSkiSessionService(store store.Store, jwtManager *auth.JWTManager, logger
 	}
 }
 
-func (s *SkiSessionService) ListByResort(ctx context.Context, resortID string) ([]models.SkiSession, error) {
-	sessions, err := s.store.SkiSession().ListByResortID(ctx, resortID)
+func (s *SkiSessionService) ListByResort(ctx context.Context, resortID string, userID uuid.UUID) ([]models.SkiSession, error) {
+	sessions, err := s.store.SkiSession().ListByResortID(ctx, resortID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list ski sessions by resort: %w", err)
 	}
@@ -68,7 +68,7 @@ func (s *SkiSessionService) GetByID(ctx context.Context, sessionID uuid.UUID) (*
 	return session, nil
 }
 
-func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, resortID string) (*models.SkiSession, error) {
+func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, resortID string, isPublic bool) (*models.SkiSession, error) {
 	user, err := s.store.User().GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve user: %w", err)
@@ -82,6 +82,7 @@ func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, 
 		ResortID:     resortID,
 		StartTime:    time.Now(),
 		ActivityType: user.ActivityType,
+		IsPublic:     isPublic,
 	}
 
 	_, err = s.store.SkiSession().Create(ctx, session)

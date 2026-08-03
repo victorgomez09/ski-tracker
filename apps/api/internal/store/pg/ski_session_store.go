@@ -21,12 +21,14 @@ func (u *skiSessionStore) Raw(ctx context.Context, query string, wktLine string,
 	return nil
 }
 
-func (u *skiSessionStore) ListByResortID(ctx context.Context, resortID string) ([]models.SkiSession, error) {
+func (u *skiSessionStore) ListByResortID(ctx context.Context, resortID string, userID uuid.UUID) ([]models.SkiSession, error) {
 	var sessions []models.SkiSession
 	err := u.db.NewSelect().
 		Model(&sessions).
 		Relation("Runs").
+		Relation("User").
 		Where("resort_id = ?", resortID).
+		Where("is_public = ? OR user_id = ?", true, userID).
 		Order("start_time DESC").
 		Scan(ctx)
 	if err != nil {
@@ -40,6 +42,7 @@ func (u *skiSessionStore) ListByUserID(ctx context.Context, userID uuid.UUID) ([
 	err := u.db.NewSelect().
 		Model(&sessions).
 		Relation("Runs").
+		Relation("User").
 		Where("user_id = ?", userID).
 		Order("start_time DESC").
 		Scan(ctx)
@@ -54,6 +57,7 @@ func (u *skiSessionStore) GetByID(ctx context.Context, sessionID uuid.UUID) (*mo
 	err := u.db.NewSelect().
 		Model(&session).
 		Relation("Runs").
+		Relation("User").
 		Where("id = ?", sessionID).
 		Scan(ctx)
 	if err != nil {

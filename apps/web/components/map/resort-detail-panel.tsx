@@ -1,8 +1,8 @@
-import { ResortDetail, Piste, Lift } from 'models/ski-resort.model';
+import { ResortDetail, Piste, Lift, Resort } from 'models/ski-resort.model';
 import React, { useMemo } from 'react';
 
 interface ResortDetailPanelProps {
-    resort: ResortDetail;
+    resort: Resort;
     onClose: () => void;
 }
 
@@ -67,11 +67,62 @@ const parseLiftType = (liftType: string) => {
 };
 
 export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, onClose }) => {
-    if (!resort) return null;
 
     const stats = useMemo(() => {
-        const pistes = resort.pistes || [];
-        const lifts = resort.lifts || [];
+        const pistes = resort?.pistes || [];
+        const lifts = resort?.lifts || [];
+
+        const tagsStats = resort?.Tags?.statistics;
+        if (tagsStats) {
+            const runsDiff = tagsStats.runs?.byActivity?.downhill?.byDifficulty;
+            const liftsType = tagsStats.lifts?.byType;
+
+            const difficultyCounts = {
+                novice: pistes.filter(p => p.Difficulty?.toLowerCase() === 'novice').length ?? 0,
+                easy: pistes.filter(p => p.Difficulty?.toLowerCase() === 'easy').length ?? 0,
+                intermediate: pistes.filter(p => p.Difficulty?.toLowerCase() === 'intermediate').length ?? 0,
+                advanced: pistes.filter(p => p.Difficulty?.toLowerCase() === 'advanced' || p.Difficulty?.toLowerCase() === 'expert').length ?? 0,
+                other: 0
+            };
+
+            const difficultyLengths = {
+                novice: pistes.filter(p => p.Difficulty?.toLowerCase() === 'novice').reduce((sum, p) => sum + getPisteDistance(p), 0),
+                easy: pistes.filter(p => p.Difficulty?.toLowerCase() === 'easy').reduce((sum, p) => sum + getPisteDistance(p), 0),
+                intermediate: pistes.filter(p => p.Difficulty?.toLowerCase() === 'intermediate').reduce((sum, p) => sum + getPisteDistance(p), 0),
+                advanced: pistes.filter(p => p.Difficulty?.toLowerCase() === 'advanced' || p.Difficulty?.toLowerCase() === 'expert').reduce((sum, p) => sum + getPisteDistance(p), 0),
+                other: 0
+            };
+
+            const totalPisteLength = difficultyLengths.novice + difficultyLengths.easy + difficultyLengths.intermediate + difficultyLengths.advanced;
+            const totalPistes = difficultyCounts.novice + difficultyCounts.easy + difficultyCounts.intermediate + difficultyCounts.advanced;
+
+            const minElev = tagsStats.minElevation ?? tagsStats.runs?.minElevation ?? tagsStats.lifts?.minElevation ?? null;
+            const maxElev = tagsStats.maxElevation ?? tagsStats.runs?.maxElevation ?? tagsStats.lifts?.maxElevation ?? null;
+
+            const liftTypeCounts: Record<string, number> = {};
+            let totalLifts = 0;
+            if (liftsType) {
+                Object.entries(liftsType).forEach(([type, data]: [string, any]) => {
+                    if (data && typeof data.count === 'number') {
+                        liftTypeCounts[type] = data.count;
+                        totalLifts += data.count;
+                    }
+                });
+            }
+
+            return {
+                totalPistes,
+                totalPisteLength: Math.round(totalPisteLength),
+                difficultyCounts,
+                difficultyLengths,
+                minElev: minElev ? Math.round(minElev) : null,
+                maxElev: maxElev ? Math.round(maxElev) : null,
+                totalLifts,
+                totalCapacity: 0,
+                totalHourlyCapacity: 0,
+                liftTypeCounts
+            };
+        }
 
         let totalPisteLength = 0;
         const difficultyCounts = {
@@ -133,8 +184,8 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
             });
         });
 
-        if (minElev === Infinity) minElev = resort.statistics?.minElevation || 0;
-        if (maxElev === -Infinity) maxElev = resort.statistics?.maxElevation || 0;
+        if (minElev === Infinity) minElev = resort.Tags.statistics?.minElevation || 0;
+        if (maxElev === -Infinity) maxElev = resort.Tags.statistics?.maxElevation || 0;
 
         let totalCapacity = 0;
         let totalHourlyCapacity = 0;
@@ -174,8 +225,10 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
         ].filter(item => item.pct > 0);
     }, [stats]);
 
+    if (!resort) return null;
+
     return (
-        <div className="absolute top-4 left-4 z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow-2xl rounded-2xl p-4 w-96 max-h-[85vh] overflow-y-auto flex flex-col gap-3">
+        <div className="absolute bottom-20 left-4 right-4 lg:bottom-auto lg:top-4 lg:left-72 lg:right-auto z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow-2xl rounded-2xl p-4 w-auto lg:w-96 max-h-[45vh] lg:max-h-[85vh] overflow-y-auto flex flex-col gap-3">
             <div className="flex justify-between items-start mb-2">
                 <div className="text-xs text-gray-500 font-medium tracking-wide">
                     {resort.Country || "Ski Resort"}
