@@ -45,7 +45,7 @@ export default function BottomTabs({ state, descriptors, navigation }: BottomTab
                 <div className="space-y-6">
                     {/* Brand header */}
                     <div className="flex items-center gap-2.5 px-3 py-1">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-primary-content shadow-md shadow-primary/20">
+                        <div className="w-9 h-9 rounded-xl bg-linear-to-tr from-primary to-secondary flex items-center justify-center text-primary-content shadow-md shadow-primary/20">
                             <span className="font-extrabold text-xl tracking-tight">S</span>
                         </div>
                         <div>
@@ -59,6 +59,7 @@ export default function BottomTabs({ state, descriptors, navigation }: BottomTab
                         {state.routes.map((route, index) => {
                             const isFocused = state.index === index;
                             const descriptor = descriptors[route.key];
+                            if (route.name === 'tracking') return;
 
                             const onPress = () => {
                                 const event = navigation.emit({
@@ -96,7 +97,7 @@ export default function BottomTabs({ state, descriptors, navigation }: BottomTab
 
                 {/* Footer Brand Info */}
                 <div className="px-3 text-[11px] text-base-content/40 border-t border-base-200 pt-4 flex flex-col gap-0.5">
-                    <p className="font-medium">v1.2.0-Enterprise</p>
+                    <p className="font-medium">v1.0.0</p>
                     <p>© 2026 SkiTracker Inc.</p>
                 </div>
             </div>

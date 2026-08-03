@@ -176,7 +176,7 @@ export default function ResortsView() {
             <div className="flex flex-col h-full bg-base-100">
                 {/* Header Banner */}
                 <div className="card relative bg-base-300 text-base-content border-2 border-primary shrink-0">
-                    <div className="card-body flex justify-between items-start">
+                    <div className="card-body flex flex-row justify-between items-start">
                         <div className="space-y-1 pr-6">
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/20 text-primary border border-primary/30">
                                 <Globe className="w-3 h-3" />
@@ -187,7 +187,7 @@ export default function ResortsView() {
                         {isMobileView && (
                             <button 
                                 type="button" 
-                                className="btn btn-circle btn-sm btn-ghost bg-white/10 hover:bg-white/20 text-white border-0"
+                                className="btn btn-circle btn-sm btn-ghost text-base-content border-0"
                                 onClick={() => setSelectedResortWithCache(null)}
                             >
                                 <X className="w-4 h-4" />

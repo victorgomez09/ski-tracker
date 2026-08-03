@@ -97,7 +97,7 @@ export default function ProfileView() {
         <div className="hero bg-base-200 min-h-screen pt-8 pb-24 lg:pb-8 lg:pl-64">
             <div className="hero-content flex-col w-full max-w-md gap-6">
                 {/* USER INFORMATION CARD */}
-                <div className="card bg-base-100 w-full shadow-xl">
+                <div className="card bg-base-100 w-full shadow">
                     <div className="card-body items-center text-center">
                         <div className="avatar placeholder mb-2">
                             <div className="flex items-center justify-center bg-neutral text-neutral-content w-20 rounded-full text-2xl font-bold">
@@ -119,7 +119,7 @@ export default function ProfileView() {
                 </div>
 
                 {/* SNOW SPORT SELECTOR */}
-                <div className="card bg-base-100 w-full shadow-xl">
+                <div className="card bg-base-100 w-full shadow">
                     <div className="card-body">
                         <h3 className="card-title text-base font-semibold mb-2">Snow modality</h3>
                         <div className="grid grid-cols-2 gap-3">
@@ -140,7 +140,7 @@ export default function ProfileView() {
                 </div>
 
                 {/* THEME SELECTOR */}
-                <div className="card bg-base-100 w-full shadow-xl">
+                <div className="card bg-base-100 w-full shadow">
                     <div className="card-body flex-row items-center justify-between py-4">
                         <div>
                             <h3 className="font-semibold">Appearance</h3>
@@ -153,7 +153,7 @@ export default function ProfileView() {
                                     <path d="M1799 349l242 241-1017 1017L7 590l242-241 775 775 775-775z"></path>
                                 </svg>
                             </div>
-                            <ul tabIndex={0} className="dropdown-content bg-base-300 rounded-box z-50 w-52 h-48 overflow-y-auto p-2 shadow-2xl">
+                            <ul tabIndex={0} className="dropdown-content bg-base-300 rounded-box z-50 w-52 h-48 overflow-y-auto p-2 shadow">
                                 {Object.entries(themes).map(([key, value]) => (
                                     <li key={key} className="my-1">
                                         <button 

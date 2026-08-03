@@ -142,7 +142,7 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
     if (!data) return null;
 
     return (
-        <div className="absolute bottom-20 left-4 right-4 lg:bottom-auto lg:top-4 lg:left-72 lg:right-auto z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow-2xl rounded-2xl p-4 w-auto lg:w-96 max-h-[45vh] lg:max-h-[85vh] overflow-y-auto flex flex-col gap-3">
+        <div className="card absolute top-4 left-4 right-4 lg:bottom-auto lg:top-4 lg:left-72 lg:right-auto z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow p-4 w-auto lg:w-96 max-h-[65vh] lg:max-h-[85vh] overflow-y-auto flex flex-col gap-3">
             <div className="flex justify-between items-start mb-2">
                 <div className="text-xs text-gray-500 font-medium tracking-wide">
                     {country} <span className="mx-1">›</span> {region} <span className="mx-1">›</span>
@@ -205,10 +205,10 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
                         </div>
                     </div>
 
-                    <div className="h-44 w-full mb-3">
+                    <div className="h-55 lg:h-44 w-full mb-3 shrink-0">
                         {chartData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={chartData} margin={{ top: 15, right: 15, left: -10, bottom: 5 }}>
+                            <ResponsiveContainer width="100%" height="100%" style={{ outline: 'none' }}>
+                                <AreaChart data={chartData} margin={{ top: 15, right: 15, left: -10, bottom: 5 }} style={{ outline: 'none' }}>
                                     <defs>
                                         <linearGradient id="slopeColorGradient" x1="0" y1="0" x2="1" y2="0">
                                             {gradientStops}

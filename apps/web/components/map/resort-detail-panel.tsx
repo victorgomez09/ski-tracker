@@ -228,7 +228,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
     if (!resort) return null;
 
     return (
-        <div className="absolute bottom-20 left-4 right-4 lg:bottom-auto lg:top-4 lg:left-72 lg:right-auto z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow-2xl rounded-2xl p-4 w-auto lg:w-96 max-h-[45vh] lg:max-h-[85vh] overflow-y-auto flex flex-col gap-3">
+        <div className="card absolute top-4 left-4 right-4 lg:bottom-auto lg:top-4 lg:left-72 lg:right-auto z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow p-4 w-auto lg:w-96 max-h-[65vh] lg:max-h-[85vh] overflow-y-auto flex flex-col gap-3">
             <div className="flex justify-between items-start mb-2">
                 <div className="text-xs text-gray-500 font-medium tracking-wide">
                     {resort.Country || "Ski Resort"}
