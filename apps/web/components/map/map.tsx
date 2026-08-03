@@ -14,6 +14,8 @@ import { MapDetailPanel } from './map-detail-panel';
 import { ResortDetailPanel } from './resort-detail-panel';
 import { AltitudeTooltip } from './altitude-tooltip';
 import { SpeedTooltip } from './speed-tooltip';
+import { LegendDetailPanel } from './legend-detail-panel';
+import { CircleQuestionMark } from 'lucide-react';
 
 export default function InteractiveSkiMap() {
     const searchParams = useLocalSearchParams();
@@ -21,6 +23,7 @@ export default function InteractiveSkiMap() {
     const isInternalMoveRef = useRef(false);
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
+    const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
     const [selectedResort, setSelectedResort] = useState<Resort | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
@@ -535,7 +538,7 @@ export default function InteractiveSkiMap() {
             setSelectedResort(request.data);
             const map = mapRef.current?.getMap();
             if (!map) return;
-            
+
             try {
                 const lat = request.data.Latitude;
                 const lon = request.data.Longitude;
@@ -678,6 +681,10 @@ export default function InteractiveSkiMap() {
 
     return (
         <div className="w-full h-[calc(100vh-4rem)] lg:h-screen relative lg:pl-64">
+            {/* Legend panel */}
+            {selectedLegend && (
+                <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
+            )}
             {/* Pistes and lifts details panel */}
             {selectedFeature && (
                 <MapDetailPanel
@@ -708,8 +715,18 @@ export default function InteractiveSkiMap() {
                 maplibreLogo={false}
                 attributionControl={false}
             >
-                <NavigationControl position="bottom-right" />
+                <div className="absolute bottom-2 right-2 z-10 flex flex-col gap-1.5">
+                        <NavigationControl showCompass={true} showZoom={true} />
 
+                        <button
+                            onClick={() => {
+                                setSelectedLegend(true);
+                            }}
+                            className="flex items-center justify-center p-1.5 size-8 rounded-md cursor-pointer bg-base-100 hover:bg-base-200 border-2 border-gray-400/60 font-semibold"
+                        >
+                            <CircleQuestionMark className="size-4" />
+                        </button>
+                </div>
                 {/* Resort markers */}
                 {resorts?.map(resort => (
                     <Marker
@@ -747,8 +764,8 @@ export default function InteractiveSkiMap() {
                                 </div>
                             )}
                             <div className={`w-6 h-6 rounded-full flex items-center justify-center border shadow transition-all duration-200 ${selectedResort?.ID === resort.ID
-                                    ? 'bg-primary border-primary text-white scale-110'
-                                    : 'bg-white border-primary/30 text-primary hover:scale-105'
+                                ? 'bg-primary border-primary text-white scale-110'
+                                : 'bg-white border-primary/30 text-primary hover:scale-105'
                                 }`}>
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
                                     <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.157-1.127C18.061 17.7 22 13.666 22 9.5 22 4.253 17.523 0 12 0S2 4.253 2 9.5c0 4.166 3.939 8.2 8.18 11.724a16.977 16.977 0 001.36 1.127zm-1.54-12.85a2 2 0 114 0 2 2 0 01-4 0z" clipRule="evenodd" />
