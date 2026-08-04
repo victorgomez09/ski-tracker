@@ -16,6 +16,11 @@ export interface WeatherForecast {
     wind_direction_10m: string;
     wind_speed_10m: string;
     apparent_temperature: string;
+    wind_gusts_10m: string;
+    relative_humidity_2m: string;
+    surface_pressure: string;
+    cloud_cover: string;
+    visibility: string;
   };
   current: {
     interval: number;
@@ -27,6 +32,11 @@ export interface WeatherForecast {
     wind_direction_10m: number;
     wind_speed_10m: number;
     apparent_temperature: number;
+    wind_gusts_10m: number;
+    relative_humidity_2m: number;
+    surface_pressure: number;
+    cloud_cover: number;
+    visibility: number;
   };
   hourly_units: {
     freezing_level_height: string;
@@ -34,6 +44,15 @@ export interface WeatherForecast {
     snowfall: string;
     temperature_2m: string;
     time: string;
+    apparent_temperature: string;
+    precipitation_probability: string;
+    precipitation: string;
+    rain: string;
+    showers: string;
+    cloud_cover: string;
+    visibility: string;
+    wind_speed_10m: string;
+    wind_gusts_10m: string;
   };
   hourly: {
     freezing_level_height: number[];
@@ -41,5 +60,36 @@ export interface WeatherForecast {
     snowfall: number[];
     temperature_2m: number[];
     time: string[];
+    apparent_temperature: number[];
+    precipitation_probability: number[];
+    precipitation: number[];
+    rain: number[];
+    showers: number[];
+    cloud_cover: number[];
+    visibility: number[];
+    wind_speed_10m: number[];
+    wind_gusts_10m: number[];
+  };
+  daily_units?: {
+    time: string;
+    weather_code: string;
+    temperature_2m_max: string;
+    temperature_2m_min: string;
+    sunrise: string;
+    sunset: string;
+    precipitation_sum: string;
+    snowfall_sum: string;
+    precipitation_probability_max: string;
+  };
+  daily?: {
+    time: string[];
+    weather_code: number[];
+    temperature_2m_max: number[];
+    temperature_2m_min: number[];
+    sunrise: string[];
+    sunset: string[];
+    precipitation_sum: number[];
+    snowfall_sum: number[];
+    precipitation_probability_max: number[];
   };
 }
