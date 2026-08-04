@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/gin-contrib/cache/persistence"
 	"github.com/uptrace/bun/migrate"
 	"github.com/victorgomez09/ski-tracker/internal/api/auth"
 	"github.com/victorgomez09/ski-tracker/internal/config"
@@ -88,6 +90,7 @@ func main() {
 	services := service.NewContainer(store, jwtManager, logger, cfg.Database.URL, cfg.Auth.SetupSecret)
 
 	// Router
+	cache := persistence.NewInMemoryStore(1 * time.Hour)
 	router := server.NewRouter(&server.RouterDeps{
 		Services:    services,
 		JWTManager:  jwtManager,
@@ -95,6 +98,7 @@ func main() {
 		AppURL:      cfg.Server.AppURL,
 		SetupSecret: cfg.Auth.SetupSecret,
 		Logger:      logger,
+		Cache:       cache,
 	})
 
 	// HTTP server

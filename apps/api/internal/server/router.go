@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 
+	"github.com/gin-contrib/cache/persistence"
 	"github.com/gin-gonic/gin"
 	"github.com/victorgomez09/ski-tracker/internal/api/auth"
 	"github.com/victorgomez09/ski-tracker/internal/api/middleware"
@@ -19,6 +20,7 @@ type RouterDeps struct {
 	AppURL      string
 	SetupSecret string
 	Logger      *slog.Logger
+	Cache       *persistence.InMemoryStore
 }
 
 // NewRouter creates and configures the Gin engine with all routes.
@@ -74,6 +76,10 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.GET("/users", userHandler.GetByEmail)
 			protected.PUT("/users/:id", userHandler.Update)
 			protected.DELETE("/users/:id", userHandler.Delete)
+
+			// Weather routes
+			weatherHandler := v1.NewWeatherHandler(deps.Services.Weather, deps.Cache)
+			protected.GET("/weather", weatherHandler.GetWeather)
 		}
 	}
 

@@ -24,6 +24,8 @@ import {
 import { API_BASE_URL } from "constants/constants";
 import { Resort } from "models/ski-resort.model";
 import { useAuth } from "context/auth.context";
+import { WeatherForecast } from "models/weather.model";
+import { WeatherForecastDetails } from "components/resorts/weather-forecast";
 
 // Cache state to survive tab navigation / component remounting
 let cachedResorts: Resort[] = [];
@@ -41,6 +43,7 @@ export default function ResortsView() {
     const [sessions, setSessions] = useState<any[]>(cachedSessions);
     const [isLoadingResorts, setIsLoadingResorts] = useState(false);
     const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+    const [weatherData, setWeatherData] = useState<WeatherForecast | null>(null);
     const { token } = useAuth();
 
     // Cache sync helpers
@@ -116,7 +119,7 @@ export default function ResortsView() {
         setIsLoadingSessions(true);
 
         try {
-            const request = await axios.get(`${API_BASE_URL}/ski-sessions`, {
+            const sessionsRequest = await axios.get(`${API_BASE_URL}/ski-sessions`, {
                 params: { resort_id: resort.ID },
                 headers: {
                     "Content-Type": "application/json",
@@ -124,8 +127,18 @@ export default function ResortsView() {
                 },
             });
 
-            if (request.status === 200) {
-                setSessionsWithCache(request.data.sessions || []);
+            const weatherRequest = await axios.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
+                params: { lat: resort.Latitude, lon: resort.Longitude },
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                    // "Cache-Control": "no-cache", // 1 hour cache
+                },
+            });
+
+            if (sessionsRequest.status === 200 && weatherRequest.status === 200) {
+                setSessionsWithCache(sessionsRequest.data.sessions || []);
+                setWeatherData(weatherRequest.data);
             }
         } catch (err) {
             console.error("Error fetching sessions:", err);
@@ -319,6 +332,11 @@ export default function ResortsView() {
                                 Open <ExternalLink className="w-3.5 h-3.5" />
                             </a>
                         </div>
+                    )}
+
+                    {/* Weather Forecast */}
+                    {weatherData && (
+                        <WeatherForecastDetails data={weatherData} />
                     )}
 
                     {/* Sessions Log */}
