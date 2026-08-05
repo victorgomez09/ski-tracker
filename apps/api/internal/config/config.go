@@ -15,6 +15,7 @@ type Config struct {
 	Database DatabaseConfig
 	K8s      K8sConfig
 	Auth     AuthConfig
+	Minio    MinioConfig
 }
 
 type ServerConfig struct {
@@ -43,6 +44,13 @@ type AuthConfig struct {
 	SetupSecret   string // Required for unauthenticated setup operations (e.g. restore)
 }
 
+type MinioConfig struct {
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	UseSSL    bool
+}
+
 // Load reads configuration from .env file (if present) and environment variables.
 func Load() (*Config, error) {
 	// Load .env file silently — not required in production
@@ -65,6 +73,12 @@ func Load() (*Config, error) {
 			TokenExpiry:   envDuration("JWT_TOKEN_EXPIRY", 24*time.Hour),
 			RefreshExpiry: envDuration("JWT_REFRESH_EXPIRY", 7*24*time.Hour),
 			SetupSecret:   envStr("SETUP_SECRET", ""),
+		},
+		Minio: MinioConfig{
+			Endpoint:  envStr("MINIO_ENDPOINT", "localhost:9000"),
+			AccessKey: envStr("MINIO_ACCESS_KEY", "minioadmin"),
+			SecretKey: envStr("MINIO_SECRET_KEY", "minioadmin"),
+			UseSSL:    envStr("MINIO_USE_SSL", "false") == "true",
 		},
 	}
 

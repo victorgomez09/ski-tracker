@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"mime/multipart"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/minio/minio-go/v7"
 	"github.com/victorgomez09/ski-tracker/internal/api/auth"
 	"github.com/victorgomez09/ski-tracker/internal/models"
 	"github.com/victorgomez09/ski-tracker/internal/store"
@@ -40,13 +43,15 @@ type SkiSessionService struct {
 	store      store.Store
 	jwtManager *auth.JWTManager
 	logger     *slog.Logger
+	minio      *minio.Client
 }
 
-func NewSkiSessionService(store store.Store, jwtManager *auth.JWTManager, logger *slog.Logger) *SkiSessionService {
+func NewSkiSessionService(store store.Store, jwtManager *auth.JWTManager, logger *slog.Logger, minioClient *minio.Client) *SkiSessionService {
 	return &SkiSessionService{
 		store:      store,
 		jwtManager: jwtManager,
 		logger:     logger,
+		minio:      minioClient,
 	}
 }
 
@@ -93,12 +98,34 @@ func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, 
 	return session, nil
 }
 
-func (s *SkiSessionService) AddPoints(ctx context.Context, points []models.SessionPoint) error {
-	err := s.store.SessionPoint().Bulk(ctx, &points)
+func (s *SkiSessionService) AddPointsAndPhotos(ctx context.Context, points []models.SessionPoint, photos []*multipart.FileHeader) error {
+	bucketName := "ski-session-photos"
 
+	if len(points) == 0 {
+		return fmt.Errorf("no session points provided")
+	}
+
+	sessionID := points[0].SessionID.String()
+
+	var uploadedObjects []string
+	if len(photos) > 0 {
+		var err error
+		uploadedObjects, err = s.uploadPhotosWithRollback(ctx, bucketName, sessionID, photos)
+		if err != nil {
+			s.logger.Error("failed to upload photos", "error", err)
+			return err
+		}
+	}
+
+	err := s.store.SessionPoint().Bulk(ctx, &points)
 	if err != nil {
-		s.logger.Error("failed to add points", "error", err)
-		return err
+		s.logger.Error("failed to add points to database, rolling back minio photos...", "error", err)
+
+		if len(uploadedObjects) > 0 {
+			s.rollbackMinioUploads(ctx, bucketName, uploadedObjects)
+		}
+
+		return fmt.Errorf("database insert failed: %w", err)
 	}
 
 	return nil
@@ -427,4 +454,82 @@ func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []model
 	}
 
 	return &result.ID, result.Difficulty, nil
+}
+
+func (s *SkiSessionService) uploadPhotosWithRollback(ctx context.Context, bucketName string, sessionID string, photos []*multipart.FileHeader) ([]string, error) {
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(photos))
+
+	// Canal seguro para almacenar las rutas de los objetos subidos con éxito
+	mu := sync.Mutex{}
+	var uploadedObjects []string
+
+	for index, fileHeader := range photos {
+		wg.Add(1)
+
+		go func(idx int, fh *multipart.FileHeader) {
+			defer wg.Done()
+
+			file, err := fh.Open()
+			if err != nil {
+				errChan <- fmt.Errorf("failed to open photo %d: %w", idx, err)
+				return
+			}
+			defer file.Close()
+
+			objectName := fmt.Sprintf("sessions/%s/photo_%d_%s", sessionID, idx, fh.Filename)
+
+			contentType := fh.Header.Get("Content-Type")
+			if contentType == "" {
+				contentType = "image/jpeg"
+			}
+
+			_, err = s.minio.PutObject(
+				ctx,
+				bucketName,
+				objectName,
+				file,
+				fh.Size,
+				minio.PutObjectOptions{ContentType: contentType},
+			)
+			if err != nil {
+				errChan <- fmt.Errorf("failed to upload photo %d to minio: %w", idx, err)
+				return
+			}
+
+			// Registramos la ruta del objeto subido de forma segura para concurrencia
+			mu.Lock()
+			uploadedObjects = append(uploadedObjects, objectName)
+			mu.Unlock()
+
+		}(index, fileHeader)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Si hubo algún error durante la subida de las fotos
+	for err := range errChan {
+		if err != nil {
+			// Si falló una foto a mitad de camino, limpiamos las que SÍ se alcanzaron a subir
+			if len(uploadedObjects) > 0 {
+				s.rollbackMinioUploads(ctx, bucketName, uploadedObjects)
+			}
+			return nil, err
+		}
+	}
+
+	return uploadedObjects, nil
+}
+
+// rollbackMinioUploads borra de MinIO los archivos especificados
+func (s *SkiSessionService) rollbackMinioUploads(ctx context.Context, bucketName string, objectNames []string) {
+	for _, objName := range objectNames {
+		err := s.minio.RemoveObject(ctx, bucketName, objName, minio.RemoveObjectOptions{})
+		if err != nil {
+			s.logger.Error("failed to delete orphaned photo from minio during rollback", "object", objName, "error", err)
+		} else {
+			s.logger.Info("successfully cleaned up orphaned photo", "object", objName)
+		}
+	}
 }

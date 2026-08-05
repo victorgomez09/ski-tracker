@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"github.com/gin-contrib/cache/persistence"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/uptrace/bun/migrate"
 	"github.com/victorgomez09/ski-tracker/internal/api/auth"
 	"github.com/victorgomez09/ski-tracker/internal/config"
@@ -83,11 +86,22 @@ func main() {
 		logger.Info("migrations applied", slog.String("group", group.String()))
 	}
 
+	// MINIO client
+	minioClient, err := minio.New(cfg.Minio.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.Minio.AccessKey, cfg.Minio.SecretKey, ""),
+		Secure: cfg.Minio.UseSSL,
+	})
+	if err != nil {
+		logger.Error("failed to create MinIO client", slog.Any("error", err))
+		os.Exit(1)
+	}
+	InitMinIOBucket(ctx, minioClient)
+
 	// JWT
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.TokenExpiry, cfg.Auth.RefreshExpiry)
 
 	// // Services
-	services := service.NewContainer(store, jwtManager, logger, cfg.Database.URL, cfg.Auth.SetupSecret)
+	services := service.NewContainer(store, jwtManager, logger, minioClient, cfg.Database.URL, cfg.Auth.SetupSecret)
 
 	// Router
 	cache := persistence.NewInMemoryStore(1 * time.Hour)
@@ -130,4 +144,22 @@ func main() {
 	}
 
 	logger.Info("server exited gracefully")
+}
+
+func InitMinIOBucket(ctx context.Context, minioClient *minio.Client) error {
+	bucketName := "ski-session-photos"
+	location := "eu-west-1"
+
+	exists, err := minioClient.BucketExists(ctx, bucketName)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{Region: location})
+		if err != nil {
+			return fmt.Errorf("failed to create bucket: %w", err)
+		}
+	}
+	return nil
 }

@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
-import { Play, Square, Upload, Eye, EyeOff, Activity } from 'lucide-react';
+import { Activity, CameraIcon, Eye, EyeOff, Play, Square, Upload } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -14,8 +14,9 @@ import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
-import { clearTrack, getAllPoints, initDB } from 'tracking/database';
+import { clearTrack, getAllPhotos, getAllPoints, initDB } from 'tracking/database';
 import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
+import { Camera } from 'components/tracking/camera';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
@@ -27,6 +28,7 @@ export default function InteractiveSkiMap() {
     const [resort, setResort] = useState<ResortDetail>({} as ResortDetail);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
+    const [takePictureMode, setTakePictureMode] = useState(false);
 
     // --- Tracking status ---
     const [isTracking, setIsTracking] = useState(false);
@@ -42,6 +44,7 @@ export default function InteractiveSkiMap() {
         pitch: 0
     });
 
+    // --- Variables ---
     const range = 0.05;
     const bounds: [number, number, number, number] = [
         parseFloat(searchParams.lng as string || '-3.971953') - range,
@@ -117,13 +120,16 @@ export default function InteractiveSkiMap() {
         try {
             const db = await SQLite.openDatabaseAsync('ski_tracker.db');
             const points = await getAllPoints(db);
-
+            const photos = await getAllPhotos(db);
+            
             if (points.length === 0) {
                 alert("No tracking data to upload.");
                 setIsLoading(false);
                 return;
             }
 
+            const formData = new FormData();
+            
             const resortIdToUse = resort.ID || points[0].resort_id || "sierra-nevada"; // fallback if not set
 
             // 1. Start session
@@ -142,6 +148,14 @@ export default function InteractiveSkiMap() {
             }
 
             const sessionId = startResponse.data.sessionId;
+            
+            photos.forEach((photo, index) => {
+                formData.append('photos', {
+                uri: (photo as any).uri,
+                type: 'image/jpeg',
+                name: `session_photo_${index}.jpg`,
+                } as any);
+            });
 
             // 2. Upload points
             const payload = {
@@ -151,12 +165,14 @@ export default function InteractiveSkiMap() {
                     altitude: p.alt,
                     speed: p.speed,
                     timestamp: new Date(p.timestamp).toISOString()
-                }))
+                })),
             };
 
-            const pointsResponse = await axios.post(`${API_BASE_URL}/ski-sessions/${sessionId}/points`, payload, {
+            formData.append('points', JSON.stringify(payload));
+
+            const pointsResponse = await axios.post(`${API_BASE_URL}/ski-sessions/${sessionId}/points`, formData, {
                 headers: {
-                    "Content-Type": "application/json",
+                    'Content-Type': 'multipart/form-data',
                     Authorization: `Bearer ${token}`
                 }
             });
@@ -474,124 +490,140 @@ export default function InteractiveSkiMap() {
 
     return (
         <div className="w-full h-[calc(100vh-4rem)] lg:h-screen relative lg:pl-64">
-            {selectedFeature && (
-                <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
+            {takePictureMode && (
+                <div className="absolute inset-0 z-1000 flex items-center justify-center w-full h-full">
+                    <Camera onClose={() => setTakePictureMode(false)} />
+                </div>
             )}
 
-            <div className="absolute bottom-10 right-4 z-1000 flex flex-col items-end gap-3">
-                {/* Save Session Card */}
-                {!isTracking && hasTrackData && (
-                    <div className="bg-base-100/95 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-base-200 w-72 flex flex-col gap-3 transition-all duration-300">
-                        <div className="flex flex-col gap-0.5">
-                            <h4 className="font-bold text-sm text-base-content flex items-center gap-1.5">
-                                <Activity className="w-4 h-4 text-primary animate-pulse" />
-                                Session recorded
-                            </h4>
-                            <p className="text-[11px] text-base-content/60">
-                                {trackPoints.length} points recorded at {resort.Name}
-                            </p>
-                        </div>
-                        
-                        <div className="divider my-0"></div>
+            {!takePictureMode && (
+                <>
+                    {selectedFeature && (
+                        <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
+                    )}
 
-                        {/* Privacy Toggle */}
-                        <div className="flex flex-col gap-1">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-semibold text-base-content flex items-center gap-1">
-                                    {isPublic ? <Eye className="w-3.5 h-3.5 text-success" /> : <EyeOff className="w-3.5 h-3.5 text-base-content/40" />}
-                                    Privacy
-                                </span>
-                                <input
-                                    type="checkbox"
-                                    className="toggle toggle-sm toggle-primary"
-                                    checked={isPublic}
-                                    onChange={(e) => setIsPublic(e.target.checked)}
-                                />
+                    <div className="absolute bottom-10 right-4 z-1000 flex flex-col items-end gap-3">
+                        {/* Save Session Card */}
+                        {!isTracking && hasTrackData && (
+                            <div className="bg-base-100/95 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-base-200 w-72 flex flex-col gap-3 transition-all duration-300">
+                                <div className="flex flex-col gap-0.5">
+                                    <h4 className="font-bold text-sm text-base-content flex items-center gap-1.5">
+                                        <Activity className="w-4 h-4 text-primary animate-pulse" />
+                                        Session recorded
+                                    </h4>
+                                    <p className="text-[11px] text-base-content/60">
+                                        {trackPoints.length} points recorded at {resort.Name}
+                                    </p>
+                                </div>
+
+                                <div className="divider my-0"></div>
+
+                                {/* Privacy Toggle */}
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-semibold text-base-content flex items-center gap-1">
+                                            {isPublic ? <Eye className="w-3.5 h-3.5 text-success" /> : <EyeOff className="w-3.5 h-3.5 text-base-content/40" />}
+                                            Privacy
+                                        </span>
+                                        <input
+                                            type="checkbox"
+                                            className="toggle toggle-sm toggle-primary"
+                                            checked={isPublic}
+                                            onChange={(e) => setIsPublic(e.target.checked)}
+                                        />
+                                    </div>
+                                    <span className="text-[10px] text-base-content/50 leading-tight">
+                                        {isPublic
+                                            ? "Public: visible to everyone in the resort details."
+                                            : "Private: only you can see it in the resort details."
+                                        }
+                                    </span>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex gap-2 mt-1">
+                                    <button
+                                        className="btn btn-primary btn-sm flex-1 font-bold gap-1.5 shadow"
+                                        onClick={handleUploadTrack}
+                                        disabled={isLoading}
+                                    >
+                                        {isLoading ? (
+                                            <span className="loading loading-spinner loading-xs"></span>
+                                        ) : (
+                                            <>
+                                                <Upload className="w-3.5 h-3.5" />
+                                                Upload
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
                             </div>
-                            <span className="text-[10px] text-base-content/50 leading-tight">
-                                {isPublic 
-                                    ? "Public: visible to everyone in the resort details."
-                                    : "Private: only you can see it in the resort details."
-                                }
-                            </span>
-                        </div>
+                        )}
 
-                        {/* Actions */}
-                        <div className="flex gap-2 mt-1">
-                            <button 
-                                className="btn btn-primary btn-sm flex-1 font-bold gap-1.5 shadow"
-                                onClick={handleUploadTrack}
-                                disabled={isLoading}
+                        {/* Tracking Action Buttons */}
+                        <div className="flex gap-2">
+                            <button className={`btn btn-circle shadow-lg ${isTracking ? 'btn-error animate-pulse' : 'btn-primary'}`}
+                                onClick={handleToggleTracking}
                             >
-                                {isLoading ? (
-                                    <span className="loading loading-spinner loading-xs"></span>
-                                ) : (
-                                    <>
-                                        <Upload className="w-3.5 h-3.5" />
-                                        Upload
-                                    </>
-                                )}
+                                {isTracking ? <Square className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white fill-white" />}
+                            </button>
+
+                            <button className="btn btn-circle shadow-lg btn-primary"
+                                onClick={() => setTakePictureMode(true)}
+                            >
+                                <CameraIcon className="w-5 h-5 text-white" />
                             </button>
                         </div>
                     </div>
-                )}
 
-                {/* Tracking Action Buttons */}
-                <div className="flex gap-2">
-                    <button className={`btn btn-circle shadow-lg ${isTracking ? 'btn-error animate-pulse' : 'btn-primary'}`}
-                        onClick={handleToggleTracking}
+                    <Map
+                        ref={mapRef}
+                        {...viewState}
+                        initialViewState={viewState}
+                        onMouseMove={handleMouseMove}
+                        onMoveEnd={handleMoveEnd}
+                        onMouseLeave={handleMouseLeave}
+                        onClick={handleMapClick}
+                        // onZoomEnd={fetchResortsWithDetails}
+                        interactiveLayerIds={['piste-lines', 'lift-lines']}
+                        style={{ width: '100%', height: '100%' }}
+                        mapStyle="https://tiles.openfreemap.org/styles/liberty"
+                        mapLib={maplibregl}
+                        maplibreLogo={false}
+                        attributionControl={false}
+                        minZoom={10}
+                        maxBounds={bounds}
                     >
-                        {isTracking ? <Square className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white fill-white" />}
-                    </button>
-                </div>
-            </div>
+                        <NavigationControl position="top-right" />
 
-            <Map
-                ref={mapRef}
-                {...viewState}
-                initialViewState={viewState}
-                onMouseMove={handleMouseMove}
-                onMoveEnd={handleMoveEnd}
-                onMouseLeave={handleMouseLeave}
-                onClick={handleMapClick}
-                // onZoomEnd={fetchResortsWithDetails}
-                interactiveLayerIds={['piste-lines', 'lift-lines']}
-                style={{ width: '100%', height: '100%' }}
-                mapStyle="https://tiles.openfreemap.org/styles/liberty"
-                mapLib={maplibregl}
-                maplibreLogo={false}
-                attributionControl={false}
-                minZoom={10}
-                maxBounds={bounds}
-            >
-                <NavigationControl position="top-right" />
+                        {/* --- Detailed Elements (Zoom >= 10) --- */}
+                        {(viewState?.zoom || Number(searchParams.zoom)) >= 10 && (
+                            <>
+                                {/* Piste Layer */}
+                                <Source id="pistes-source" type="geojson" data={pistesGeoJSON}>
+                                    <Layer {...pisteLineStyle} />
+                                    <Layer {...pisteLabelStyle} />
+                                    <Layer {...pisteDirectionStyle} />
+                                </Source>
 
-                {/* --- Detailed Elements (Zoom >= 10) --- */}
-                {(viewState?.zoom || Number(searchParams.zoom)) >= 10 && (
-                    <>
-                        {/* Piste Layer */}
-                        <Source id="pistes-source" type="geojson" data={pistesGeoJSON}>
-                            <Layer {...pisteLineStyle} />
-                            <Layer {...pisteLabelStyle} />
-                            <Layer {...pisteDirectionStyle} />
-                        </Source>
+                                {/* Lift Layer */}
+                                <Source id="lifts-source" type="geojson" data={liftsGeoJSON}>
+                                    <Layer {...liftLineStyle} />
+                                    <Layer {...liftLabelStyle} />
+                                </Source>
 
-                        {/* Lift Layer */}
-                        <Source id="lifts-source" type="geojson" data={liftsGeoJSON}>
-                            <Layer {...liftLineStyle} />
-                            <Layer {...liftLabelStyle} />
-                        </Source>
-
-                        {/* Track Layer drawn ABOVE the pistes */}
-                        {trackPoints.length > 0 && (
-                            <Source id="track-source" type="geojson" data={trackGeoJSON}>
-                                <Layer {...trackLineStyle} />
-                                <Layer {...trackDirectionStyle} />
-                            </Source>
+                                {/* Track Layer drawn ABOVE the pistes */}
+                                {trackPoints.length > 0 && (
+                                    <Source id="track-source" type="geojson" data={trackGeoJSON}>
+                                        <Layer {...trackLineStyle} />
+                                        <Layer {...trackDirectionStyle} />
+                                    </Source>
+                                )}
+                            </>
                         )}
-                    </>
-                )}
-            </Map>
+                    </Map>
+                </>
+            )}
         </div>
     );
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"log/slog"
 
+	"github.com/minio/minio-go/v7"
 	"github.com/victorgomez09/ski-tracker/internal/api/auth"
 	"github.com/victorgomez09/ski-tracker/internal/store"
 )
@@ -22,6 +23,7 @@ func NewContainer(
 	s store.Store,
 	jwtManager *auth.JWTManager,
 	logger *slog.Logger,
+	minioClient *minio.Client,
 	dbURL string,
 	setupSecret string,
 ) *Container {
@@ -30,7 +32,7 @@ func NewContainer(
 		SkiPiste:   NewSkiPisteService(s, logger),
 		SkiLift:    NewSkiLiftService(s, logger),
 		User:       NewUserService(s, jwtManager, logger),
-		SkiSession: NewSkiSessionService(s, jwtManager, logger),
+		SkiSession: NewSkiSessionService(s, jwtManager, logger, minioClient),
 		Weather:    NewWeatherService(logger),
 	}
 }

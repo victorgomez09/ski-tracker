@@ -59,7 +59,7 @@ export default function BottomTabs({ state, descriptors, navigation }: BottomTab
                         {state.routes.map((route, index) => {
                             const isFocused = state.index === index;
                             const descriptor = descriptors[route.key];
-                            if (route.name === 'tracking') return;
+                            // if (route.name === 'tracking') return;
 
                             const onPress = () => {
                                 const event = navigation.emit({

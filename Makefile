@@ -88,12 +88,6 @@ docker-destroy: ## Destroy dev infrastructure and volumes
 	docker compose -f deploy/docker-compose.yaml down -v
 
 # ============================================================================
-# Code Generation
-# ============================================================================
-gen-api: ## Generate API client from OpenAPI spec
-	@echo "TODO: Generate Go server stubs and TS client from packages/spec/openapi.yaml"
-
-# ============================================================================
 # Clean
 # ============================================================================
 clean: ## Clean build artifacts

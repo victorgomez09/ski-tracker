@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -94,8 +95,15 @@ func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 
 func (h *SkiSessionHandler) AddPoints(c *gin.Context) {
 	sessionID := c.Param("id")
+
+	pointsJSON := c.PostForm("points")
+	if pointsJSON == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing points data in request"})
+		return
+	}
+
 	var req service.BatchPointsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := json.Unmarshal([]byte(pointsJSON), &req); err != nil {
 		httputil.RespondError(c, fmt.Errorf("bad request: %w", err))
 		return
 	}
@@ -119,16 +127,21 @@ func (h *SkiSessionHandler) AddPoints(c *gin.Context) {
 		})
 	}
 
-	ctx := c.Request.Context()
-
-	err = h.svc.AddPoints(ctx, points)
-
+	form, err := c.MultipartForm()
 	if err != nil {
-		httputil.RespondError(c, fmt.Errorf("failed to add points: %w", err))
+		httputil.RespondError(c, fmt.Errorf("failed to read multipart form: %w", err))
+		return
+	}
+	files := form.File["photos"]
+	fmt.Printf("Photos from session: %s with %d photos\n", sessionID, len(files))
+
+	err = h.svc.AddPointsAndPhotos(c.Request.Context(), points, files)
+	if err != nil {
+		httputil.RespondError(c, fmt.Errorf("failed to add points and photos: %w", err))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	httputil.RespondOK(c, gin.H{
 		"success":         true,
 		"pointsProcessed": len(points),
 	})

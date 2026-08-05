@@ -26,6 +26,11 @@ export const initDB = async (db: SQLite.SQLiteDatabase) => {
       resort_id TEXT,
       timestamp INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS photos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_uri TEXT NOT NULL, -- Ej: "file:///data/user/0/com.app/files/sessions/session_123/photo_12.jpg"
+    );
   `);
 };
 
@@ -54,9 +59,17 @@ export const getAllPoints = async (db: SQLite.SQLiteDatabase) => {
 };
 
 /**
+ * Retrieves all location points from the local SQLite database, ordered by timestamp.
+ */
+export const getAllPhotos = async (db: SQLite.SQLiteDatabase) => {
+  return await db.getAllAsync('SELECT * FROM photos');
+};
+
+/**
  * Clears all tracking points from the local SQLite database. This function should be called at the start of a new ski session.
  */
 export const clearTrack = async (db: SQLite.SQLiteDatabase) => {
   // await db.runAsync('DROP TABLE IF EXISTS track_points');
   await db.execAsync('DELETE FROM track_points');
+  await db.execAsync('DELETE FROM photos');
 };
