@@ -132,7 +132,6 @@ func (s *SkiSessionService) AddPointsAndPhotos(ctx context.Context, points []mod
 }
 
 func (s *SkiSessionService) FinishSession(ctx context.Context, sessionID uuid.UUID) error {
-
 	now := time.Now()
 	err := s.store.SkiSession().Update(ctx, sessionID, now)
 
@@ -456,11 +455,12 @@ func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []model
 	return &result.ID, result.Difficulty, nil
 }
 
+// uploadPhotosWithRollback uploads photos to MinIO and rolls back in case of any failure.
+// Returns the list of successfully uploaded object names or an error.
 func (s *SkiSessionService) uploadPhotosWithRollback(ctx context.Context, bucketName string, sessionID string, photos []*multipart.FileHeader) ([]string, error) {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(photos))
 
-	// Canal seguro para almacenar las rutas de los objetos subidos con éxito
 	mu := sync.Mutex{}
 	var uploadedObjects []string
 
@@ -497,7 +497,6 @@ func (s *SkiSessionService) uploadPhotosWithRollback(ctx context.Context, bucket
 				return
 			}
 
-			// Registramos la ruta del objeto subido de forma segura para concurrencia
 			mu.Lock()
 			uploadedObjects = append(uploadedObjects, objectName)
 			mu.Unlock()
@@ -508,10 +507,8 @@ func (s *SkiSessionService) uploadPhotosWithRollback(ctx context.Context, bucket
 	wg.Wait()
 	close(errChan)
 
-	// Si hubo algún error durante la subida de las fotos
 	for err := range errChan {
 		if err != nil {
-			// Si falló una foto a mitad de camino, limpiamos las que SÍ se alcanzaron a subir
 			if len(uploadedObjects) > 0 {
 				s.rollbackMinioUploads(ctx, bucketName, uploadedObjects)
 			}
@@ -522,7 +519,7 @@ func (s *SkiSessionService) uploadPhotosWithRollback(ctx context.Context, bucket
 	return uploadedObjects, nil
 }
 
-// rollbackMinioUploads borra de MinIO los archivos especificados
+// rollbackMinioUploads deletes the uploaded photos from MinIO in case of a failure during the process.
 func (s *SkiSessionService) rollbackMinioUploads(ctx context.Context, bucketName string, objectNames []string) {
 	for _, objName := range objectNames {
 		err := s.minio.RemoveObject(ctx, bucketName, objName, minio.RemoveObjectOptions{})
