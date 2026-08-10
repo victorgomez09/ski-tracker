@@ -240,12 +240,13 @@ export default function InteractiveSkiMapNative() {
             'text-field': ['get', 'name'],
             'text-size': 10.5,
             'text-offset': [0, 0.6],
-            'text-allow-overlap': false,
-            'text-ignore-placement': false,
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
             'text-optional': true,
             'text-rotation-alignment': 'map',
             'text-max-angle': 30,
-            'text-letter-spacing': 0.1
+            'text-letter-spacing': 0.1,
+            'text-anchor': 'center'
         },
         paint: {
             'text-color': [
@@ -254,25 +255,32 @@ export default function InteractiveSkiMapNative() {
                 '#ffffff'
             ],
             'text-halo-color': '#000000',
-            'text-halo-width': 1.5
+            'text-halo-width': 1.5,
+            'text-opacity': 0.95
         }
     };
 
     const pisteDirectionStyle: any = {
         id: 'piste-arrows',
-        sourceID: 'pistes-source',
+        sourceID: 'piste-direction-source',
         type: 'symbol',
         layout: {
-            'symbol-placement': 'line',
-            'symbol-spacing': 80,
-            'icon-image': 'triangle-11',
-            'icon-size': 0.8,
-            'icon-rotate': 90,
-            'icon-rotation-alignment': 'map',
-            'icon-allow-overlap': true
+            'symbol-placement': 'point',
+            'text-field': '>>',
+            'text-size': 11,
+            'text-font': ['Open Sans Bold'],
+            'text-rotation-alignment': 'map',
+            'text-rotate': ['get', 'rotation'],
+            'text-anchor': 'center',
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
+            'text-offset': [0, -0.25]
         },
         paint: {
-            'icon-color': '#ffffff'
+            'text-color': '#f8fafc',
+            'text-halo-color': '#000000',
+            'text-halo-width': 1.2,
+            'text-opacity': 0.95
         }
     };
 
@@ -340,19 +348,25 @@ export default function InteractiveSkiMapNative() {
 
     const trackDirectionStyle: any = {
         id: 'track-arrows',
-        sourceID: 'track-source',
+        sourceID: 'track-direction-source',
         type: 'symbol',
         layout: {
-            'symbol-placement': 'line',
-            'symbol-spacing': 50,
-            'icon-image': 'triangle-11',
-            'icon-size': 0.9,
-            'icon-rotate': 90,
-            'icon-rotation-alignment': 'map',
-            'icon-allow-overlap': true
+            'symbol-placement': 'point',
+            'text-field': '>>',
+            'text-size': 11,
+            'text-font': ['Open Sans Bold'],
+            'text-rotation-alignment': 'map',
+            'text-rotate': ['get', 'rotation'],
+            'text-anchor': 'center',
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
+            'text-offset': [0, -0.25]
         },
         paint: {
-            'icon-color': '#ff9100'
+            'text-color': '#ff9100',
+            'text-halo-color': '#000000',
+            'text-halo-width': 1.2,
+            'text-opacity': 0.95
         }
     };
 
@@ -433,6 +447,48 @@ export default function InteractiveSkiMapNative() {
         return { type: 'FeatureCollection' as const, features: features as any };
     }, [resorts]);
 
+    const pisteDirectionGeoJSON = useMemo(() => {
+        const features = resorts.flatMap(resort =>
+            (resort.pistes || []).flatMap(piste => {
+                const geometry = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
+                if (!geometry) return [];
+
+                const coordinates = geometry.type === 'MultiLineString'
+                    ? geometry.coordinates.flatMap((segment: any[]) => segment)
+                    : geometry.coordinates;
+
+                if (!Array.isArray(coordinates) || coordinates.length < 2) return [];
+
+                const start = coordinates[0];
+                const end = coordinates[coordinates.length - 1];
+                if (!Array.isArray(start) || !Array.isArray(end)) return [];
+
+                const dx = end[0] - start[0];
+                const dy = end[1] - start[1];
+                const rotation = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+                const midpoint: [number, number] = [
+                    (start[0] + end[0]) / 2,
+                    (start[1] + end[1]) / 2,
+                ];
+
+                return [{
+                    type: 'Feature' as const,
+                    properties: {
+                        id: piste.ID,
+                        resortId: resort.ID,
+                        rotation,
+                    },
+                    geometry: {
+                        type: 'Point' as const,
+                        coordinates: midpoint,
+                    },
+                }];
+            })
+        );
+
+        return { type: 'FeatureCollection' as const, features: features as any };
+    }, [resorts]);
+
     const liftsGeoJSON = useMemo(() => {
         const features = resorts.flatMap(resort =>
             (resort.lifts || []).flatMap(lift => {
@@ -466,6 +522,33 @@ export default function InteractiveSkiMapNative() {
                     coordinates
                 }
             }]
+        };
+    }, [trackPoints]);
+
+    const trackDirectionGeoJSON = useMemo(() => {
+        if (trackPoints.length < 2) return { type: 'FeatureCollection' as const, features: [] };
+
+        const coordinates = trackPoints.map(p => [p.lon, p.lat]);
+        const start = coordinates[0];
+        const end = coordinates[coordinates.length - 1];
+        const dx = end[0] - start[0];
+        const dy = end[1] - start[1];
+        const rotation = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+        const midpoint: [number, number] = [
+            (start[0] + end[0]) / 2,
+            (start[1] + end[1]) / 2,
+        ];
+
+        return {
+            type: 'FeatureCollection' as const,
+            features: [{
+                type: 'Feature' as const,
+                properties: { rotation },
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: midpoint,
+                }
+            }],
         };
     }, [trackPoints]);
 
@@ -594,7 +677,6 @@ export default function InteractiveSkiMapNative() {
                 className="absolute top-4 right-4 z-50 bg-slate-800 border border-slate-700 p-3 rounded-2xl shadow-xl flex-row items-center gap-2"
             >
                 <CircleHelp size={18} color="#60a5fa" />
-                <Text className="text-xs font-bold text-white">Legend</Text>
             </TouchableOpacity>
 
             {selectedLegend && (
@@ -771,6 +853,9 @@ export default function InteractiveSkiMapNative() {
                         <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                             <NativeLayer {...pisteLineStyle} onPress={handleNativeFeaturePress} />
                             <NativeLayer {...pisteLabelStyle} onPress={handleNativeFeaturePress} />
+                        </NativeGeoJSONSource>
+
+                        <NativeGeoJSONSource id="piste-direction-source" data={pisteDirectionGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                             <NativeLayer {...pisteDirectionStyle} onPress={handleNativeFeaturePress} />
                         </NativeGeoJSONSource>
 
@@ -783,6 +868,8 @@ export default function InteractiveSkiMapNative() {
                             <>
                                 <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
                                     <NativeLayer {...trackLineStyle} />
+                                </NativeGeoJSONSource>
+                                <NativeGeoJSONSource id="track-direction-source" data={trackDirectionGeoJSON}>
                                     <NativeLayer {...trackDirectionStyle} />
                                 </NativeGeoJSONSource>
                                 {(hoveredRun || selectedRun) && (

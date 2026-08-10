@@ -16,7 +16,7 @@ const getDifficultyMeta = [
 
 export const LegendDetailPanel: React.FC<LegendDetailPanelProps> = ({ onClose }) => {
     return (
-        <View className="absolute top-12 left-4 right-4 z-50 bg-slate-900/95 border border-slate-700 shadow-2xl p-4 rounded-2xl max-h-[70vh]">
+        <View className="absolute bottom-12 left-4 right-4 z-50 bg-slate-900/95 border border-slate-700 shadow-2xl p-4 rounded-2xl max-h-[70vh]">
             <View className="flex-row justify-between items-center mb-3">
                 <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     Legend
