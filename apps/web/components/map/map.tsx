@@ -1,14 +1,15 @@
 import React from 'react';
-import { Platform } from 'react-native';
+import InteractiveSkiMapNative from './map.native';
 
 let MapComponent: React.ComponentType<any>;
 
 // if (Platform.OS === 'web') {
 //     MapComponent = require('./map.web').default;
 // } else {
-    MapComponent = require('./map.native').default;
+    // MapComponent = require('./map.native').default;
 // }
 
 export default function InteractiveSkiMap(props: any) {
-    return <MapComponent {...props} />;
+    // return <MapComponent {...props} />;
+    return <InteractiveSkiMapNative {...props} />;
 }

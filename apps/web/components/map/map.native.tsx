@@ -20,8 +20,6 @@ import { ResortDetailPanel } from './resort-detail-panel';
 import { LegendDetailPanel } from './legend-detail-panel';
 import { CircleHelp, MapPin, X, ArrowLeft } from 'lucide-react-native';
 
-
-
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
     const isInternalMoveRef = useRef(false);
@@ -33,7 +31,6 @@ export default function InteractiveSkiMapNative() {
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
     const [matchedPisteIds, setMatchedPisteIds] = useState<string[]>([]);
-    const [nativeMapStyle, setNativeMapStyle] = useState<any | null>(null);
     const [activeTab, setActiveTab] = useState<'runs' | 'elevation' | 'speed'>('runs');
     const [selectedRun, setSelectedRun] = useState<any | null>(null);
     const [hoveredRun, setHoveredRun] = useState<any | null>(null);
@@ -207,33 +204,9 @@ export default function InteractiveSkiMapNative() {
         loadInitial();
     }, [searchParams.lat, searchParams.lon, searchParams.zoom, searchParams.minLon, searchParams.minLat, searchParams.maxLon, searchParams.maxLat, token]);
 
-    useEffect(() => {
-        let mounted = true;
-        const loadNativeOpenFreeMapStyle = async () => {
-            try {
-                const response = await axios.get('https://tiles.openfreemap.org/styles/liberty');
-                if (mounted && response.status === 200 && response.data) {
-                    const style = {
-                        ...response.data,
-                        glyphs: response.data.glyphs || 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'
-                    };
-                    setNativeMapStyle(style);
-                }
-            } catch (error) {
-                console.warn('Unable to prefetch native OpenFreeMap style:', error);
-                setNativeMapStyle('https://tiles.openfreemap.org/styles/liberty');
-            }
-        };
-
-        loadNativeOpenFreeMapStyle();
-
-        return () => {
-            mounted = false;
-        };
-    }, []);
-
     const pisteLineStyle: any = {
         id: 'piste-lines',
+        sourceID: 'pistes-source',
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
@@ -245,7 +218,7 @@ export default function InteractiveSkiMapNative() {
                 'advanced', '#212121',
                 '#9e9e9e'
             ],
-            'line-dasharray': [2, 2],
+            'line-dasharray': [1, 0],
             'line-width': [
                 'case',
                 ['==', ['get', 'id'], selectedFeature?.ID || ''], 9,
@@ -259,15 +232,27 @@ export default function InteractiveSkiMapNative() {
 
     const pisteLabelStyle: any = {
         id: 'piste-labels',
+        sourceID: 'pistes-source',
         type: 'symbol',
         layout: {
-            'symbol-placement': 'line',
+            'symbol-placement': 'line-center',
+            'symbol-spacing': 220,
             'text-field': ['get', 'name'],
-            'text-size': 11,
-            'text-offset': [0, 1]
+            'text-size': 10.5,
+            'text-offset': [0, 0.6],
+            'text-allow-overlap': false,
+            'text-ignore-placement': false,
+            'text-optional': true,
+            'text-rotation-alignment': 'map',
+            'text-max-angle': 30,
+            'text-letter-spacing': 0.1
         },
         paint: {
-            'text-color': '#ffffff',
+            'text-color': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#f8fafc',
+                '#ffffff'
+            ],
             'text-halo-color': '#000000',
             'text-halo-width': 1.5
         }
@@ -275,6 +260,7 @@ export default function InteractiveSkiMapNative() {
 
     const pisteDirectionStyle: any = {
         id: 'piste-arrows',
+        sourceID: 'pistes-source',
         type: 'symbol',
         layout: {
             'symbol-placement': 'line',
@@ -292,6 +278,7 @@ export default function InteractiveSkiMapNative() {
 
     const liftLineStyle: any = {
         id: 'lift-lines',
+        sourceID: 'lifts-source',
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
@@ -315,15 +302,26 @@ export default function InteractiveSkiMapNative() {
 
     const liftLabelStyle: any = {
         id: 'lift-labels',
+        sourceID: 'lifts-source',
         type: 'symbol',
         layout: {
-            'symbol-placement': 'line',
+            'symbol-placement': 'line-center',
+            'symbol-spacing': 220,
             'text-field': ['get', 'name'],
-            'text-size': 10,
-            'text-offset': [0, -1]
+            'text-size': 9.5,
+            'text-offset': [0, -0.7],
+            'text-allow-overlap': false,
+            'text-ignore-placement': false,
+            'text-optional': true,
+            'text-rotation-alignment': 'map',
+            'text-max-angle': 30
         },
         paint: {
-            'text-color': '#d500f9',
+            'text-color': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#ffffff',
+                '#d500f9'
+            ],
             'text-halo-color': '#ffffff',
             'text-halo-width': 1
         }
@@ -331,6 +329,7 @@ export default function InteractiveSkiMapNative() {
 
     const trackLineStyle: any = {
         id: 'track-line',
+        sourceID: 'track-source',
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
@@ -341,6 +340,7 @@ export default function InteractiveSkiMapNative() {
 
     const trackDirectionStyle: any = {
         id: 'track-arrows',
+        sourceID: 'track-source',
         type: 'symbol',
         layout: {
             'symbol-placement': 'line',
@@ -358,6 +358,7 @@ export default function InteractiveSkiMapNative() {
 
     const highlightedRunLineStyle: any = {
         id: 'highlighted-run-line',
+        sourceID: 'highlighted-run-source',
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
@@ -368,6 +369,7 @@ export default function InteractiveSkiMapNative() {
 
     const highlightedRunCaseStyle: any = {
         id: 'highlighted-run-case',
+        sourceID: 'highlighted-run-source',
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
@@ -375,6 +377,22 @@ export default function InteractiveSkiMapNative() {
             'line-width': 12
         }
     };
+
+    const getFeatureFromEvent = useCallback((e: any): Piste | Lift | undefined => {
+        const features = e?.features ?? e?.nativeEvent?.features ?? [];
+        if (!Array.isArray(features) || features.length === 0) return undefined;
+
+        const feature = features[0];
+        if (!feature?.properties?.id) return undefined;
+
+        const featureId = feature.properties.id;
+        for (const resort of resorts) {
+            const found = resort.pistes?.find(p => p.ID === featureId) || resort.lifts?.find(l => l.ID === featureId);
+            if (found) return found;
+        }
+
+        return undefined;
+    }, [resorts]);
 
     const normalizeGeoJSONLine = (geometry: any) => {
         if (!geometry) return null;
@@ -472,34 +490,18 @@ export default function InteractiveSkiMapNative() {
     }, [activeHighlightedRun]);
 
     const handleNativeFeaturePress = useCallback((e: any) => {
-        const feature = e?.features && e.features[0];
-        if (feature && feature.properties?.id) {
-            const featureId = feature.properties.id;
-            let found: Piste | Lift | undefined;
-            for (const resort of resorts) {
-                found = resort.pistes?.find(p => p.ID === featureId) || resort.lifts?.find(l => l.ID === featureId);
-                if (found) break;
-            }
-            if (found) setSelectedFeature(found);
-        }
-    }, [resorts]);
+        const found = getFeatureFromEvent(e);
+        if (found) setSelectedFeature(found);
+    }, [getFeatureFromEvent]);
 
     const handleNativeMapPress = useCallback((e: any) => {
-        const feature = e?.features && e.features[0];
-        if (feature && feature.properties?.id) {
-            const featureId = feature.properties.id;
-            let found: Piste | Lift | undefined;
-            for (const resort of resorts) {
-                found = resort.pistes?.find(p => p.ID === featureId) || resort.lifts?.find(l => l.ID === featureId);
-                if (found) break;
-            }
-            if (found) {
-                setSelectedFeature(found);
-                return;
-            }
+        const found = getFeatureFromEvent(e);
+        if (found) {
+            setSelectedFeature(found);
+            return;
         }
         setSelectedFeature(null);
-    }, [resorts]);
+    }, [getFeatureFromEvent]);
 
     const handleNativeRegionDidChange = useCallback((e: any) => {
         const ne = e?.nativeEvent || e;
@@ -722,8 +724,7 @@ export default function InteractiveSkiMapNative() {
 
             <NativeMap
                 style={{ flex: 1, width: '100%', height: '100%' }}
-                // mapStyle={nativeMapStyle || 'https://tiles.openfreemap.org/styles/liberty'}
-                mapStyle="https://tiles.openfreemap.org/styles/bright"
+                mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
                 onRegionDidChange={handleNativeRegionDidChange}
                 onPress={handleNativeMapPress}
                 attribution={false}
@@ -767,15 +768,15 @@ export default function InteractiveSkiMapNative() {
 
                 {viewState.zoom >= 10 && (
                     <>
-                        <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress}>
-                            <NativeLayer {...pisteLineStyle} />
-                            <NativeLayer {...pisteLabelStyle} />
-                            <NativeLayer {...pisteDirectionStyle} />
+                        <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                            <NativeLayer {...pisteLineStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...pisteLabelStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...pisteDirectionStyle} onPress={handleNativeFeaturePress} />
                         </NativeGeoJSONSource>
 
-                        <NativeGeoJSONSource id="lifts-source" data={liftsGeoJSON} onPress={handleNativeFeaturePress}>
-                            <NativeLayer {...liftLineStyle} />
-                            <NativeLayer {...liftLabelStyle} />
+                        <NativeGeoJSONSource id="lifts-source" data={liftsGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                            <NativeLayer {...liftLineStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...liftLabelStyle} onPress={handleNativeFeaturePress} />
                         </NativeGeoJSONSource>
 
                         {trackPoints.length > 0 && (
