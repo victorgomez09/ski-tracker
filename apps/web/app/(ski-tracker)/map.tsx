@@ -7,7 +7,7 @@ import { initDB } from 'tracking/database';
 import '../../styles/global.css';
 import InteractiveSkiMap from 'components/map/map';
 
-export default function App() {
+export default function MapView() {
   useEffect(() => {
     const initDatabase = async () => {
       const database = await SQLite.openDatabaseAsync('ski_tracker.db');

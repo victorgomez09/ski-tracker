@@ -2,13 +2,16 @@ import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import BottomTabs from 'components/navigation/bottom-tabs';
 import { useAuth } from 'context/auth.context';
+import { View, ActivityIndicator } from 'react-native';
 
 export default function RootLayout() {
   const { token, isLoading } = useAuth();
 
   if (isLoading) {
     return (
-      <span className="loading loading-spinner loading-md"></span>
+      <View className="flex-1 justify-center items-center bg-slate-900">
+        <ActivityIndicator size="large" color="#3b82f6" />
+      </View>
     );
   }
 

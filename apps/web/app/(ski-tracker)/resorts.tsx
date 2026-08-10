@@ -8,18 +8,16 @@ import {
     ChevronRight,
     ExternalLink,
     Globe,
-    Calendar,
     Navigation,
     X,
-    Info,
     Compass,
-    ArrowRight,
     TrendingUp,
-    Map,
+    Map as MapIcon,
     User,
     Lock,
     Unlock
-} from "lucide-react";
+} from "lucide-react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Linking, Modal } from "react-native";
 
 import { API_BASE_URL } from "constants/constants";
 import { Resort } from "models/ski-resort.model";
@@ -102,13 +100,12 @@ export default function ResortsView() {
             } finally {
                 setIsLoadingResorts(false);
             }
-        }, 350); // 350ms debounce
+        }, 350);
 
         return () => clearTimeout(delayDebounceFn);
     }, [searchTerm, token]);
 
-    const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const term = event.target.value;
+    const handleSearch = (term: string) => {
         setSearchTermWithCache(term);
         setSelectedResortWithCache(null);
     };
@@ -132,7 +129,6 @@ export default function ResortsView() {
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
-                    // "Cache-Control": "no-cache", // 1 hour cache
                 },
             });
 
@@ -181,437 +177,338 @@ export default function ResortsView() {
         };
     }, [selectedResort]);
 
-    // Detail Panel JSX helper to avoid duplication between desktop pane and mobile modal
-    const renderDetailsContent = (isMobileView: boolean) => {
+    const renderDetailsContent = () => {
         if (!selectedResort) return null;
 
         return (
-            <div className="flex flex-col h-full bg-base-100">
+            <ScrollView className="flex-1 bg-slate-900 p-4 space-y-6">
                 {/* Header Banner */}
-                <div className="card relative bg-base-300 text-base-content border-2 border-primary shrink-0">
-                    <div className="card-body flex flex-row justify-between items-start">
-                        <div className="space-y-1 pr-6">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/20 text-primary border border-primary/30">
-                                <Globe className="w-3 h-3" />
-                                {selectedResort.Country}
-                            </span>
-                            <h2 className="text-2xl lg:text-3xl font-extrabold tracking-tight mt-1">{selectedResort.Name}</h2>
-                        </div>
-                        {isMobileView && (
-                            <button
-                                type="button"
-                                className="btn btn-circle btn-sm btn-ghost text-base-content border-0"
-                                onClick={() => setSelectedResortWithCache(null)}
+                <View className="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-xl flex-row justify-between items-start mb-4">
+                    <View className="flex-1">
+                        <View className="bg-blue-900/60 px-3 py-1 rounded-full self-start flex-row items-center gap-1 border border-blue-700">
+                            <Globe size={12} color="#60a5fa" />
+                            <Text className="text-xs text-blue-300 font-bold">{selectedResort.Country}</Text>
+                        </View>
+                        <Text className="text-2xl font-extrabold text-white mt-2 leading-tight">{selectedResort.Name}</Text>
+                    </View>
+                    <TouchableOpacity
+                        className="p-2 bg-slate-700 rounded-full"
+                        onPress={() => setSelectedResortWithCache(null)}
+                    >
+                        <X size={18} color="#94a3b8" />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Key Metrics Grid */}
+                <View className="mb-4">
+                    <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Resort Metrics</Text>
+                    <View className="flex-row gap-3">
+                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl">
+                            <Text className="text-slate-400 text-xs font-medium">Lifts</Text>
+                            <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.lifts}</Text>
+                        </View>
+
+                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl">
+                            <Text className="text-slate-400 text-xs font-medium">Pistes</Text>
+                            <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.pistes}</Text>
+                        </View>
+
+                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl">
+                            <Text className="text-slate-400 text-xs font-medium">Distance</Text>
+                            <Text className="text-2xl font-bold text-white mt-1">
+                                {selectedResortSummary?.distance.toFixed(1)} <Text className="text-xs text-slate-400">km</Text>
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+
+                {/* Pistes Breakdown */}
+                {selectedResortSummary && (
+                    <View className="mb-4">
+                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Pistes Breakdown</Text>
+                        <View className="flex-row flex-wrap gap-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                                <View className="w-3 h-3 rounded-full bg-[#00a859]" />
+                                <View>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Novice</Text>
+                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.novice} runs</Text>
+                                </View>
+                            </View>
+
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                                <View className="w-3 h-3 rounded-full bg-[#0072bc]" />
+                                <View>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Easy</Text>
+                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.easy} runs</Text>
+                                </View>
+                            </View>
+
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                                <View className="w-3 h-3 rounded-full bg-[#f0141e]" />
+                                <View>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Intermediate</Text>
+                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.intermediate} runs</Text>
+                                </View>
+                            </View>
+
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                                <View className="w-3 h-3 rounded-full bg-black border border-slate-600" />
+                                <View>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Expert</Text>
+                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.advanced} runs</Text>
+                                </View>
+                            </View>
+                        </View>
+                    </View>
+                )}
+
+                {/* Lifts Breakdown */}
+                {selectedResortSummary && (
+                    <View className="mb-4">
+                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Lifts Breakdown</Text>
+                        <View className="flex-row flex-wrap gap-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                                <Text className="text-base">🚡</Text>
+                                <View>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Chair Lifts</Text>
+                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.chair_lift}</Text>
+                                </View>
+                            </View>
+
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                                <Text className="text-base">⛷️</Text>
+                                <View>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Drag Lifts</Text>
+                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.drag_lift}</Text>
+                                </View>
+                            </View>
+
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                                <Text className="text-base">🛹</Text>
+                                <View>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Magic Carpets</Text>
+                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.magic_carpet}</Text>
+                                </View>
+                            </View>
+
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                                <Text className="text-base">🪢</Text>
+                                <View>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Rope Tows</Text>
+                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.rope_tow}</Text>
+                                </View>
+                            </View>
+                        </View>
+                    </View>
+                )}
+
+                {/* Website CTA */}
+                {selectedResortSummary?.website && (
+                    <View className="mb-4">
+                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Website</Text>
+                        <View className="bg-slate-800 border border-slate-700 p-4 rounded-2xl flex-row items-center justify-between">
+                            <View className="flex-row items-center gap-3">
+                                <View className="w-10 h-10 rounded-xl bg-blue-900/60 items-center justify-center">
+                                    <Globe size={20} color="#60a5fa" />
+                                </View>
+                                <View>
+                                    <Text className="font-semibold text-sm text-white">Resort Website</Text>
+                                    <Text className="text-xs text-slate-400">Visit official page</Text>
+                                </View>
+                            </View>
+                            <TouchableOpacity
+                                className="bg-blue-600 px-3.5 py-2 rounded-xl flex-row items-center gap-1"
+                                onPress={() => Linking.openURL(selectedResortSummary.website!)}
                             >
-                                <X className="w-4 h-4" />
-                            </button>
-                        )}
-                    </div>
-                </div>
+                                <Text className="text-white text-xs font-bold">Open</Text>
+                                <ExternalLink size={14} color="#ffffff" />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
 
-                {/* Dashboard Scrollable Body */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* Key Metrics Grid */}
-                    <div>
-                        <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Resort Metrics</h3>
-                        <div className="grid grid-cols-3 gap-3">
-                            <div className="card bg-base-200/60 border border-base-300/80 p-4 flex flex-col justify-between hover:border-primary/20 transition-all">
-                                <div className="card-body p-0">
-                                    <span className="text-base-content/60 text-xs font-medium">Lifts</span>
-                                    <div className="flex items-baseline gap-1 mt-2">
-                                        <span className="text-2xl font-bold tracking-tight text-base-content">{selectedResortSummary?.lifts}</span>
-                                    </div>
-                                </div>
-                            </div>
+                {/* Weather Forecast */}
+                {weatherData && (
+                    <WeatherForecastDetails data={weatherData} />
+                )}
 
-                            <div className="card bg-base-200/60 border border-base-300/80 p-4 flex flex-col justify-between hover:border-primary/20 transition-all">
-                                <div className="card-body p-0">
-                                    <span className="text-base-content/60 text-xs font-medium">Pistes</span>
-                                    <div className="flex items-baseline gap-1 mt-2">
-                                        <span className="text-2xl font-bold tracking-tight text-base-content">{selectedResortSummary?.pistes}</span>
-                                    </div>
-                                </div>
-                            </div>
+                {/* Sessions Log */}
+                <View className="my-4">
+                    <View className="flex-row items-center justify-between mb-3">
+                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">Ski Sessions ({sessions.length})</Text>
+                        {isLoadingSessions && <ActivityIndicator size="small" color="#3b82f6" />}
+                    </View>
 
-                            <div className="card bg-base-200/60 border border-base-300/80 p-4 flex flex-col justify-between hover:border-primary/20 transition-all">
-                                <div className="card-body p-0">
-                                    <span className="text-base-content/60 text-xs font-medium">Distance</span>
-                                    <div className="flex items-baseline gap-1 mt-2">
-                                        <span className="text-2xl font-bold tracking-tight text-base-content">{selectedResortSummary?.distance.toFixed(1)}</span>
-                                        <span className="text-xs text-base-content/60 font-semibold">km</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    {sessions.length > 0 ? (
+                        <View className="space-y-3">
+                            {sessions.map((session) => (
+                                <TouchableOpacity
+                                    key={session.id}
+                                    onPress={() => handleSessionClick(session)}
+                                    className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex-row items-center justify-between my-1"
+                                >
+                                    <View className="space-y-1">
+                                        <View className="flex-row items-center gap-2">
+                                            <View className="w-2 h-2 rounded-full bg-emerald-500" />
+                                            <Text className="font-bold text-xs text-white">
+                                                {new Date(session.start_time).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                            </Text>
+                                            <Text className="text-[10px] text-slate-400">
+                                                {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </Text>
+                                        </View>
+                                        <View className="flex-row items-center gap-2 mt-1">
+                                            <User size={12} color="#94a3b8" />
+                                            <Text className="text-xs text-slate-300">
+                                                {session.user ? (session.user.display_name || `${session.user.first_name} ${session.user.last_name}`.trim() || session.user.email) : 'User'}
+                                            </Text>
+                                            {session.is_public ? (
+                                                <View className="flex-row items-center gap-1">
+                                                    <Unlock size={10} color="#34d399" />
+                                                    <Text className="text-[10px] text-emerald-400 font-semibold">Public</Text>
+                                                </View>
+                                            ) : (
+                                                <View className="flex-row items-center gap-1">
+                                                    <Lock size={10} color="#fbbf24" />
+                                                    <Text className="text-[10px] text-amber-400 font-semibold">Private</Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                        <View className="flex-row items-center gap-3 mt-1.5">
+                                            <Text className="text-[11px] text-slate-300">{(session.total_distance / 1000).toFixed(2)} km</Text>
+                                            <Text className="text-[11px] text-slate-300">{(session.max_speed * 3.6).toFixed(1)} km/h</Text>
+                                            <Text className="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-slate-200 font-bold uppercase">{session.activity_type}</Text>
+                                        </View>
+                                    </View>
 
-                    {/* Pistes Breakdown */}
-                    {selectedResortSummary && (
-                        <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Pistes Breakdown</h3>
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="w-3 h-3 rounded-full bg-[#00a859] shrink-0"></span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Novice</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.pistesBreakdown.novice} runs</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="w-3 h-3 rounded-full bg-[#0072bc] shrink-0"></span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Easy</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.pistesBreakdown.easy} runs</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="w-3 h-3 rounded-full bg-[#f0141e] shrink-0"></span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Intermediate</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.pistesBreakdown.intermediate} runs</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="w-3 h-3 rounded-full bg-neutral-900 dark:bg-white shrink-0"></span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Expert</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.pistesBreakdown.advanced} runs</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Lifts Breakdown */}
-                    {selectedResortSummary && (
-                        <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Lifts Breakdown</h3>
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="text-base shrink-0">🚡</span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Chair Lifts</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.liftsBreakdown.chair_lift}</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="text-base shrink-0">⛷️</span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Drag Lifts</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.liftsBreakdown.drag_lift}</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="text-base shrink-0">🛹</span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Magic Carpets</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.liftsBreakdown.magic_carpet}</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="text-base shrink-0">🪢</span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Rope Tows</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.liftsBreakdown.rope_tow}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Official Website CTA */}
-                    {selectedResortSummary?.website && (
-                        <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Website</h3>
-                            <div className="card bg-base-200/40 border border-base-300/60 p-4">
-                                <div className="card-body p-0 flex flex-row items-center justify-between w-full">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center text-info shrink-0">
-                                            <Globe className="w-5 h-5" />
-                                        </div>
-                                        <div>
-                                            <h4 className="font-semibold text-sm">Resort Website</h4>
-                                            <p className="text-xs text-base-content/60">Visit the official page for details</p>
-                                        </div>
-                                    </div>
-                                    <a
-                                        href={selectedResortSummary.website}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="btn btn-sm btn-ghost text-info hover:bg-info/10 gap-1"
-                                    >
-                                        Open <ExternalLink className="w-3.5 h-3.5" />
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Weather Forecast */}
-                    {weatherData && (
-                        <WeatherForecastDetails data={weatherData} />
-                    )}
-
-                    {/* Sessions Log */}
-                    <div className="flex flex-col flex-1 min-h-62.5">
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50">Ski Sessions ({sessions.length})</h3>
-                            {isLoadingSessions && <span className="loading loading-spinner loading-xs text-primary"></span>}
-                        </div>
-
-                        {sessions.length > 0 ? (
-                            <div className="space-y-3">
-                                {sessions.map((session) => (
-                                    <button
-                                        key={session.id}
-                                        type="button"
-                                        onClick={() => handleSessionClick(session)}
-                                        className="card w-full text-left p-4 cursor-pointer bg-base-200/40 hover:bg-base-200 border border-base-300 hover:border-primary/40 transition-all duration-200 flex justify-between items-center group shadow-sm hover:shadow"
-                                    >
-                                        <div className="card-body p-0 flex flex-row items-center justify-between w-full">
-                                            <div className="space-y-1.5">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="w-2 h-2 rounded-full bg-success"></span>
-                                                    <span className="font-semibold text-xs text-base-content">
-                                                        {new Date(session.start_time).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                                    </span>
-                                                    <span className="text-[10px] text-base-content/50">
-                                                        {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5 text-[11px] text-base-content/60">
-                                                    <User className="w-3 h-3 text-base-content/40" />
-                                                    <span className="font-medium text-base-content/85">
-                                                        {session.user ? (session.user.display_name || `${session.user.first_name} ${session.user.last_name}`.trim() || session.user.email) : 'Usuario desconocido'}
-                                                    </span>
-                                                    <span className="text-base-content/30">•</span>
-                                                    {session.is_public ? (
-                                                        <span className="flex items-center gap-0.5 text-[9px] text-success/80 font-semibold">
-                                                            <Unlock className="w-2.5 h-2.5" /> Pública
-                                                        </span>
-                                                    ) : (
-                                                        <span className="flex items-center gap-0.5 text-[9px] text-warning/80 font-semibold">
-                                                            <Lock className="w-2.5 h-2.5" /> Privada
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-3 text-[11px] text-base-content/75">
-                                                    <span className="flex items-center gap-1"><Navigation className="w-3 h-3 text-base-content/40" /> {(session.total_distance / 1000).toFixed(2)} km</span>
-                                                    <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3 text-base-content/40" /> {(session.max_speed * 3.6).toFixed(1)} km/h</span>
-                                                    <span className="px-1.5 py-0.5 rounded bg-base-300/80 text-[9px] uppercase font-bold text-base-content/70">{session.activity_type}</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="badge badge-sm badge-neutral/10 text-base-content font-medium px-2 py-2">{session.runs?.length || 0} runs</span>
-                                                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <ChevronRight className="w-4 h-4" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        ) : !isLoadingSessions ? (
-                            <div className="flex-1 border border-dashed border-base-300 rounded-xl flex flex-col items-center justify-center p-6 text-center bg-base-200/20">
-                                <Activity className="w-8 h-8 text-base-content/20 mb-2" />
-                                <h4 className="font-semibold text-sm text-base-content/70">No sessions recorded</h4>
-                                <p className="text-xs text-base-content/55 max-w-xs mt-1">You haven't recorded any sessions at this ski resort yet.</p>
-                            </div>
-                        ) : null}
-                    </div>
-                </div>
+                                    <ChevronRight size={20} color="#60a5fa" />
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    ) : !isLoadingSessions ? (
+                        <View className="border border-dashed border-slate-700 rounded-2xl p-6 items-center justify-center bg-slate-800/40">
+                            <Activity size={32} color="#64748b" />
+                            <Text className="font-semibold text-sm text-slate-300 mt-2">No sessions recorded</Text>
+                            <Text className="text-xs text-slate-500 text-center mt-1">No sessions at this ski resort yet.</Text>
+                        </View>
+                    ) : null}
+                </View>
 
                 {/* Footer Action Bar */}
-                <div className="p-4 border-t border-base-200 bg-base-100 shrink-0 flex gap-3">
-                    <button
-                        type="button"
-                        className="btn btn-primary flex-1 shadow-md hover:shadow-lg font-bold gap-2"
-                        onClick={() => router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`)}
-                    >
-                        <Map className="w-4 h-4" />
-                        View on Map
-                    </button>
-                    {!isMobileView && (
-                        <button
-                            type="button"
-                            className="btn btn-ghost hover:bg-base-200 text-base-content/70"
-                            onClick={() => setSelectedResortWithCache(null)}
-                        >
-                            Clear Selection
-                        </button>
-                    )}
-                </div>
-            </div>
+                <TouchableOpacity
+                    className="bg-blue-600 p-4 rounded-2xl flex-row items-center justify-center gap-2 mb-8 shadow-xl"
+                    onPress={() => router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`)}
+                >
+                    <MapIcon size={18} color="#ffffff" />
+                    <Text className="text-white font-bold text-base">View on Map</Text>
+                </TouchableOpacity>
+            </ScrollView>
         );
     };
 
     return (
-        <div className="flex h-[calc(100vh-4.5rem)] lg:h-screen w-full flex-row bg-base-200 overflow-hidden font-sans lg:pl-64">
-            {/* Left Column: Search & Results List */}
-            <div className="flex flex-col w-full lg:w-105 bg-base-100 border-r border-base-300 shrink-0 h-full overflow-hidden shadow-sm">
-
-                {/* Search Header Container */}
-                <div className="p-4 border-b border-base-200 bg-base-100/80 backdrop-blur space-y-3 shrink-0">
-                    <div className="flex items-center justify-between">
-                        <h1 className="text-lg font-bold tracking-tight text-base-content">Ski Resorts</h1>
-                    </div>
-
-                    <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
-                            {isLoadingResorts ? (
-                                <span className="loading loading-spinner loading-xs text-primary"></span>
-                            ) : (
-                                <Search className="w-4 h-4" />
-                            )}
-                        </div>
-                        <input
-                            type="search"
-                            className="input input-bordered w-full pl-9 pr-4 text-sm bg-base-200/50 focus:bg-base-100 focus:border-primary/50 transition-all placeholder:text-base-content/40"
-                            placeholder="Search by name, country..."
-                            value={searchTerm}
-                            onChange={handleSearch}
-                        />
-                    </div>
-                </div>
-
-                {/* List Body Container */}
-                <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-base-200/30">
-                    {resorts.length > 0 && (
-                        <>
-                            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-base-content/45">
-                                Matching Resorts ({resorts.length})
-                            </div>
-                            <div className="space-y-2">
-                                {resorts.map((resort) => {
-                                    const isSelected = selectedResort?.ID === resort.ID;
-                                    return (
-                                        <button
-                                            key={resort.ID}
-                                            type="button"
-                                            className={`w-full text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer flex flex-col gap-2.5 relative overflow-hidden group hover:shadow-sm ${isSelected
-                                                ? "border-primary bg-primary/5 shadow-inner"
-                                                : "border-base-300/80 bg-base-100 hover:border-base-300 hover:bg-base-50"
-                                                }`}
-                                            onClick={() => handleResortSelect(resort)}
-                                        >
-                                            {/* Selection indicator line */}
-                                            {isSelected && (
-                                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
-                                            )}
-
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="space-y-0.5">
-                                                    <h3 className="font-bold text-sm text-base-content tracking-tight group-hover:text-primary transition-colors">
-                                                        {resort.Name}
-                                                    </h3>
-                                                    <div className="flex items-center gap-1 text-[11px] text-base-content/60">
-                                                        <MapPin className="w-3 h-3 text-base-content/40" />
-                                                        <span>{resort.Country}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="badge badge-sm badge-neutral/10 font-semibold px-2 py-2 shrink-0">
-                                                    {resort.total_lifts ?? 0} Lifts
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-3 pt-2 border-t border-base-200/50 text-[10px] text-base-content/50">
-                                                <span className="font-medium">{resort.total_pistes ?? 0} Pistes</span>
-                                                <span className="w-1 h-1 rounded-full bg-base-300"></span>
-                                                <span className="font-medium">{resort.distance_km?.toFixed(1) ?? "0.0"} km runs</span>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </>
+        <View className="flex-1 bg-slate-950 p-4 pt-6">
+            {/* Search Header Container */}
+            <View className="mb-4">
+                <Text className="text-xl font-extrabold text-white mb-3">Ski Resorts</Text>
+                <View className="relative flex-row items-center bg-slate-800 rounded-2xl px-4 border border-slate-700">
+                    {isLoadingResorts ? (
+                        <ActivityIndicator size="small" color="#3b82f6" />
+                    ) : (
+                        <Search size={18} color="#94a3b8" />
                     )}
+                    <TextInput
+                        className="flex-1 p-3.5 text-sm text-white ml-2"
+                        placeholder="Search by name, country..."
+                        placeholderTextColor="#94a3b8"
+                        value={searchTerm}
+                        onChangeText={handleSearch}
+                    />
+                </View>
+            </View>
 
-                    {/* Welcome / Initial State */}
-                    {resorts.length === 0 && searchTerm.length <= 2 && (
-                        <div className="flex flex-col items-center justify-center p-8 text-center h-70">
-                            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-4 shadow-sm">
-                                <Compass className="w-6 h-6 animate-pulse" />
-                            </div>
-                            <h3 className="font-bold text-sm text-base-content">Explore Ski Resorts</h3>
-                            <p className="text-xs text-base-content/60 max-w-xs mt-1.5 leading-relaxed">
-                                Enter 3 or more characters in the search bar above to look up global ski resorts and check metrics.
-                            </p>
-                        </div>
-                    )}
+            {/* List Body Container */}
+            <ScrollView className="flex-1 space-y-3">
+                {resorts.length > 0 && (
+                    <View className="mb-4">
+                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                            Matching Resorts ({resorts.length})
+                        </Text>
+                        <View className="space-y-2">
+                            {resorts.map((resort) => {
+                                const isSelected = selectedResort?.ID === resort.ID;
+                                return (
+                                    <TouchableOpacity
+                                        key={resort.ID}
+                                        className={`rounded-2xl border p-4 mb-2 ${
+                                            isSelected
+                                                ? "border-blue-500 bg-blue-950/40"
+                                                : "border-slate-800 bg-slate-900"
+                                        }`}
+                                        onPress={() => handleResortSelect(resort)}
+                                    >
+                                        <View className="flex-row justify-between items-start">
+                                            <View>
+                                                <Text className="font-bold text-base text-white">{resort.Name}</Text>
+                                                <View className="flex-row items-center gap-1 mt-1">
+                                                    <MapPin size={12} color="#94a3b8" />
+                                                    <Text className="text-xs text-slate-400">{resort.Country}</Text>
+                                                </View>
+                                            </View>
+                                            <View className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                                                <Text className="text-xs font-bold text-slate-200">{resort.total_lifts ?? 0} Lifts</Text>
+                                            </View>
+                                        </View>
 
-                    {/* No results state */}
-                    {resorts.length === 0 && searchTerm.length > 2 && !isLoadingResorts && (
-                        <div className="flex flex-col items-center justify-center p-8 text-center h-70">
-                            <div className="w-12 h-12 rounded-2xl bg-error/10 flex items-center justify-center text-error mb-4">
-                                <X className="w-6 h-6" />
-                            </div>
-                            <h3 className="font-bold text-sm text-base-content">No Resorts Found</h3>
-                            <p className="text-xs text-base-content/60 max-w-xs mt-1.5 leading-relaxed">
-                                We couldn't find any resorts matching “{searchTerm}”. Check spelling or try another term.
-                            </p>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Right Column: Resort Dashboard (Desktop View) */}
-            <div className="hidden lg:flex flex-1 h-full bg-base-200 overflow-hidden">
-                {selectedResort ? (
-                    <div className="w-full h-full p-6">
-                        <div className="w-full h-full rounded-2xl border border-base-300 bg-base-100 shadow-sm overflow-hidden">
-                            {renderDetailsContent(false)}
-                        </div>
-                    </div>
-                ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-base-200/50">
-                        <div className="w-16 h-16 rounded-2xl bg-base-300/40 border border-base-300 flex items-center justify-center text-base-content/30 mb-4">
-                            <Map className="w-8 h-8" />
-                        </div>
-                        <h2 className="font-bold text-base text-base-content">Resort Dashboard Console</h2>
-                        <p className="text-xs text-base-content/50 max-w-sm mt-1.5 leading-relaxed">
-                            Select a ski resort from the side list to open its statistics details, active sessions logs, and maps navigation panel.
-                        </p>
-                    </div>
+                                        <View className="flex-row items-center gap-3 pt-3 mt-2 border-t border-slate-800">
+                                            <Text className="text-xs text-slate-400">{resort.total_pistes ?? 0} Pistes</Text>
+                                            <Text className="text-xs text-slate-400">•</Text>
+                                            <Text className="text-xs text-slate-400">{resort.distance_km?.toFixed(1) ?? "0.0"} km runs</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    </View>
                 )}
-            </div>
 
-            {/* Floating Bottom Sheet (Mobile View Overlay) */}
-            {selectedResort && (
-                <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/40 backdrop-blur-sm">
-                    {/* Backdrop Click Dismiss */}
-                    <div className="absolute inset-0 -z-10" onClick={() => setSelectedResortWithCache(null)}></div>
+                {/* Welcome / Initial State */}
+                {resorts.length === 0 && searchTerm.length <= 2 && (
+                    <View className="items-center justify-center p-8 text-center my-12">
+                        <View className="w-16 h-16 rounded-2xl bg-blue-900/40 items-center justify-center mb-4 border border-blue-700">
+                            <Compass size={32} color="#60a5fa" />
+                        </View>
+                        <Text className="font-bold text-base text-white">Explore Ski Resorts</Text>
+                        <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
+                            Enter 3 or more characters in the search bar above to look up global ski resorts and check metrics.
+                        </Text>
+                    </View>
+                )}
 
-                    <div className="w-full bg-base-100 rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up">
-                        {/* Drag Handle Indicator */}
-                        <div className="w-12 h-1 bg-base-300 rounded-full mx-auto my-3 shrink-0"></div>
-                        <div className="flex-1 overflow-hidden">
-                            {renderDetailsContent(true)}
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
+                {/* No results state */}
+                {resorts.length === 0 && searchTerm.length > 2 && !isLoadingResorts && (
+                    <View className="items-center justify-center p-8 text-center my-12">
+                        <View className="w-16 h-16 rounded-2xl bg-red-900/40 items-center justify-center mb-4 border border-red-700">
+                            <X size={32} color="#f87171" />
+                        </View>
+                        <Text className="font-bold text-base text-white">No Resorts Found</Text>
+                        <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
+                            We couldn't find any resorts matching “{searchTerm}”. Check spelling or try another term.
+                        </Text>
+                    </View>
+                )}
+            </ScrollView>
+
+            {/* Modal Detail View for Selected Resort */}
+            <Modal
+                visible={!!selectedResort}
+                animationType="slide"
+                onRequestClose={() => setSelectedResortWithCache(null)}
+            >
+                <View className="flex-1 bg-slate-950">
+                    {renderDetailsContent()}
+                </View>
+            </Modal>
+        </View>
     );
 }

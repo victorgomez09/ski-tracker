@@ -4,9 +4,9 @@ import {
     useCameraPermissions,
 } from "expo-camera";
 import { Image } from "expo-image";
-import { CameraIcon, RotateCcw, X } from "lucide-react";
+import { Camera as CameraIcon, RotateCcw, X } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { Pressable } from "react-native";
+import { View, Text, TouchableOpacity, Pressable } from "react-native";
 
 interface CameraProps {
     onClose?: () => void;
@@ -24,12 +24,14 @@ export const Camera = ({ onClose }: CameraProps) => {
 
     if (!permission.granted) {
         return (
-            <div className="flex flex-col items-center justify-center gap-4 bg-base-300 w-full h-full">
-                <span className="text-lg font-semibold text-base-content">
+            <View className="flex-1 items-center justify-center p-6 bg-slate-900">
+                <Text className="text-lg font-semibold text-white text-center mb-4">
                     We need your permission to use the camera
-                </span>
-                <button onClick={requestPermission} className="btn btn-primary">Grant permission</button>
-            </div>
+                </Text>
+                <TouchableOpacity onPress={requestPermission} className="bg-blue-600 px-6 py-3 rounded-xl">
+                    <Text className="text-white font-bold text-base">Grant permission</Text>
+                </TouchableOpacity>
+            </View>
         );
     }
 
@@ -44,51 +46,56 @@ export const Camera = ({ onClose }: CameraProps) => {
 
     const renderPicture = (uri: string) => {
         return (
-            <div className="flex flex-col items-center justify-center gap-4">
+            <View className="items-center justify-center space-y-4">
                 <Image
                     source={{ uri }}
                     contentFit="contain"
-                    style={{ width: 300, aspectRatio: 1 }}
+                    style={{ width: 300, aspectRatio: 1, borderRadius: 16 }}
                 />
-                <button onClick={() => setUri(null)} className="btn btn-primary">
-                    Take another picture
-                </button>
-            </div>
+                <TouchableOpacity onPress={() => setUri(null)} className="bg-blue-600 px-6 py-3 rounded-xl mt-4">
+                    <Text className="text-white font-bold text-base">Take another picture</Text>
+                </TouchableOpacity>
+            </View>
         );
     };
 
     const renderCamera = () => {
         return (
-            <div className="flex flex-col items-center justify-center gap-4 w-full h-full">
+            <View className="w-full h-full justify-center items-center">
                 <CameraView
                     ref={ref}
+                    style={{ width: '100%', height: '80%', borderRadius: 20 }}
                     mode="picture"
                     facing={facing}
                     mute={false}
                     responsiveOrientationWhenOrientationLocked
                 />
-                <div className="flex flex-row items-center justify-center gap-4">
-                    <Pressable onPress={takePicture}>
+                <View className="flex-row items-center justify-center gap-8 mt-4">
+                    <Pressable onPress={takePicture} className="bg-blue-600 p-4 rounded-full">
                         {({ pressed }) => (
                             <CameraIcon
+                                color="#ffffff"
+                                size={32}
                                 style={{
                                     opacity: pressed ? 0.5 : 1,
                                 }}
                             />
                         )}
                     </Pressable>
-                    <Pressable onPress={toggleFacing}>
-                        <RotateCcw size={32} />
+                    <Pressable onPress={toggleFacing} className="bg-slate-800 p-4 rounded-full border border-slate-700">
+                        <RotateCcw size={28} color="#ffffff" />
                     </Pressable>
-                </div>
-            </div>
+                </View>
+            </View>
         );
     };
 
     return (
-        <div className="flex flex-col items-center justify-center p-2 w-full h-full">
-            <X onClick={onClose} size={32} className="absolute top-4 right-4 cursor-pointer text-base-content" />
+        <View className="flex-1 items-center justify-center p-4 bg-slate-950 relative">
+            <TouchableOpacity onPress={onClose} className="absolute top-6 right-6 z-50 p-2 bg-slate-800 rounded-full">
+                <X size={28} color="#ffffff" />
+            </TouchableOpacity>
             {uri ? renderPicture(uri) : renderCamera()}
-        </div>
+        </View>
     );
-}
+};

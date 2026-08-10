@@ -1,6 +1,8 @@
 import { Lift, Piste } from 'models/ski-resort.model';
 import React, { useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { X } from 'lucide-react-native';
+import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 interface MapDetailPanelProps {
     data: Piste | Lift;
@@ -15,17 +17,53 @@ const getDifficultyMeta = (difficulty: string) => {
     const diff = difficulty?.toLowerCase() || '';
     switch (diff) {
         case 'novice':
-            return { label: 'Novice', bg: 'bg-[#00a859]', text: 'text-white', hex: '#00a859' };
+            return { label: 'Novice', bg: 'bg-[#00a859]', hex: '#00a859' };
         case 'easy':
-            return { label: 'Easy', bg: 'bg-[#0072bc]', text: 'text-white', hex: '#0072bc' };
+            return { label: 'Easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
         case 'intermediate':
-            return { label: 'Advanced', bg: 'bg-[#f0141e]', text: 'text-white', hex: '#f0141e' };
+            return { label: 'Advanced', bg: 'bg-[#f0141e]', hex: '#f0141e' };
         case 'advanced':
         case 'expert':
-            return { label: 'Expert', bg: 'bg-black', text: 'text-white', hex: '#000000' };
+            return { label: 'Expert', bg: 'bg-black', hex: '#000000' };
         default:
-            return { label: 'Easy', bg: 'bg-[#0072bc]', text: 'text-white', hex: '#0072bc' };
+            return { label: 'Easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
     }
+};
+
+const NativeChart: React.FC<{ data: { distance: number; elevation: number }[]; height?: number }> = ({ data, height = 140 }) => {
+    if (!data || data.length === 0) return null;
+    const minElev = Math.min(...data.map(d => d.elevation));
+    const maxElev = Math.max(...data.map(d => d.elevation));
+    const range = (maxElev - minElev) || 1;
+
+    const width = 300;
+    const points = data.map((d, i) => {
+        const x = (i / (data.length - 1 || 1)) * width;
+        const y = height - 15 - ((d.elevation - minElev) / range) * (height - 30);
+        return { x, y };
+    });
+
+    const pathD = points.reduce((acc, p, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`, '');
+    const fillD = `${pathD} L ${width},${height} L 0,${height} Z`;
+
+    return (
+        <View className="bg-slate-800 p-2 rounded-xl border border-slate-700">
+            <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+                <Defs>
+                    <LinearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
+                        <Stop offset="0%" stopColor="#3b82f6" stopOpacity="0.4" />
+                        <Stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
+                    </LinearGradient>
+                </Defs>
+                <Path d={fillD} fill="url(#elevGrad)" />
+                <Path d={pathD} stroke="#3b82f6" strokeWidth={2.5} fill="none" />
+            </Svg>
+            <View className="flex-row justify-between mt-1 px-1">
+                <Text className="text-[10px] text-slate-400">Min: {minElev}m</Text>
+                <Text className="text-[10px] text-slate-400">Max: {maxElev}m</Text>
+            </View>
+        </View>
+    );
 };
 
 export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose }) => {
@@ -33,7 +71,7 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
     const elevationProfile = tags.elevationProfile || {};
     const heights = elevationProfile.heights || [];
     const resolution = elevationProfile.resolution || 25;
-    const type = data.GeometryGeoJSON.type || "LineString";
+    const type = data.GeometryGeoJSON?.type || "LineString";
 
     const ref = tags.ref || "•";
     const difficulty: string = (data as Piste).Difficulty || tags.difficulty || "easy";
@@ -43,46 +81,15 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
 
     const chartData = useMemo(() => {
         if (heights.length === 0) return [];
-
         return heights.map((height: number, index: number) => {
             const distanceMeters = index * resolution;
             const distanceKm = (distanceMeters / 1000).toFixed(2);
-
-            let slopePct = 0;
-            if (index > 0) {
-                const prevHeight = heights[index - 1];
-                const elevationDiff = Math.abs(height - prevHeight);
-                slopePct = (elevationDiff / resolution) * 100;
-            }
-
-            let color = '#00a859';
-            if (slopePct >= 10 && slopePct < 20) color = '#0072bc';
-            else if (slopePct >= 20 && slopePct < 35) color = '#f0141e';
-            else if (slopePct >= 35) color = '#111827';
-
             return {
                 distance: parseFloat(distanceKm),
                 elevation: Math.round(height),
-                slope: Math.round(slopePct),
-                color: color,
             };
         });
     }, [heights, resolution]);
-
-    const gradientStops = useMemo(() => {
-        if (chartData.length < 2) return [];
-
-        return chartData.map((point: any, index: number) => {
-            const offsetPct = (index / (chartData.length - 1)) * 100;
-            return (
-                <stop
-                    key={index}
-                    offset={`${offsetPct}%`}
-                    stopColor={point.color}
-                />
-            );
-        });
-    }, [chartData]);
 
     const totalDistance = heights.length > 1 ? Math.round((heights.length - 1) * resolution) : 0;
 
@@ -116,193 +123,110 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
     const places = tags.places || [];
     const region = places[0]?.localized?.en?.region || "Madrid";
     const country = places[0]?.localized?.en?.country || "Spain";
-
     const skiAreas = tags.skiAreas || [];
-    const skiArea = skiAreas[0]?.properties?.name;
+    const skiArea = skiAreas[0]?.properties?.name || "Ski Resort";
 
     const parseLiftType = (liftType: string) => {
-        switch (liftType.toLowerCase()) {
-            case 'chair_lift':
-                return 'Chair Lift';
-            case 'drag_lift':
-                return 'Drag Lift';
-            case 'gondola':
-                return 'Gondola';
-            case 'cable_car':
-                return 'Cable Car';
-            case 'funicular':
-                return 'Funicular';
-            case 'magic_carpet':
-                return 'Magic Carpet';
-            default:
-                return liftType;
+        switch (liftType?.toLowerCase()) {
+            case 'chair_lift': return 'Chair Lift';
+            case 'drag_lift': return 'Drag Lift';
+            case 'gondola': return 'Gondola';
+            case 'cable_car': return 'Cable Car';
+            case 'funicular': return 'Funicular';
+            case 'magic_carpet': return 'Magic Carpet';
+            default: return liftType || 'Lift';
         }
-    }
+    };
 
     if (!data) return null;
 
     return (
-        <div className="card absolute top-4 left-4 right-4 lg:bottom-auto lg:top-4 lg:left-72 lg:right-auto z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow p-4 w-auto lg:w-96 max-h-[65vh] lg:max-h-[85vh] overflow-y-auto flex flex-col gap-3">
-            <div className="flex justify-between items-start mb-2">
-                <div className="text-xs text-gray-500 font-medium tracking-wide">
-                    {country} <span className="mx-1">›</span> {region} <span className="mx-1">›</span>
-                    <div className="text-gray-600 hover:underline cursor-pointer mt-0.5">{skiArea}</div>
-                </div>
-                <button
-                    onClick={onClose}
-                    className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-50 transition-colors"
-                >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
+        <View className="absolute top-12 left-4 right-4 z-50 bg-slate-900/95 border border-slate-700 shadow-2xl p-4 rounded-3xl max-h-[75vh]">
+            <ScrollView className="space-y-4">
+                <View className="flex-row justify-between items-start">
+                    <Text className="text-xs text-slate-400 font-medium">
+                        {country} › {region} › {skiArea}
+                    </Text>
+                    <TouchableOpacity onPress={onClose} className="p-1.5 rounded-full bg-slate-800">
+                        <X size={18} color="#94a3b8" />
+                    </TouchableOpacity>
+                </View>
 
-            <div className="flex items-center gap-3 mb-3">
-                {!(data as Lift).LiftType ? (
-                    <div className={`w-8 h-8 rounded-full ${diffMeta.bg} ${diffMeta.text} flex items-center justify-center font-bold text-sm shadow-sm`}>
-                        {ref}
-                    </div>
+                <View className="flex-row items-center gap-3">
+                    {!(data as Lift).LiftType ? (
+                        <View className={`w-9 h-9 rounded-full ${diffMeta.bg} items-center justify-center shadow-md`}>
+                            <Text className="text-white font-bold text-sm">{ref}</Text>
+                        </View>
+                    ) : (
+                        <View className="w-9 h-9 rounded-full bg-slate-700 items-center justify-center shadow-md">
+                            <Text className="text-lg">🚠</Text>
+                        </View>
+                    )}
+                    <Text className="text-xl font-bold text-white flex-1">{name}</Text>
+                </View>
 
-                ) : (
-                    <div className={`w-8 h-8 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center font-bold text-sm shadow-sm`}>
-                        🚠
-                    </div>
+                {(!(data as Lift).LiftType && type === "LineString") && (
+                    <>
+                        <Text className="text-xs text-slate-400 capitalize font-medium">
+                            {diffMeta.label} downhill ski run
+                        </Text>
+
+                        <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
+                            <View className="items-center">
+                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">Distance</Text>
+                                <Text className="text-sm font-bold text-white mt-0.5">{totalDistance}m</Text>
+                            </View>
+                            <View className="items-center">
+                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">Ascent</Text>
+                                <Text className="text-sm font-bold text-white mt-0.5">{ascent}m</Text>
+                            </View>
+                            <View className="items-center">
+                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">Descent</Text>
+                                <Text className="text-sm font-bold text-white mt-0.5">{descent}m</Text>
+                            </View>
+                        </View>
+
+                        <View className="flex-row justify-around my-2">
+                            <View className="items-center">
+                                <Text className="text-xs text-slate-400">Average Slope</Text>
+                                <Text className="text-sm font-bold text-slate-200">{avgSlopeDeg}° ({avgSlopePct}%)</Text>
+                            </View>
+                            <View className="items-center">
+                                <Text className="text-xs text-slate-400">Max Slope</Text>
+                                <Text className="text-sm font-bold text-slate-200">{maxSlopeDeg}° ({maxSlopePct}%)</Text>
+                            </View>
+                        </View>
+
+                        <View className="mt-2">
+                            <Text className="text-xs font-bold text-slate-400 uppercase mb-2">Elevation Profile</Text>
+                            {chartData.length > 0 ? (
+                                <NativeChart data={chartData} />
+                            ) : (
+                                <View className="p-4 border border-dashed border-slate-700 rounded-xl items-center">
+                                    <Text className="text-xs text-slate-500">No elevation data available</Text>
+                                </View>
+                            )}
+                        </View>
+                    </>
                 )}
-                <h2 className="text-2xl font-bold tracking-tight text-gray-900">{name}</h2>
-            </div>
 
-            {(!(data as Lift).LiftType && type === "LineString") && (
-                <>
-                    <div className="text-sm text-gray-500 capitalize mb-4 font-medium">
-                        {diffMeta.label} downhill ski run
-                    </div>
-
-
-                    <div className="grid grid-cols-3 gap-2 border-t border-b border-gray-100 py-3 mb-3 text-xs font-semibold text-gray-700">
-                        <div>
-                            <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Distance</span>
-                            <span className="text-sm font-bold text-gray-900">{totalDistance}m</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Ascent</span>
-                            <span className="text-sm font-bold text-gray-900">{ascent}m</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Descent</span>
-                            <span className="text-sm font-bold text-gray-900">{descent}m</span>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mb-5 text-xs text-gray-700">
-                        <div>
-                            <span className="text-gray-400 block mb-0.5">Average Slope</span>
-                            <span className="text-sm font-semibold text-gray-900">{avgSlopeDeg}° ({avgSlopePct}%)</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 block mb-0.5">Max Slope</span>
-                            <span className="text-sm font-semibold text-gray-900">{maxSlopeDeg}° ({maxSlopePct}%)</span>
-                        </div>
-                    </div>
-
-                    <div className="h-55 lg:h-44 w-full mb-3 shrink-0">
-                        {chartData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%" style={{ outline: 'none' }}>
-                                <AreaChart data={chartData} margin={{ top: 15, right: 15, left: -10, bottom: 5 }} style={{ outline: 'none' }}>
-                                    <defs>
-                                        <linearGradient id="slopeColorGradient" x1="0" y1="0" x2="1" y2="0">
-                                            {gradientStops}
-                                        </linearGradient>
-                                        <linearGradient id="verticalOpacity" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.05)" vertical={false} />
-                                    <XAxis
-                                        dataKey="distance"
-                                        tickFormatter={(val) => `${val} km`}
-                                        fontSize={9}
-                                        tickLine={false}
-                                        axisLine={{ stroke: 'rgba(0, 0, 0, 0.08)' }}
-                                        tick={{ fill: '#6b7280', fontWeight: '500' }}
-                                    />
-                                    <YAxis
-                                        domain={['dataMin - 20', 'dataMax + 20']}
-                                        tickFormatter={(val) => `${val}m`}
-                                        fontSize={9}
-                                        tickLine={false}
-                                        axisLine={{ stroke: 'rgba(0, 0, 0, 0.08)' }}
-                                        tick={{ fill: '#6b7280', fontWeight: '500' }}
-                                        width={50}
-                                    />
-
-                                    <Tooltip
-                                        content={({ active, payload, label }) => {
-                                            if (active && payload && payload.length) {
-                                                const data = payload[0].payload;
-                                                const slopeDeg = pctToDegrees(data.slope);
-                                                return (
-                                                    <div className="bg-base-100/95 backdrop-blur-md p-3 border border-base-200 rounded-xl shadow-lg text-xs font-sans">
-                                                        <p className="text-base-content/50 font-medium mb-1.5">Distance: <span className="text-base-content font-bold">{label} km</span></p>
-                                                        <div className="space-y-1">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-primary"></span>
-                                                                <span className="text-base-content/65">Height:</span>
-                                                                <span className="text-base-content font-semibold">{data.elevation}m</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-secondary"></span>
-                                                                <span className="text-base-content/65">Slope:</span>
-                                                                <span className="text-base-content font-semibold">{data.slope}% ({slopeDeg}°)</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            }
-                                            return null;
-                                        }}
-                                    />
-
-                                    <Area
-                                        type="monotone"
-                                        dataKey="elevation"
-                                        stroke="url(#slopeColorGradient)"
-                                        strokeWidth={3}
-                                        fillOpacity={1}
-                                        fill="url(#verticalOpacity)"
-                                    />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center border border-dashed border-gray-200 rounded-lg text-xs text-gray-400">
-                                No elevation profile data available
-                            </div>
-                        )}
-                    </div>
-                </>
-            )}
-
-            {((data as Lift).LiftType && type === "LineString") && (
-                <div className="grid grid-cols-3 gap-2 border-t border-b border-gray-100 py-3 mb-3 text-xs font-semibold text-gray-700">
-                    <div>
-                        <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Type:</span>
-                        <span className="text-sm font-bold text-gray-900">{parseLiftType((data as Lift).LiftType)}</span>
-                    </div>
-                    <div>
-                        <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Capacity:</span>
-                        <span className="text-sm font-bold text-gray-900">{(data as Lift).Capacity} pers.</span>
-                    </div>
-                    <div>
-                        <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Hourly Capacity:</span>
-                        <span className="text-sm font-bold text-gray-900">{(data as Lift).CapacityHourly} pers.</span>
-                    </div>
-                </div>
-            )}
-
-            <div className="text-[10px] text-gray-400 flex items-center justify-between border-t border-gray-100 pt-3">
-                <span>Source: <a href="https://openstreetmap.org" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">OpenStreetMap</a></span>
-            </div>
-        </div>
+                {((data as Lift).LiftType && type === "LineString") && (
+                    <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
+                        <View className="items-center">
+                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">Type</Text>
+                            <Text className="text-sm font-bold text-white mt-0.5">{parseLiftType((data as Lift).LiftType)}</Text>
+                        </View>
+                        <View className="items-center">
+                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">Capacity</Text>
+                            <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).Capacity || '-'} pers.</Text>
+                        </View>
+                        <View className="items-center">
+                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">Hourly</Text>
+                            <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).CapacityHourly || '-'} pers.</Text>
+                        </View>
+                    </View>
+                )}
+            </ScrollView>
+        </View>
     );
 };

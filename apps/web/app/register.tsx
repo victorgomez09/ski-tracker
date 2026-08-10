@@ -1,6 +1,8 @@
 import { API_BASE_URL } from "constants/constants";
 import { useRouter } from "expo-router";
-import { SubmitHandler, useForm } from "react-hook-form";
+import { Controller, SubmitHandler, useForm } from "react-hook-form";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { useState } from "react";
 
 interface Register {
     email: string;
@@ -12,81 +14,186 @@ interface Register {
 
 export default function RegisterView() {
     const router = useRouter();
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const {
-        register,
+        control,
         handleSubmit,
         formState: { errors },
-    } = useForm<Register>({ mode: "onTouched" })
+    } = useForm<Register>({
+        mode: "onTouched",
+        defaultValues: {
+            first_name: "",
+            last_name: "",
+            display_name: "",
+            email: "",
+            password: "",
+        }
+    });
 
     const onSubmit: SubmitHandler<Register> = async (data) => {
-        const request = await fetch(`${API_BASE_URL}/auth/register`, {
-            body: JSON.stringify(data),
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            }
-        })
+        setIsSubmitting(true);
+        try {
+            const request = await fetch(`${API_BASE_URL}/auth/register`, {
+                body: JSON.stringify(data),
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                }
+            });
 
-        if (request.ok) {
-            router.push("/login")
+            if (request.ok) {
+                router.push("/login");
+            }
+        } catch (err) {
+            console.error("Register error:", err);
+        } finally {
+            setIsSubmitting(false);
         }
-    }
+    };
 
     return (
-        <div className="hero bg-base-200 min-h-screen">
-            <div className="hero-content flex-col lg:flex-row-reverse">
-                <div className="card bg-base-100 w-80 shrink-0 shadow-md">
-                    <div className="card-body">
-                        <h1 className="card-title">Register</h1>
+        <ScrollView contentContainerStyle={{ 
+                    flexGrow: 1, 
+                    justifyContent: 'center', 
+                    alignItems: 'center' 
+                }} 
+                className="bg-slate-900 p-6">
+            <View className="bg-slate-800 rounded-3xl p-6 w-full max-w-sm border border-slate-700 shadow-2xl">
+                <Text className="text-2xl font-bold text-white mb-6 text-center">Register</Text>
 
-                        <form onSubmit={handleSubmit(onSubmit)}>
-                            <fieldset className="fieldset">
-                                {/* FIRST NAME */}
-                                <label className="label">First Name</label>
-                                <input type="text" className={`input input-bordered ${errors.first_name ? "input-error" : ""}`} placeholder="First Name" {...register("first_name", {
-                                    required: true,
-                                })} />
-                                {errors.first_name?.type === "required" && <p className="label italic text-error">First Name is required</p>}
+                {/* FIRST NAME */}
+                <Text className="text-sm font-semibold text-slate-300 mb-1">First Name</Text>
+                <Controller
+                    control={control}
+                    name="first_name"
+                    rules={{ required: "First Name is required" }}
+                    render={({ field: { onChange, onBlur, value } }) => (
+                        <TextInput
+                            className={`bg-slate-700 text-white p-3.5 rounded-xl border ${errors.first_name ? "border-red-500" : "border-slate-600"} mb-1`}
+                            placeholder="First Name"
+                            placeholderTextColor="#94a3b8"
+                            onBlur={onBlur}
+                            onChangeText={onChange}
+                            value={value}
+                        />
+                    )}
+                />
+                {errors.first_name && (
+                    <Text className="text-xs text-red-400 italic mb-2">{errors.first_name.message}</Text>
+                )}
 
-                                {/* LAST NAME */}
-                                <label className="label">Last Name</label>
-                                <input type="text" className={`input input-bordered ${errors.last_name ? "input-error" : ""}`} placeholder="Last Name" {...register("last_name", {
-                                    required: true,
-                                })} />
-                                {errors.last_name?.type === "required" && <p className="label italic text-error">Last Name is required</p>}
+                {/* LAST NAME */}
+                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">Last Name</Text>
+                <Controller
+                    control={control}
+                    name="last_name"
+                    rules={{ required: "Last Name is required" }}
+                    render={({ field: { onChange, onBlur, value } }) => (
+                        <TextInput
+                            className={`bg-slate-700 text-white p-3.5 rounded-xl border ${errors.last_name ? "border-red-500" : "border-slate-600"} mb-1`}
+                            placeholder="Last Name"
+                            placeholderTextColor="#94a3b8"
+                            onBlur={onBlur}
+                            onChangeText={onChange}
+                            value={value}
+                        />
+                    )}
+                />
+                {errors.last_name && (
+                    <Text className="text-xs text-red-400 italic mb-2">{errors.last_name.message}</Text>
+                )}
 
-                                {/* DISPLAY NAME */}
-                                <label className="label">Display Name</label>
-                                <input type="text" className={`input input-bordered ${errors.display_name ? "input-error" : ""}`} placeholder="Display Name" {...register("display_name", {
-                                    required: true,
-                                })} />
-                                {errors.display_name?.type === "required" && <p className="label italic text-error">Display Name is required</p>}
+                {/* DISPLAY NAME */}
+                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">Display Name</Text>
+                <Controller
+                    control={control}
+                    name="display_name"
+                    rules={{ required: "Display Name is required" }}
+                    render={({ field: { onChange, onBlur, value } }) => (
+                        <TextInput
+                            className={`bg-slate-700 text-white p-3.5 rounded-xl border ${errors.display_name ? "border-red-500" : "border-slate-600"} mb-1`}
+                            placeholder="Display Name"
+                            placeholderTextColor="#94a3b8"
+                            onBlur={onBlur}
+                            onChangeText={onChange}
+                            value={value}
+                        />
+                    )}
+                />
+                {errors.display_name && (
+                    <Text className="text-xs text-red-400 italic mb-2">{errors.display_name.message}</Text>
+                )}
 
-                                {/* EMAIL */}
-                                <label className="label">Email</label>
-                                <input type="email" className={`input input-bordered ${errors.email ? "input-error" : ""}`} placeholder="Email" {...register("email", {
-                                    required: true,
-                                    pattern: /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/
-                                })} />
-                                {errors.email?.type === "required" && <p className="label italic text-error">Email is required</p>}
-                                {errors.email?.type === "pattern" && <p className="label italic text-error">Invalid email address</p>}
+                {/* EMAIL */}
+                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">Email</Text>
+                <Controller
+                    control={control}
+                    name="email"
+                    rules={{
+                        required: "Email is required",
+                        pattern: {
+                            value: /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/,
+                            message: "Invalid email address"
+                        }
+                    }}
+                    render={({ field: { onChange, onBlur, value } }) => (
+                        <TextInput
+                            className={`bg-slate-700 text-white p-3.5 rounded-xl border ${errors.email ? "border-red-500" : "border-slate-600"} mb-1`}
+                            placeholder="Email"
+                            placeholderTextColor="#94a3b8"
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            onBlur={onBlur}
+                            onChangeText={onChange}
+                            value={value}
+                        />
+                    )}
+                />
+                {errors.email && (
+                    <Text className="text-xs text-red-400 italic mb-2">{errors.email.message}</Text>
+                )}
 
-                                {/* PASSWORD */}
-                                <label className="label">Password</label>
-                                <input type="password" className={`input input-bordered ${errors.password ? "input-error" : ""}`} placeholder="Password" {...register("password", {
-                                    required: true,
-                                })} />
-                                {errors.password?.type === "required" && <p className="label italic text-error">Password is required</p>}
+                {/* PASSWORD */}
+                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">Password</Text>
+                <Controller
+                    control={control}
+                    name="password"
+                    rules={{ required: "Password is required" }}
+                    render={({ field: { onChange, onBlur, value } }) => (
+                        <TextInput
+                            className={`bg-slate-700 text-white p-3.5 rounded-xl border ${errors.password ? "border-red-500" : "border-slate-600"} mb-1`}
+                            placeholder="Password"
+                            placeholderTextColor="#94a3b8"
+                            secureTextEntry
+                            onBlur={onBlur}
+                            onChangeText={onChange}
+                            value={value}
+                        />
+                    )}
+                />
+                {errors.password && (
+                    <Text className="text-xs text-red-400 italic mb-2">{errors.password.message}</Text>
+                )}
 
-                                {/* SUBMIT */}
-                                <button className="btn btn-neutral mt-4" type="submit" disabled={Object.keys(errors).length > 0}>Register</button>
+                {/* SUBMIT */}
+                <TouchableOpacity
+                    className={`bg-blue-600 p-4 rounded-xl items-center mt-6 shadow-md ${isSubmitting || Object.keys(errors).length > 0 ? "opacity-60" : ""}`}
+                    onPress={handleSubmit(onSubmit)}
+                    disabled={isSubmitting || Object.keys(errors).length > 0}
+                >
+                    {isSubmitting ? (
+                        <ActivityIndicator color="#ffffff" />
+                    ) : (
+                        <Text className="text-white font-bold text-base">Register</Text>
+                    )}
+                </TouchableOpacity>
 
-                                <a href="/login" className="link link-secondary text-center">If you already have an account, login here!</a>
-                            </fieldset>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
-    )
+                <TouchableOpacity onPress={() => router.push("/login")} className="mt-4">
+                    <Text className="text-blue-400 text-xs text-center font-medium">
+                        If you already have an account, login here!
+                    </Text>
+                </TouchableOpacity>
+            </View>
+        </ScrollView>
+    );
 }
