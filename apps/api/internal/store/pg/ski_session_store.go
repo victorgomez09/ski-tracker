@@ -58,7 +58,7 @@ func (u *skiSessionStore) GetByID(ctx context.Context, sessionID uuid.UUID) (*mo
 		Model(&session).
 		Relation("Runs").
 		Relation("User").
-		Where("id = ?", sessionID).
+		Where("ss.id = ?", sessionID).
 		Scan(ctx)
 	if err != nil {
 		return nil, err

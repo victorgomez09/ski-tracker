@@ -60,16 +60,16 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
             {/* Header Tabs */}
             <View className="flex-row justify-between items-center mb-3">
                 <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">Detailed Weather</Text>
-                <View className="flex-row bg-slate-800 p-1 rounded-xl">
+                <View className="flex-row bg-slate-800 p-1 rounded-md">
                     <TouchableOpacity
-                        className={`px-3 py-1.5 rounded-lg ${activeTab === 'current' ? 'bg-blue-600' : ''}`}
+                        className={`px-3 py-1.5 rounded-md ${activeTab === 'current' ? 'bg-blue-600' : ''}`}
                         onPress={() => setActiveTab('current')}
                     >
                         <Text className={`text-xs font-semibold ${activeTab === 'current' ? 'text-white' : 'text-slate-400'}`}>Current</Text>
                     </TouchableOpacity>
                     {data.hourly && (
                         <TouchableOpacity
-                            className={`px-3 py-1.5 rounded-lg ${activeTab === 'hourly' ? 'bg-blue-600' : ''}`}
+                            className={`px-3 py-1.5 rounded-md ${activeTab === 'hourly' ? 'bg-blue-600' : ''}`}
                             onPress={() => setActiveTab('hourly')}
                         >
                             <Text className={`text-xs font-semibold ${activeTab === 'hourly' ? 'text-white' : 'text-slate-400'}`}>Hourly</Text>
@@ -77,7 +77,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                     )}
                     {data.daily && (
                         <TouchableOpacity
-                            className={`px-3 py-1.5 rounded-lg ${activeTab === 'daily' ? 'bg-blue-600' : ''}`}
+                            className={`px-3 py-1.5 rounded-md ${activeTab === 'daily' ? 'bg-blue-600' : ''}`}
                             onPress={() => setActiveTab('daily')}
                         >
                             <Text className={`text-xs font-semibold ${activeTab === 'daily' ? 'text-white' : 'text-slate-400'}`}>Daily</Text>
@@ -88,10 +88,10 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
 
             {/* CURRENT TAB */}
             {activeTab === 'current' && (
-                <View className="bg-slate-800 border border-slate-700 p-4 rounded-2xl space-y-4">
+                <View className="bg-slate-800 border border-slate-700 p-4 rounded-md space-y-4">
                     <View className="flex-row items-center justify-between">
                         <View className="flex-row items-center gap-3">
-                            <View className="p-3 rounded-2xl bg-slate-700">
+                            <View className="p-3 rounded-md bg-slate-700">
                                 {currentWeatherInfo.icon}
                             </View>
                             <View>
@@ -110,7 +110,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
 
                     {/* Metrics Grid */}
                     <View className="flex-row flex-wrap gap-2 pt-3 border-t border-slate-700">
-                        <View className="bg-slate-700/60 rounded-xl p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
                             <Wind size={16} color="#38bdf8" />
                             <View>
                                 <Text className="text-[9px] text-slate-400 uppercase font-semibold">Wind Speed</Text>
@@ -118,7 +118,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-xl p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
                             <Flame size={16} color="#f59e0b" />
                             <View>
                                 <Text className="text-[9px] text-slate-400 uppercase font-semibold">Wind Gusts</Text>
@@ -126,7 +126,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-xl p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
                             <Compass size={16} color="#c084fc" />
                             <View>
                                 <Text className="text-[9px] text-slate-400 uppercase font-semibold">Wind Dir</Text>
@@ -134,7 +134,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-xl p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
                             <Eye size={16} color="#34d399" />
                             <View>
                                 <Text className="text-[9px] text-slate-400 uppercase font-semibold">Visibility</Text>
@@ -142,7 +142,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-xl p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
                             <Droplets size={16} color="#60a5fa" />
                             <View>
                                 <Text className="text-[9px] text-slate-400 uppercase font-semibold">Humidity</Text>
@@ -150,7 +150,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-xl p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
                             <Gauge size={16} color="#4ade80" />
                             <View>
                                 <Text className="text-[9px] text-slate-400 uppercase font-semibold">Pressure</Text>
@@ -163,7 +163,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
 
             {/* HOURLY TAB */}
             {activeTab === 'hourly' && data.hourly && (
-                <View className="bg-slate-800 border border-slate-700 p-4 rounded-2xl">
+                <View className="bg-slate-800 border border-slate-700 p-4 rounded-md">
                     <Text className="text-[10px] text-slate-400 font-semibold uppercase mb-3">Upcoming hours</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
                         {data.hourly.time.slice(0, 12).map((timeStr, index) => {
@@ -178,7 +178,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             const visibility = data.hourly.visibility ? data.hourly.visibility[index] : null;
 
                             return (
-                                <View key={index} className="bg-slate-700/60 rounded-2xl p-3 items-center w-36 mr-3 space-y-2 border border-slate-600">
+                                <View key={index} className="bg-slate-700/60 rounded-md p-3 items-center w-36 mr-3 space-y-2 border border-slate-600">
                                     <Text className="text-xs font-semibold text-slate-300">{hourFormatted}</Text>
                                     <Text className="text-base font-extrabold text-white my-1">{temp}{hourlyUnits.temperature_2m}</Text>
 
@@ -222,7 +222,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
 
             {/* DAILY TAB */}
             {activeTab === 'daily' && data.daily && (
-                <View className="bg-slate-800 border border-slate-700 p-4 rounded-2xl space-y-2">
+                <View className="bg-slate-800 border border-slate-700 p-4 rounded-md space-y-2">
                     <Text className="text-[10px] text-slate-400 font-semibold uppercase mb-2">Multi-day Outlook</Text>
                     {data.daily.time.map((dayStr, index) => {
                         const dateObj = new Date(dayStr);
@@ -232,7 +232,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                         const snowfallSum = data.daily?.snowfall_sum ? data.daily.snowfall_sum[index] : 0;
 
                         return (
-                            <View key={index} className="bg-slate-700/60 rounded-xl p-3 flex-row items-center justify-between my-1">
+                            <View key={index} className="bg-slate-700/60 rounded-md p-3 flex-row items-center justify-between my-1">
                                 <Text className="text-xs font-semibold text-white w-28">{dayName}</Text>
                                 {snowfallSum > 0 ? (
                                     <View className="bg-sky-900/80 px-2 py-0.5 rounded-full flex-row items-center gap-1">

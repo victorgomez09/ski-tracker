@@ -147,6 +147,7 @@ export default function ResortsView() {
     const handleSessionClick = (session: any) => {
         if (!selectedResort) return;
         router.push(`/map?sessionId=${session.id}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=14`);
+        setSelectedResortWithCache(null);
     };
 
     const selectedResortSummary = useMemo(() => {
@@ -183,7 +184,7 @@ export default function ResortsView() {
         return (
             <ScrollView className="flex-1 bg-slate-900 p-4 space-y-6">
                 {/* Header Banner */}
-                <View className="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-xl flex-row justify-between items-start mb-4">
+                <View className="bg-slate-800 rounded-md p-5 border border-slate-700 shadow-xl flex-row justify-between items-start mb-4">
                     <View className="flex-1">
                         <View className="bg-blue-900/60 px-3 py-1 rounded-full self-start flex-row items-center gap-1 border border-blue-700">
                             <Globe size={12} color="#60a5fa" />
@@ -203,17 +204,17 @@ export default function ResortsView() {
                 <View className="mb-4">
                     <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Resort Metrics</Text>
                     <View className="flex-row gap-3">
-                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl">
+                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
                             <Text className="text-slate-400 text-xs font-medium">Lifts</Text>
                             <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.lifts}</Text>
                         </View>
 
-                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl">
+                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
                             <Text className="text-slate-400 text-xs font-medium">Pistes</Text>
                             <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.pistes}</Text>
                         </View>
 
-                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl">
+                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
                             <Text className="text-slate-400 text-xs font-medium">Distance</Text>
                             <Text className="text-2xl font-bold text-white mt-1">
                                 {selectedResortSummary?.distance.toFixed(1)} <Text className="text-xs text-slate-400">km</Text>
@@ -227,7 +228,7 @@ export default function ResortsView() {
                     <View className="mb-4">
                         <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Pistes Breakdown</Text>
                         <View className="flex-row flex-wrap gap-2">
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
                                 <View className="w-3 h-3 rounded-full bg-[#00a859]" />
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Novice</Text>
@@ -235,7 +236,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
                                 <View className="w-3 h-3 rounded-full bg-[#0072bc]" />
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Easy</Text>
@@ -243,7 +244,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
                                 <View className="w-3 h-3 rounded-full bg-[#f0141e]" />
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Intermediate</Text>
@@ -251,7 +252,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
                                 <View className="w-3 h-3 rounded-full bg-black border border-slate-600" />
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Expert</Text>
@@ -267,7 +268,7 @@ export default function ResortsView() {
                     <View className="mb-4">
                         <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Lifts Breakdown</Text>
                         <View className="flex-row flex-wrap gap-2">
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
                                 <Text className="text-base">🚡</Text>
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Chair Lifts</Text>
@@ -275,7 +276,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
                                 <Text className="text-base">⛷️</Text>
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Drag Lifts</Text>
@@ -283,7 +284,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
                                 <Text className="text-base">🛹</Text>
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Magic Carpets</Text>
@@ -291,7 +292,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-xl flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
                                 <Text className="text-base">🪢</Text>
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Rope Tows</Text>
@@ -306,9 +307,9 @@ export default function ResortsView() {
                 {selectedResortSummary?.website && (
                     <View className="mb-4">
                         <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Website</Text>
-                        <View className="bg-slate-800 border border-slate-700 p-4 rounded-2xl flex-row items-center justify-between">
+                        <View className="bg-slate-800 border border-slate-700 p-4 rounded-md flex-row items-center justify-between">
                             <View className="flex-row items-center gap-3">
-                                <View className="w-10 h-10 rounded-xl bg-blue-900/60 items-center justify-center">
+                                <View className="w-10 h-10 rounded-md bg-blue-900/60 items-center justify-center">
                                     <Globe size={20} color="#60a5fa" />
                                 </View>
                                 <View>
@@ -317,7 +318,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
                             <TouchableOpacity
-                                className="bg-blue-600 px-3.5 py-2 rounded-xl flex-row items-center gap-1"
+                                className="bg-blue-600 px-3.5 py-2 rounded-md flex-row items-center gap-1"
                                 onPress={() => Linking.openURL(selectedResortSummary.website!)}
                             >
                                 <Text className="text-white text-xs font-bold">Open</Text>
@@ -345,7 +346,7 @@ export default function ResortsView() {
                                 <TouchableOpacity
                                     key={session.id}
                                     onPress={() => handleSessionClick(session)}
-                                    className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex-row items-center justify-between my-1"
+                                    className="bg-slate-800 p-4 rounded-md border border-slate-700 flex-row items-center justify-between my-1"
                                 >
                                     <View className="space-y-1">
                                         <View className="flex-row items-center gap-2">
@@ -386,7 +387,7 @@ export default function ResortsView() {
                             ))}
                         </View>
                     ) : !isLoadingSessions ? (
-                        <View className="border border-dashed border-slate-700 rounded-2xl p-6 items-center justify-center bg-slate-800/40">
+                        <View className="border border-dashed border-slate-700 rounded-md p-6 items-center justify-center bg-slate-800/40">
                             <Activity size={32} color="#64748b" />
                             <Text className="font-semibold text-sm text-slate-300 mt-2">No sessions recorded</Text>
                             <Text className="text-xs text-slate-500 text-center mt-1">No sessions at this ski resort yet.</Text>
@@ -396,7 +397,7 @@ export default function ResortsView() {
 
                 {/* Footer Action Bar */}
                 <TouchableOpacity
-                    className="bg-blue-600 p-4 rounded-2xl flex-row items-center justify-center gap-2 mb-8 shadow-xl"
+                    className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-xl"
                     onPress={() => router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`)}
                 >
                     <MapIcon size={18} color="#ffffff" />
@@ -411,7 +412,7 @@ export default function ResortsView() {
             {/* Search Header Container */}
             <View className="mb-4">
                 <Text className="text-xl font-extrabold text-white mb-3">Ski Resorts</Text>
-                <View className="relative flex-row items-center bg-slate-800 rounded-2xl px-4 border border-slate-700">
+                <View className="relative flex-row items-center bg-slate-800 rounded-md px-4 border border-slate-700">
                     {isLoadingResorts ? (
                         <ActivityIndicator size="small" color="#3b82f6" />
                     ) : (
@@ -440,7 +441,7 @@ export default function ResortsView() {
                                 return (
                                     <TouchableOpacity
                                         key={resort.ID}
-                                        className={`rounded-2xl border p-4 mb-2 ${
+                                        className={`rounded-md border p-4 mb-2 ${
                                             isSelected
                                                 ? "border-blue-500 bg-blue-950/40"
                                                 : "border-slate-800 bg-slate-900"
@@ -475,7 +476,7 @@ export default function ResortsView() {
                 {/* Welcome / Initial State */}
                 {resorts.length === 0 && searchTerm.length <= 2 && (
                     <View className="items-center justify-center p-8 text-center my-12">
-                        <View className="w-16 h-16 rounded-2xl bg-blue-900/40 items-center justify-center mb-4 border border-blue-700">
+                        <View className="w-16 h-16 rounded-md bg-blue-900/40 items-center justify-center mb-4 border border-blue-700">
                             <Compass size={32} color="#60a5fa" />
                         </View>
                         <Text className="font-bold text-base text-white">Explore Ski Resorts</Text>
@@ -488,7 +489,7 @@ export default function ResortsView() {
                 {/* No results state */}
                 {resorts.length === 0 && searchTerm.length > 2 && !isLoadingResorts && (
                     <View className="items-center justify-center p-8 text-center my-12">
-                        <View className="w-16 h-16 rounded-2xl bg-red-900/40 items-center justify-center mb-4 border border-red-700">
+                        <View className="w-16 h-16 rounded-md bg-red-900/40 items-center justify-center mb-4 border border-red-700">
                             <X size={32} color="#f87171" />
                         </View>
                         <Text className="font-bold text-base text-white">No Resorts Found</Text>

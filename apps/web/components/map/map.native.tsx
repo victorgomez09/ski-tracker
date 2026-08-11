@@ -572,6 +572,7 @@ export default function InteractiveSkiMapNative() {
         };
     }, [activeHighlightedRun]);
 
+    // --- Handlers ---
     const handleNativeFeaturePress = useCallback((e: any) => {
         const found = getFeatureFromEvent(e);
         if (found) setSelectedFeature(found);
@@ -674,7 +675,7 @@ export default function InteractiveSkiMapNative() {
         <View className="flex-1 w-full h-full bg-slate-950 relative">
             <TouchableOpacity
                 onPress={() => setSelectedLegend(true)}
-                className="absolute top-4 right-4 z-50 bg-slate-800 border border-slate-700 p-3 rounded-2xl shadow-xl flex-row items-center gap-2"
+                className="absolute bottom-4 left-4 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-xl flex-row items-center gap-2"
             >
                 <CircleHelp size={18} color="#60a5fa" />
             </TouchableOpacity>
@@ -692,7 +693,7 @@ export default function InteractiveSkiMapNative() {
             )}
 
             {searchParams.sessionId && trackPoints.length > 0 && (
-                <View className="absolute top-16 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-3xl p-4 md:w-80 max-h-[75vh] shadow-2xl space-y-3">
+                <View className="absolute top-16 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 md:w-80 max-h-[75vh] shadow-2xl space-y-3">
                     <View className="flex-row justify-between items-center pb-2 border-b border-slate-800">
                         <View>
                             <Text className="font-extrabold text-sm text-white">Session Analyser</Text>
@@ -717,14 +718,14 @@ export default function InteractiveSkiMapNative() {
                     {selectedRun ? (
                         <ScrollView className="space-y-3">
                             <TouchableOpacity
-                                className="flex-row items-center gap-1 bg-slate-800 px-3 py-1.5 rounded-xl self-start mb-2"
+                                className="flex-row items-center gap-1 bg-slate-800 px-3 py-1.5 rounded-md self-start mb-2"
                                 onPress={() => setSelectedRun(null)}
                             >
                                 <ArrowLeft size={14} color="#60a5fa" />
                                 <Text className="text-xs font-bold text-blue-400">Back to runs</Text>
                             </TouchableOpacity>
 
-                            <View className="bg-slate-800/80 p-3 rounded-2xl border border-slate-700">
+                            <View className="bg-slate-800/80 p-3 rounded-md border border-slate-700">
                                 <Text className="font-bold text-xs text-white">Run #{selectedRun.index} Details</Text>
                                 <View className="flex-row justify-between mt-2">
                                     <Text className="text-xs text-slate-300">Drop: {selectedRun.verticalDrop.toFixed(0)}m</Text>
@@ -734,33 +735,33 @@ export default function InteractiveSkiMapNative() {
 
                             <View className="space-y-2 mt-3">
                                 <Text className="text-[10px] font-bold text-slate-400 uppercase">Elevation Profile (m)</Text>
-                                <View className="bg-slate-800/40 rounded-xl p-2 border border-slate-700">
+                                <View className="bg-slate-800/40 rounded-md p-2 border border-slate-700">
                                     {renderSvgChart(selectedRun.points.map((p: any) => p.altitude), '#3b82f6', '#3b82f6')}
                                 </View>
 
                                 <Text className="text-[10px] font-bold text-slate-400 uppercase mt-3">Speed Profile (km/h)</Text>
-                                <View className="bg-slate-800/40 rounded-xl p-2 border border-slate-700">
+                                <View className="bg-slate-800/40 rounded-md p-2 border border-slate-700">
                                     {renderSvgChart(selectedRun.points.map((p: any) => p.speed * 3.6), '#ef4444', '#ef4444')}
                                 </View>
                             </View>
                         </ScrollView>
                     ) : (
                         <View className="space-y-3">
-                            <View className="flex-row bg-slate-800 p-1 rounded-xl mb-2">
+                            <View className="flex-row bg-slate-800 p-1 rounded-md mb-2">
                                 <TouchableOpacity
-                                    className={`flex-1 py-1.5 rounded-lg items-center ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
+                                    className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
                                     onPress={() => setActiveTab('runs')}
                                 >
                                     <Text className={`text-xs font-bold ${activeTab === 'runs' ? 'text-white' : 'text-slate-400'}`}>Runs</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    className={`flex-1 py-1.5 rounded-lg items-center ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
+                                    className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
                                     onPress={() => setActiveTab('elevation')}
                                 >
                                     <Text className={`text-xs font-bold ${activeTab === 'elevation' ? 'text-white' : 'text-slate-400'}`}>Elevation</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    className={`flex-1 py-1.5 rounded-lg items-center ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
+                                    className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
                                     onPress={() => setActiveTab('speed')}
                                 >
                                     <Text className={`text-xs font-bold ${activeTab === 'speed' ? 'text-white' : 'text-slate-400'}`}>Speed</Text>
@@ -773,7 +774,7 @@ export default function InteractiveSkiMapNative() {
                                     {detectedRuns.map((run) => (
                                         <TouchableOpacity
                                             key={run.id}
-                                            className="bg-slate-800 p-3 rounded-2xl border border-slate-700 my-1 flex-row justify-between items-center"
+                                            className="bg-slate-800 p-3 rounded-md border border-slate-700 my-1 flex-row justify-between items-center"
                                             onPress={() => setSelectedRun(run)}
                                         >
                                             <View>
@@ -789,13 +790,13 @@ export default function InteractiveSkiMapNative() {
                             )}
 
                             {activeTab === 'elevation' && (
-                                <View className="bg-slate-800/40 p-2 rounded-xl border border-slate-700">
+                                <View className="bg-slate-800/40 p-2 rounded-md border border-slate-700">
                                     {renderSvgChart(trackPoints.map(p => p.altitude), '#3b82f6', '#3b82f6')}
                                 </View>
                             )}
 
                             {activeTab === 'speed' && (
-                                <View className="bg-slate-800/40 p-2 rounded-xl border border-slate-700">
+                                <View className="bg-slate-800/40 p-2 rounded-md border border-slate-700">
                                     {renderSvgChart(trackPoints.map(p => p.speed * 3.6), '#ef4444', '#ef4444')}
                                 </View>
                             )}
@@ -815,6 +816,7 @@ export default function InteractiveSkiMapNative() {
                 <NativeCamera
                     zoom={viewState.zoom}
                     center={[viewState.longitude, viewState.latitude]}
+                    maxZoom={16}
                 />
                 {resorts.map((resort) => (
                     <NativeMarker

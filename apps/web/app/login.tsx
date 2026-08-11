@@ -64,7 +64,7 @@ export default function LoginView() {
                     alignItems: 'center' 
                 }} 
                 className="bg-slate-900 p-6">
-            <View className="bg-slate-800 rounded-3xl p-6 w-full max-w-sm border border-slate-700 shadow-2xl">
+            <View className="bg-slate-800 rounded-md p-6 w-full max-w-sm border border-slate-700 shadow-2xl">
                 <Text className="text-2xl font-bold text-white mb-6 text-center">Login</Text>
 
                 {/* EMAIL */}
@@ -81,7 +81,7 @@ export default function LoginView() {
                     }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
-                            className={`bg-slate-700 text-white p-3.5 rounded-xl border ${errors.email ? "border-red-500" : "border-slate-600"} mb-1`}
+                            className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.email ? "border-red-500" : "border-slate-600"} mb-1`}
                             placeholder="Email"
                             placeholderTextColor="#94a3b8"
                             keyboardType="email-address"
@@ -104,7 +104,7 @@ export default function LoginView() {
                     rules={{ required: "Password is required" }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
-                            className={`bg-slate-700 text-white p-3.5 rounded-xl border ${errors.password ? "border-red-500" : "border-slate-600"} mb-1`}
+                            className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.password ? "border-red-500" : "border-slate-600"} mb-1`}
                             placeholder="Password"
                             placeholderTextColor="#94a3b8"
                             secureTextEntry
@@ -120,7 +120,7 @@ export default function LoginView() {
 
                 {/* SUBMIT */}
                 <TouchableOpacity
-                    className={`bg-blue-600 p-4 rounded-xl items-center mt-6 shadow-md ${isSubmitting || Object.keys(errors).length > 0 ? "opacity-60" : ""}`}
+                    className={`bg-blue-600 p-4 rounded-md items-center mt-6 shadow-md ${isSubmitting || Object.keys(errors).length > 0 ? "opacity-60" : ""}`}
                     onPress={handleSubmit(onSubmit)}
                     disabled={isSubmitting || Object.keys(errors).length > 0}
                 >

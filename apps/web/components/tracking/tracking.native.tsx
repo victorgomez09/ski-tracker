@@ -1,27 +1,25 @@
+import {
+    Camera as NativeCamera,
+    GeoJSONSource as NativeGeoJSONSource,
+    Layer as NativeLayer,
+    Map as NativeMap
+} from '@maplibre/maplibre-react-native';
 import axios from 'axios';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
-import { Activity, CameraIcon, Eye, EyeOff, Play, Square, Upload } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Platform } from 'react-native';
-import {
-    Map as NativeMap,
-    Camera as NativeCamera,
-    GeoJSONSource as NativeGeoJSONSource,
-    Layer as NativeLayer
-} from '@maplibre/maplibre-react-native';
+import { Activity, CameraIcon, Play, Square, Upload } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Platform, Text, TouchableOpacity, View } from 'react-native';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
+import { Camera } from 'components/tracking/camera';
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
 import { clearTrack, getAllPhotos, getAllPoints, initDB } from 'tracking/database';
 import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
-import { Camera } from 'components/tracking/camera';
-
-
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
@@ -53,27 +51,6 @@ export default function InteractiveSkiMapNative() {
     useEffect(() => {
         setupDatabaseAndCheckStatus();
         fetchResortDetails();
-    }, []);
-
-    useEffect(() => {
-        let mounted = true;
-        const loadNativeOpenFreeMapStyle = async () => {
-            try {
-                const response = await axios.get('https://tiles.openfreemap.org/styles/liberty');
-                if (mounted && response.status === 200 && response.data) {
-                    const style = {
-                        ...response.data,
-                        glyphs: response.data.glyphs || 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'
-                    };
-                    setNativeMapStyle(style);
-                }
-            } catch (error) {
-                console.warn('Unable to prefetch native OpenFreeMap style:', error);
-            }
-        };
-
-        loadNativeOpenFreeMapStyle();
-        return () => { mounted = false; };
     }, []);
 
     // --- Polling to refresh track points in real-time while recording ---
@@ -113,6 +90,32 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
+    // --- Fetchers ---
+    const fetchResortDetails = async (lon?: number, lat?: number) => {
+        try {
+            let latitude = lat ?? searchParams.lat;
+            let longitude = lon ?? searchParams.lng;
+
+            if (!latitude || !longitude) {
+                const location = await getCurrentLocation();
+                if (location) {
+                    latitude = location.coords.latitude;
+                    longitude = location.coords.longitude;
+                }
+            }
+
+            const request = await axios.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
+                params: { lat: latitude, lon: longitude },
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (request.status === 200) {
+                setResort(request.data);
+            }
+        } catch (error) {
+            console.error("Error fetching resort details:", error);
+        }
+    };
+
     // --- Tracking control ---
     const handleToggleTracking = async () => {
         if (isTracking) {
@@ -132,7 +135,7 @@ export default function InteractiveSkiMapNative() {
             const db = await SQLite.openDatabaseAsync('ski_tracker.db');
             const points = await getAllPoints(db);
             const photos = await getAllPhotos(db);
-            
+
             if (points.length === 0) {
                 alert("No tracking data to upload.");
                 setIsLoading(false);
@@ -158,12 +161,12 @@ export default function InteractiveSkiMapNative() {
             }
 
             const sessionId = startResponse.data.sessionId;
-            
+
             photos.forEach((photo, index) => {
                 formData.append('photos', {
-                uri: (photo as any).uri,
-                type: 'image/jpeg',
-                name: `session_photo_${index}.jpg`,
+                    uri: (photo as any).uri,
+                    type: 'image/jpeg',
+                    name: `session_photo_${index}.jpg`,
                 } as any);
             });
 
@@ -441,30 +444,6 @@ export default function InteractiveSkiMapNative() {
         }
     }, [resort]);
 
-    const fetchResortDetails = async (lon?: number, lat?: number) => {
-        try {
-            let latitude = lat ?? searchParams.lat;
-            let longitude = lon ?? searchParams.lng;
-
-            if (!latitude || !longitude) {
-                const location = await getCurrentLocation();
-                if (location) {
-                    latitude = location.coords.latitude;
-                    longitude = location.coords.longitude;
-                }
-            }
-
-            const request = await axios.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
-                params: { lat: latitude, lon: longitude },
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            if (request.status === 200) {
-                setResort(request.data);
-            }
-        } catch (error) {
-            console.error("Error fetching resort details:", error);
-        }
-    };
 
     return (
         <View className="w-full h-full relative flex-1 bg-slate-950">
@@ -482,7 +461,7 @@ export default function InteractiveSkiMapNative() {
 
                     <View className="absolute bottom-10 right-4 z-40 flex flex-col items-end gap-3">
                         {!isTracking && hasTrackData && (
-                            <View className="bg-slate-900/95 border border-slate-800 p-4 rounded-2xl shadow-xl w-72 flex flex-col gap-3">
+                            <View className="bg-slate-900/95 border border-slate-800 p-4 rounded-md shadow-xl w-72 flex flex-col gap-3">
                                 <View className="flex flex-col gap-0.5">
                                     <View className="flex-row items-center gap-1.5">
                                         <Activity size={16} color="#3b82f6" />
@@ -494,7 +473,7 @@ export default function InteractiveSkiMapNative() {
                                 </View>
 
                                 <TouchableOpacity
-                                    className="bg-blue-600 p-2 rounded-xl items-center flex-row justify-center gap-2"
+                                    className="bg-blue-600 p-2 rounded-md items-center flex-row justify-center gap-2"
                                     onPress={handleUploadTrack}
                                     disabled={isLoading}
                                 >

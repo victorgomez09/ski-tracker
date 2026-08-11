@@ -4,19 +4,21 @@ import { useLocalSearchParams } from 'expo-router/build/hooks';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Map, { Layer, MapRef, Marker, NavigationControl, Source } from 'react-map-gl/maplibre';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
-import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
+import { Area, AreaChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
 import { MapDetailPanel } from './map-detail-panel';
 import { ResortDetailPanel } from './resort-detail-panel';
+import { AltitudeTooltip } from './altitude-tooltip';
+import { SpeedTooltip } from './speed-tooltip';
 import { LegendDetailPanel } from './legend-detail-panel';
-import { CircleHelp, MapPin, X, ArrowLeft } from 'lucide-react-native';
+import { CircleQuestionMark } from 'lucide-react';
+import { View } from 'react-native';
 
-export default function InteractiveSkiMapWeb() {
+export default function InteractiveSkiMap() {
     const searchParams = useLocalSearchParams();
     const mapRef = useRef<MapRef>(null);
     const isInternalMoveRef = useRef(false);
@@ -24,7 +26,7 @@ export default function InteractiveSkiMapWeb() {
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
-    const [selectedResort, setSelectedResort] = useState<Resort | ResortDetail | null>(null);
+    const [selectedResort, setSelectedResort] = useState<Resort | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
     const [matchedPisteIds, setMatchedPisteIds] = useState<string[]>([]);
@@ -73,7 +75,7 @@ export default function InteractiveSkiMapWeb() {
                 const startAlt = r.points[0].altitude;
                 const endAlt = r.points[r.points.length - 1].altitude;
                 const drop = Math.max(0, startAlt - endAlt);
-                const maxSpd = Math.max(...r.points.map(p => p.speed)) * 3.6;
+                const maxSpd = Math.max(...r.points.map(p => p.speed)) * 3.6; // km/h
                 return {
                     id: `run-${idx}`,
                     index: idx + 1,
@@ -86,17 +88,18 @@ export default function InteractiveSkiMapWeb() {
     }, [trackPoints]);
 
     const [viewState, setViewState] = useState({
-        longitude: parseFloat((searchParams.lon as string) || '-3.971953'),
-        latitude: parseFloat((searchParams.lat as string) || '40.797891'),
-        zoom: parseInt((searchParams.zoom as string) || '13'),
+        longitude: parseFloat(searchParams.lon as string || '-3.971953'),
+        latitude: parseFloat(searchParams.lat as string || '40.797891'),
+        zoom: parseInt(searchParams.zoom as string || '13'),
         bearing: 0,
         pitch: 0
     });
     const { token } = useAuth();
 
     useEffect(() => {
+        // Si el cambio de URL fue provocado por el propio mapa, lo ignoramos para evitar el bucle/tirón
         if (isInternalMoveRef.current) {
-            isInternalMoveRef.current = false;
+            isInternalMoveRef.current = false; // Reseteamos la bandera
             return;
         }
 
@@ -122,7 +125,7 @@ export default function InteractiveSkiMapWeb() {
                         headers: { Authorization: `Bearer ${token}` }
                     });
                     if (res.status === 200 && res.data) {
-                        const session = res.data.data || res.data;
+                        const session = res.data.data || res.data; // Handle either wrap or raw
                         setSessionDetails(session);
                         if (session.points && Array.isArray(session.points) && session.points.length > 0) {
                             const parsedPoints = session.points.map((p: any) => {
@@ -137,6 +140,7 @@ export default function InteractiveSkiMapWeb() {
                             });
                             setTrackPoints(parsedPoints);
 
+                            // Center map on first track point
                             if (parsedPoints.length > 0) {
                                 setViewState(prev => ({
                                     ...prev,
@@ -172,36 +176,47 @@ export default function InteractiveSkiMapWeb() {
                             maxLon: searchParams.maxLon,
                             maxLat: searchParams.maxLat
                         },
-                        headers: { Authorization: `Bearer ${token}` }
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
                     });
-                    if (request.status === 200) {
-                        setResorts(request.data);
+                    if (request.status !== 200) {
+                        throw new Error(`HTTP error! status: ${request.status}`);
                     }
+                    setResorts(request.data);
                 } catch (error) {
                     console.error("Error fetching resorts:", error);
                 }
             } else {
                 try {
-                    const lat = parseFloat((searchParams.lat as string) || '40.797891');
-                    const lon = parseFloat((searchParams.lon as string) || '-3.971953');
+                    const lat = parseFloat(searchParams.lat as string || '40.797891');
+                    const lon = parseFloat(searchParams.lon as string || '-3.971953');
 
                     const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
-                        params: { lat: lat, lon: lon, radius: 50 },
-                        headers: { Authorization: `Bearer ${token}` }
+                        params: {
+                            lat: lat,
+                            lon: lon,
+                            radius: 50
+                        },
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
                     });
-                    if (request.status === 200) {
-                        setResorts(request.data);
+                    if (request.status !== 200) {
+                        throw new Error(`HTTP error! status: ${request.status}`);
                     }
+                    setResorts(request.data);
                 } catch (error) {
                     console.error("Error fetching resorts:", error);
                 }
             }
-        };
+        }
 
         loadInitial();
     }, [searchParams.lat, searchParams.lon, searchParams.zoom, searchParams.minLon, searchParams.minLat, searchParams.maxLon, searchParams.maxLat, token]);
 
-    const pisteLineStyle: any = {
+    // --- Layer styles ---
+    const pisteLineStyle: LayerProps = {
         id: 'piste-lines',
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
@@ -216,223 +231,229 @@ export default function InteractiveSkiMapWeb() {
             ],
             'line-dasharray': [
                 'case',
-                ['any', ['==', ['get', 'pisteType'], 'hike'], ['==', ['get', 'pisteType'], 'skitour'], ['==', ['get', 'grooming'], 'backcountry']],
+                [
+                    'any',
+                    ['==', ['get', 'pisteType'], 'hike'],
+                    ['==', ['get', 'pisteType'], 'skitour'],
+                    ['==', ['get', 'grooming'], 'backcountry']
+                ],
                 ['literal', [2, 2]],
                 ['literal', [1, 0]]
             ],
+            // if selected or hovered, increase width
             'line-width': [
                 'case',
                 ['==', ['get', 'id'], selectedFeature?.ID || ''], 9,
                 ['==', ['get', 'id'], hoveredFeatureId || ''], 8,
                 ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
-                ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7,
+                ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7, // thicker for matched pistes
                 5
             ]
         }
     };
 
-    const pisteLabelStyle: any = {
-        id: 'piste-labels',
-        type: 'symbol',
-        layout: {
-            'symbol-placement': 'line',
-            'text-field': ['get', 'name'],
-            'text-size': 11,
-            'text-offset': [0, 1]
-        },
-        paint: {
-            'text-color': '#ffffff',
-            'text-halo-color': '#000000',
-            'text-halo-width': 1.5
-        }
-    };
-
-    const pisteDirectionStyle: any = {
-        id: 'piste-arrows',
-        type: 'symbol',
-        layout: {
-            'symbol-placement': 'line',
-            'symbol-spacing': 80,
-            'icon-image': 'triangle-11',
-            'icon-size': 0.8,
-            'icon-rotate': 90,
-            'icon-rotation-alignment': 'map',
-            'icon-allow-overlap': true
-        },
-        paint: {
-            'icon-color': '#ffffff'
-        }
-    };
-
-    const liftLineStyle: any = {
-        id: 'lift-lines',
-        type: 'line',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-            'line-color': [
-                'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#d500f9',
-                ['==', ['get', 'id'], hoveredFeatureId || ''], '#d500f9',
-                ['==', ['get', 'resortId'], selectedResort?.ID || ''], '#d500f9',
-                '#aa00ff'
-            ],
-            'line-width': [
-                'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], 6,
-                ['==', ['get', 'id'], hoveredFeatureId || ''], 5,
-                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 5,
-                3.5
-            ],
-            'line-dasharray': [2, 1]
-        }
-    };
-
-    const liftLabelStyle: any = {
-        id: 'lift-labels',
-        type: 'symbol',
-        layout: {
-            'symbol-placement': 'line',
-            'text-field': ['get', 'name'],
-            'text-size': 10,
-            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
-            'text-offset': [0, -1]
-        },
-        paint: {
-            'text-color': '#d500f9',
-            'text-halo-color': '#ffffff',
-            'text-halo-width': 1
-        }
-    };
-
-    const trackLineStyle: any = {
+    const trackLineStyle: LayerProps = {
         id: 'track-line',
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#ff9100',
-            'line-width': 5
+            'line-color': '#8e44ad', // purple
+            'line-width': 4,
+            'line-opacity': (hoveredRun || selectedRun) ? 0.35 : 0.9
         }
     };
 
-    const trackDirectionStyle: any = {
-        id: 'track-arrows',
+    const trackDirectionStyle: LayerProps = {
+        id: 'track-directions',
         type: 'symbol',
+        minzoom: 14,
         layout: {
             'symbol-placement': 'line',
-            'symbol-spacing': 50,
-            'icon-image': 'triangle-11',
-            'icon-size': 0.9,
-            'icon-rotate': 90,
-            'icon-rotation-alignment': 'map',
-            'icon-allow-overlap': true
+            'symbol-spacing': 150,
+            'text-field': '>',
+            'text-size': 12,
+            'text-rotation-alignment': 'map',
+            'text-keep-upright': false,
+            'text-allow-overlap': true,
+            'text-ignore-placement': true
         },
         paint: {
-            'icon-color': '#ff9100'
+            'text-color': '#8e44ad', // purple
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5,
+            'text-opacity': (hoveredRun || selectedRun) ? 0.35 : 0.9
         }
     };
 
-    const highlightedRunLineStyle: any = {
-        id: 'highlighted-run-line',
-        type: 'line',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-            'line-color': '#00e5ff',
-            'line-width': 8
-        }
-    };
-
-    const highlightedRunCaseStyle: any = {
+    const highlightedRunCaseStyle: LayerProps = {
         id: 'highlighted-run-case',
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#000000',
-            'line-width': 12
+            'line-color': '#1a052e', // darker purple/black outline
+            'line-width': 10,
+            'line-opacity': 0.8
         }
     };
 
-    const normalizeGeoJSONLine = (geometry: any) => {
-        if (!geometry) return null;
-        if ((geometry.type === 'LineString' || geometry.type === 'MultiLineString') && Array.isArray(geometry.coordinates) && geometry.coordinates.length > 1) {
-            return geometry;
+    const highlightedRunLineStyle: LayerProps = {
+        id: 'highlighted-run-line',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': '#e67e22', // orange highlight
+            'line-width': 5,
+            'line-opacity': 1.0
         }
-        if (Array.isArray(geometry) && geometry.length > 1 && Array.isArray(geometry[0]) && typeof geometry[0][0] === 'number') {
-            return { type: 'LineString', coordinates: geometry };
-        }
-        if (geometry.coordinates && Array.isArray(geometry.coordinates) && geometry.coordinates.length > 1) {
-            return {
-                type: geometry.type === 'MultiLineString' ? 'MultiLineString' : 'LineString',
-                coordinates: geometry.coordinates
-            };
-        }
-        return null;
     };
 
+    const pisteLabelStyle: LayerProps = {
+        id: 'piste-labels',
+        type: 'symbol',
+        minzoom: 13,
+        layout: {
+            'text-field': ['get', 'name'],
+            'text-size': 12,
+            'symbol-placement': 'line',
+            'text-allow-overlap': false
+        },
+        paint: {
+            'text-color': '#d35400',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 2
+        }
+    };
+
+    const pisteDirectionStyle: LayerProps = {
+        id: 'piste-directions',
+        type: 'symbol',
+        minzoom: 14,
+        layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 150,
+            'text-field': '>',
+            'text-size': 12,
+            'text-rotation-alignment': 'map',
+            'text-keep-upright': false,
+            'text-allow-overlap': false,
+            'text-ignore-placement': false
+        },
+        paint: {
+            'text-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00e676',
+                'easy', '#2979ff',
+                'intermediate', '#ff1744',
+                'advanced', '#212121',
+                '#9e9e9e'
+            ],
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5
+        }
+    }
+
+    const liftLabelStyle: LayerProps = {
+        id: 'lift-labels',
+        type: 'symbol',
+        minzoom: 15,
+        layout: {
+            'text-field': ['get', 'name'],
+            'text-size': 12,
+            'symbol-placement': 'line',
+            'text-allow-overlap': false
+        },
+        paint: {
+            'text-color': '#d35400',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 2
+        }
+    };
+
+    const liftLineStyle: LayerProps = {
+        id: 'lift-lines',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': '#8e44ad',
+            'line-width': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 6,
+                ['==', ['get', 'id'], hoveredFeatureId || ''], 5,
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
+                3
+            ],
+            'line-dasharray': [2, 2]
+        }
+    };
+
+    // --- Data transformation ---
     const pistesGeoJSON = useMemo(() => {
-        const features = resorts.flatMap(resort =>
-            (resort.pistes || []).flatMap(piste => {
-                const geometry = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
-                if (!geometry) return [];
-                return [{
+        const pistesFeatures = resorts?.flatMap(r => {
+            if (!r.pistes || !Array.isArray(r.pistes)) return [];
+
+            return r.pistes
+                .filter(p => {
+                    const geomType = p.GeometryGeoJSON?.type;
+                    return geomType && geomType !== 'Polygon' && geomType !== 'MultiPolygon';
+                })
+                .map(p => ({
                     type: 'Feature' as const,
                     properties: {
-                        id: piste.ID,
-                        resortId: resort.ID,
-                        name: piste.Name || 'Piste',
-                        difficulty: piste.Difficulty?.toLowerCase() || 'novice',
-                        pisteType: piste.PisteType?.toLowerCase() || 'downhill',
-                        grooming: piste.Grooming?.toLowerCase() || 'classic'
+                        id: p.ID,
+                        difficulty: p.Difficulty,
+                        pisteType: p.PisteType,
+                        grooming: p.Tags?.grooming,
+                        name: p.Name || `Piste #${p.ID.slice(0, 4)}`,
+                        resortName: r.Name,
+                        resortId: r.ID
                     },
-                    geometry
-                }];
-            })
-        );
-        return { type: 'FeatureCollection' as const, features: features as any };
+                    geometry: p.GeometryGeoJSON
+                }));
+        });
+        return { type: 'FeatureCollection' as const, features: pistesFeatures };
     }, [resorts]);
 
     const liftsGeoJSON = useMemo(() => {
-        const features = resorts.flatMap(resort =>
-            (resort.lifts || []).flatMap(lift => {
-                const geometry = normalizeGeoJSONLine(lift.GeometryGeoJSON) || normalizeGeoJSONLine(lift.Waypoints);
-                if (!geometry) return [];
-                return [{
+        const liftsFeatures = resorts?.flatMap(r => {
+            if (!r.lifts || !Array.isArray(r.lifts)) return [];
+
+            return r.lifts
+                .filter(l => {
+                    const geomType = l.GeometryGeoJSON?.type;
+                    return geomType && geomType !== 'Polygon' && geomType !== 'MultiPolygon';
+                })
+                .map(l => ({
                     type: 'Feature' as const,
                     properties: {
-                        id: lift.ID,
-                        resortId: resort.ID,
-                        name: lift.Name || 'Lift',
-                        liftType: lift.LiftType?.toLowerCase() || 'chair_lift'
+                        id: l.ID,
+                        type: l.LiftType, // Ej: chairlift, gondola, ski_lift, etc.
+                        name: l.Name || `Lift #${l.ID.slice(0, 4)}`,
+                        resortName: r.Name,
+                        resortId: r.ID
                     },
-                    geometry
-                }];
-            })
-        );
-        return { type: 'FeatureCollection' as const, features: features as any };
+                    geometry: l.GeometryGeoJSON
+                }));
+        });
+        return { type: 'FeatureCollection' as const, features: liftsFeatures };
     }, [resorts]);
 
-    const trackGeoJSON = useMemo(() => {
-        if (trackPoints.length === 0) return { type: 'FeatureCollection' as const, features: [] };
-        const coordinates = trackPoints.map(p => [p.lon, p.lat]);
-        return {
-            type: 'FeatureCollection' as const,
-            features: [{
-                type: 'Feature' as const,
-                properties: {},
-                geometry: {
-                    type: 'LineString' as const,
-                    coordinates
-                }
-            }]
-        };
-    }, [trackPoints]);
-
-    const activeHighlightedRun = hoveredRun || selectedRun;
+    const trackGeoJSON = useMemo(() => ({
+        type: 'FeatureCollection' as const,
+        features: trackPoints.length > 1 ? [{
+            type: 'Feature' as const,
+            properties: {},
+            geometry: {
+                type: 'LineString' as const,
+                coordinates: trackPoints.map(p => [p.lon, p.lat])
+            }
+        }] : []
+    }), [trackPoints]);
 
     const highlightedRunGeoJSON = useMemo(() => {
-        if (!activeHighlightedRun || !activeHighlightedRun.points || activeHighlightedRun.points.length === 0) {
+        const run = hoveredRun || selectedRun;
+        if (!run || !run.points || run.points.length === 0) {
             return { type: 'FeatureCollection' as const, features: [] };
         }
-        const coordinates = activeHighlightedRun.points.map((p: any) => [p.lon, p.lat]);
         return {
             type: 'FeatureCollection' as const,
             features: [{
@@ -440,276 +461,322 @@ export default function InteractiveSkiMapWeb() {
                 properties: {},
                 geometry: {
                     type: 'LineString' as const,
-                    coordinates
+                    coordinates: run.points.map((p: any) => [p.lon, p.lat])
                 }
             }]
         };
-    }, [activeHighlightedRun]);
+    }, [hoveredRun, selectedRun]);
 
-    const fetchResortsWithDetails = async () => {
-        const bounds = mapRef.current?.getMap().getBounds();
-        if (!bounds) return;
+    // --- Fetchers ---
+    const fetchResortsByBounds = async (bounds: maplibregl.LngLatBounds) => {
+        try {
+            const sw = bounds.getSouthWest();
+            const ne = bounds.getNorthEast();
 
-        const zoom = mapRef.current?.getMap().getZoom();
-        const lat = mapRef.current?.getMap().getCenter().lat;
-        const lon = mapRef.current?.getMap().getCenter().lng;
-
-        isInternalMoveRef.current = true;
-        router.setParams({
-            lat: lat?.toString(),
-            lon: lon?.toString(),
-            zoom: zoom ? Math.round(zoom).toString() : '13',
-            minLon: bounds.getWest().toString(),
-            minLat: bounds.getSouth().toString(),
-            maxLon: bounds.getEast().toString(),
-            maxLat: bounds.getNorth().toString(),
-        });
-    };
-
-    const handleMouseMove = (e: any) => {
-        if (e.features && e.features.length > 0) {
-            const feature = e.features[0];
-            setHoveredFeatureId(feature.properties.id);
-        } else {
-            setHoveredFeatureId(null);
+            const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
+                params: {
+                    minLon: sw.lng,
+                    minLat: sw.lat,
+                    maxLon: ne.lng,
+                    maxLat: ne.lat
+                },
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+            if (request.status !== 200) {
+                throw new Error(`HTTP error! status: ${request.status}`);
+            }
+            setResorts(request.data);
+        } catch (error) {
+            console.error("Error fetching resorts:", error);
         }
     };
 
-    const handleMouseLeave = () => {
+    const fetchResortsWithDetails = async (event: ViewStateChangeEvent) => {
+        const map = event.target;
+        const center = map.getCenter();
+        const currentZoom = map.getZoom();
+
+        if (currentZoom > 10) {
+            try {
+                const lat = center.lat;
+                const lon = center.lng;
+
+                const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                    params: {
+                        lat: lat,
+                        lon: lon,
+                        radius: 50
+                    },
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                });
+                if (request.status !== 200) {
+                    throw new Error(`HTTP error! status: ${request.status}`);
+                }
+                setResorts(request.data);
+            } catch (error) {
+                console.error("Error fetching resorts:", error);
+            }
+        }
+
+        isInternalMoveRef.current = true;
+        router.setParams({ zoom: currentZoom.toFixed(0) })
+    };
+
+    const fetchResortWithDetails = async (resortId: string) => {
+        try {
+            const request = await axios.get<Resort>(`${API_BASE_URL}/resorts/by-id/${resortId}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+            if (request.status !== 200) {
+                throw new Error(`HTTP error! status: ${request.status}`);
+            }
+            setSelectedResort(request.data);
+            const map = mapRef.current?.getMap();
+            if (!map) return;
+
+            try {
+                const lat = request.data.Latitude;
+                const lon = request.data.Longitude;
+
+                const requestResorts = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                    params: {
+                        lat: lat,
+                        lon: lon,
+                        radius: 50
+                    },
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                });
+                if (requestResorts.status !== 200) {
+                    throw new Error(`HTTP error! status: ${requestResorts.status}`);
+                }
+                setResorts(requestResorts.data);
+            } catch (error) {
+                console.error("Error fetching resorts:", error);
+            }
+
+            setSelectedFeature(null);
+            if (viewState.zoom < 10) {
+                setViewState(prev => ({
+                    ...prev,
+                    longitude: request.data.Longitude,
+                    latitude: request.data.Latitude,
+                    zoom: 12
+                }));
+            }
+        } catch (error) {
+            console.error("Error fetching resort details:", error);
+        }
+    };
+
+    // --- Handler when the user finishes moving/zooming the map ---
+    const handleMouseMove = (event: any) => {
+        const map = event.target;
+
+        if (!map.isStyleLoaded() || viewState.zoom < 10) return;
+
+        try {
+            if (!map.getLayer('piste-lines') || !map.getLayer('lift-lines')) return;
+            const features = map.queryRenderedFeatures(event.point, {
+                layers: ['piste-lines', 'lift-lines']
+            });
+
+            if (features.length > 0) {
+                map.getCanvas().style.cursor = 'pointer';
+                setHoveredFeatureId(features[0].properties.id);
+            } else {
+                map.getCanvas().style.cursor = '';
+                setHoveredFeatureId(null);
+            }
+        } catch (error) {
+            // Ignore
+        }
+    };
+
+    const handleMouseLeave = (event: any) => {
+        event.target.getCanvas().style.cursor = '';
         setHoveredFeatureId(null);
     };
 
-    const handleMapClick = useCallback((e: any) => {
-        const feature = e.features && e.features[0];
-        if (feature) {
-            const featureId = feature.properties.id;
-            let found: Piste | Lift | undefined;
-            for (const resort of resorts) {
-                found = resort.pistes?.find(p => p.ID === featureId) || resort.lifts?.find(l => l.ID === featureId);
-                if (found) break;
+    // --- Handler for clicks on map lines ---
+    const handleMapClick = (event: any) => {
+        const map = event.target;
+        if (!map.isStyleLoaded() || viewState.zoom < 10) return;
+
+        try {
+            if (!map.getLayer('piste-lines') || !map.getLayer('lift-lines')) return;
+            const features = map.queryRenderedFeatures(event.point, {
+                layers: ['piste-lines', 'lift-lines']
+            });
+
+            if (!features.length) {
+                setSelectedFeature(null);
+                setSelectedResort(null);
+                return;
             }
-            if (found) setSelectedFeature(found);
-        } else {
-            setSelectedFeature(null);
+
+            const clickedFeature = features[0];
+            const featureId = clickedFeature.properties.id;
+            const isLift = clickedFeature.layer.id === 'lift-lines';
+
+            for (const resort of resorts) {
+                if (isLift && resort.lifts) {
+                    const foundLift = resort.lifts.find(l => l.ID === featureId);
+                    if (foundLift) {
+                        setSelectedFeature(foundLift);
+                        setSelectedResort(null); // Clear resort selection when selecting specific feature
+                        return;
+                    }
+                } else if (!isLift && resort.pistes) {
+                    const foundPiste = resort.pistes.find(p => p.ID === featureId);
+                    if (foundPiste) {
+                        setSelectedFeature(foundPiste);
+                        setSelectedResort(null); // Clear resort selection when selecting specific feature
+                        return;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Error querying features on click:", error);
         }
-    }, [resorts]);
-
-    const renderSvgChart = (dataPoints: number[], strokeColor: string, fillColor: string) => {
-        if (!dataPoints || dataPoints.length < 2) return null;
-        const maxVal = Math.max(...dataPoints, 1);
-        const minVal = Math.min(...dataPoints, 0);
-        const range = maxVal - minVal || 1;
-
-        const width = 300;
-        const height = 100;
-
-        const points = dataPoints.map((val, idx) => {
-            const x = (idx / (dataPoints.length - 1)) * width;
-            const y = height - ((val - minVal) / range) * (height - 10) - 5;
-            return `${x},${y}`;
-        });
-
-        const pathD = `M ${points.join(' L ')}`;
-        const areaD = `M 0,${height} L ${points.join(' L ')} L ${width},${height} Z`;
-
-        return (
-            <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-                <Defs>
-                    <LinearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                        <Stop offset="0" stopColor={fillColor} stopOpacity="0.4" />
-                        <Stop offset="1" stopColor={fillColor} stopOpacity="0.0" />
-                    </LinearGradient>
-                </Defs>
-                <Path d={areaD} fill="url(#chartGrad)" />
-                <Path d={pathD} fill="none" stroke={strokeColor} strokeWidth="2" />
-            </Svg>
-        );
     };
 
-    return (
-        <View className="flex-1 w-full h-full bg-slate-950 relative">
-            <TouchableOpacity
-                onPress={() => setSelectedLegend(true)}
-                className="absolute top-4 right-4 z-50 bg-slate-800 border border-slate-700 p-3 rounded-2xl shadow-xl flex-row items-center gap-2"
-            >
-                <CircleHelp size={18} color="#60a5fa" />
-                <Text className="text-xs font-bold text-white">Legend</Text>
-            </TouchableOpacity>
+    const handleMoveEnd = useCallback(() => {
+        const map = mapRef.current?.getMap();
+        if (!map) return;
 
+        const bounds = map.getBounds();
+        const center = map.getCenter();
+        const currentZoom = map.getZoom();
+
+        if (center && typeof center.lng === 'number' && typeof center.lat === 'number' && typeof currentZoom === 'number') {
+            const sw = bounds.getSouthWest();
+            const ne = bounds.getNorthEast();
+
+            isInternalMoveRef.current = true;
+
+            router.setParams({
+                minLon: sw.lng,
+                minLat: sw.lat,
+                maxLon: ne.lng,
+                maxLat: ne.lat,
+                lon: center.lng.toFixed(4),
+                lat: center.lat.toFixed(4),
+                zoom: currentZoom.toFixed(0)
+            });
+
+            if (currentZoom < 10) {
+                fetchResortsByBounds(bounds);
+            } else {
+                fetchResortsWithDetails({ target: map } as ViewStateChangeEvent);
+            }
+        }
+    }, []);
+
+    return (
+        <div className="flex-1 w-full h-full relative">
+            {/* Legend panel */}
             {selectedLegend && (
                 <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
             )}
-
+            {/* Pistes and lifts details panel */}
             {selectedFeature && (
-                <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
+                <MapDetailPanel
+                    data={selectedFeature}
+                    onClose={() => setSelectedFeature(null)}
+                />
             )}
-
+            {/* Resort details panel */}
             {selectedResort && (
-                <ResortDetailPanel resort={selectedResort} onClose={() => setSelectedResort(null)} />
+                <ResortDetailPanel
+                    resort={selectedResort}
+                    onClose={() => setSelectedResort(null)}
+                />
             )}
-
-            {searchParams.sessionId && trackPoints.length > 0 && (
-                <View className="absolute top-16 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-3xl p-4 md:w-80 max-h-[75vh] shadow-2xl space-y-3">
-                    <View className="flex-row justify-between items-center pb-2 border-b border-slate-800">
-                        <View>
-                            <Text className="font-extrabold text-sm text-white">Session Analyser</Text>
-                            <Text className="text-[10px] text-slate-400">
-                                {sessionDetails ? `Date: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
-                            </Text>
-                        </View>
-                        <TouchableOpacity
-                            className="p-1.5 bg-slate-800 rounded-full"
-                            onPress={() => {
-                                setTrackPoints([]);
-                                setMatchedPisteIds([]);
-                                setSelectedRun(null);
-                                setSessionDetails(null);
-                                router.setParams({ sessionId: '' });
-                            }}
-                        >
-                            <X size={16} color="#94a3b8" />
-                        </TouchableOpacity>
-                    </View>
-
-                    {selectedRun ? (
-                        <ScrollView className="space-y-3">
-                            <TouchableOpacity
-                                className="flex-row items-center gap-1 bg-slate-800 px-3 py-1.5 rounded-xl self-start mb-2"
-                                onPress={() => setSelectedRun(null)}
-                            >
-                                <ArrowLeft size={14} color="#60a5fa" />
-                                <Text className="text-xs font-bold text-blue-400">Back to runs</Text>
-                            </TouchableOpacity>
-
-                            <View className="bg-slate-800/80 p-3 rounded-2xl border border-slate-700">
-                                <Text className="font-bold text-xs text-white">Run #{selectedRun.index} Details</Text>
-                                <View className="flex-row justify-between mt-2">
-                                    <Text className="text-xs text-slate-300">Drop: {selectedRun.verticalDrop.toFixed(0)}m</Text>
-                                    <Text className="text-xs text-slate-300">Max Speed: {selectedRun.maxSpeed.toFixed(1)} km/h</Text>
-                                </View>
-                            </View>
-
-                            <View className="space-y-2 mt-3">
-                                <Text className="text-[10px] font-bold text-slate-400 uppercase">Elevation Profile (m)</Text>
-                                <View className="bg-slate-800/40 rounded-xl p-2 border border-slate-700">
-                                    {renderSvgChart(selectedRun.points.map((p: any) => p.altitude), '#3b82f6', '#3b82f6')}
-                                </View>
-
-                                <Text className="text-[10px] font-bold text-slate-400 uppercase mt-3">Speed Profile (km/h)</Text>
-                                <View className="bg-slate-800/40 rounded-xl p-2 border border-slate-700">
-                                    {renderSvgChart(selectedRun.points.map((p: any) => p.speed * 3.6), '#ef4444', '#ef4444')}
-                                </View>
-                            </View>
-                        </ScrollView>
-                    ) : (
-                        <View className="space-y-3">
-                            <View className="flex-row bg-slate-800 p-1 rounded-xl mb-2">
-                                <TouchableOpacity
-                                    className={`flex-1 py-1.5 rounded-lg items-center ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
-                                    onPress={() => setActiveTab('runs')}
-                                >
-                                    <Text className={`text-xs font-bold ${activeTab === 'runs' ? 'text-white' : 'text-slate-400'}`}>Runs</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    className={`flex-1 py-1.5 rounded-lg items-center ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
-                                    onPress={() => setActiveTab('elevation')}
-                                >
-                                    <Text className={`text-xs font-bold ${activeTab === 'elevation' ? 'text-white' : 'text-slate-400'}`}>Elevation</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    className={`flex-1 py-1.5 rounded-lg items-center ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
-                                    onPress={() => setActiveTab('speed')}
-                                >
-                                    <Text className={`text-xs font-bold ${activeTab === 'speed' ? 'text-white' : 'text-slate-400'}`}>Speed</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            {activeTab === 'runs' && (
-                                <ScrollView className="max-h-64 space-y-2">
-                                    <Text className="text-xs font-bold text-slate-400 mb-2">Descent Runs ({detectedRuns.length})</Text>
-                                    {detectedRuns.map((run) => (
-                                        <TouchableOpacity
-                                            key={run.id}
-                                            className="bg-slate-800 p-3 rounded-2xl border border-slate-700 my-1 flex-row justify-between items-center"
-                                            onPress={() => setSelectedRun(run)}
-                                        >
-                                            <View>
-                                                <Text className="font-bold text-xs text-white">Run #{run.index}</Text>
-                                                <Text className="text-[10px] text-slate-400 mt-0.5">
-                                                    Drop: {run.verticalDrop.toFixed(0)}m | Max: {run.maxSpeed.toFixed(1)} km/h
-                                                </Text>
-                                            </View>
-                                            <Text className="text-xs font-bold text-blue-400">Charts →</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
-                            )}
-
-                            {activeTab === 'elevation' && (
-                                <View className="bg-slate-800/40 p-2 rounded-xl border border-slate-700">
-                                    {renderSvgChart(trackPoints.map(p => p.altitude), '#3b82f6', '#3b82f6')}
-                                </View>
-                            )}
-
-                            {activeTab === 'speed' && (
-                                <View className="bg-slate-800/40 p-2 rounded-xl border border-slate-700">
-                                    {renderSvgChart(trackPoints.map(p => p.speed * 3.6), '#ef4444', '#ef4444')}
-                                </View>
-                            )}
-                        </View>
-                    )}
-                </View>
-            )}
-
             <Map
                 ref={mapRef}
                 {...viewState}
-                initialViewState={viewState}
+                onMove={evt => setViewState(evt.viewState)}
                 onMouseMove={handleMouseMove}
-                onMoveEnd={fetchResortsWithDetails}
+                onMoveEnd={handleMoveEnd}
                 onMouseLeave={handleMouseLeave}
                 onClick={handleMapClick}
+                onZoomEnd={fetchResortsWithDetails}
                 interactiveLayerIds={['piste-lines', 'lift-lines']}
                 style={{ width: '100%', height: '100%' }}
-                // mapStyle="https://tiles.openfreemap.org/styles/liberty"
-                mapStyle="https://tiles.openfreemap.org/styles/liberty"
+                mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
                 mapLib={maplibregl}
                 maplibreLogo={false}
                 attributionControl={false}
             >
-                <NavigationControl position="top-right" />
+                <div className="absolute bottom-2 right-2 z-10 flex flex-col gap-1.5">
+                        <NavigationControl showCompass={true} showZoom={true} />
 
-                {resorts.map((resort) => (
+                        <button
+                            onClick={() => {
+                                setSelectedLegend(true);
+                            }}
+                            className="flex items-center justify-center p-1.5 size-8 rounded-md cursor-pointer bg-base-100 hover:bg-base-200 border-2 border-gray-400/60 font-semibold"
+                        >
+                            <CircleQuestionMark className="size-4" />
+                        </button>
+                </div>
+                {/* Resort markers */}
+                {resorts?.map(resort => (
                     <Marker
                         key={resort.ID}
                         longitude={resort.Longitude}
                         latitude={resort.Latitude}
                         anchor="bottom"
-                        onClick={(e) => {
-                            e.originalEvent.stopPropagation();
-                            setSelectedResort(resort);
+                        onClick={async (e) => {
+                            if (e && e.originalEvent) {
+                                e.originalEvent.stopPropagation();
+                            }
+                            await fetchResortWithDetails(resort.ID);
                         }}
                     >
-                        <View className="flex flex-col items-center cursor-pointer">
+                        <div
+                            className="resort-marker-container"
+                            style={{ cursor: 'pointer', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                            onMouseEnter={() => setHoveredResortId(resort.ID)}
+                            onMouseLeave={() => setHoveredResortId(null)}
+                        >
                             {(viewState.zoom >= 10 || hoveredResortId === resort.ID || selectedResort?.ID === resort.ID) && (
-                                <Text style={{
-                                    fontSize: 11,
+                                <div style={{
+                                    backgroundColor: 'transparent',
+                                    fontSize: '11px',
                                     fontWeight: 'bold',
                                     color: selectedResort?.ID === resort.ID ? '#3b82f6' : '#2c3e50',
-                                    textShadowColor: '#ffffff',
-                                    textShadowOffset: { width: 0, height: 0 },
-                                    textShadowRadius: 3
+                                    textShadow: '0 0 3px #ffffff, 0 0 3px #ffffff, 0 0 3px #ffffff',
+                                    whiteSpace: 'nowrap',
+                                    marginBottom: '2px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
                                 }}>
                                     {resort.Name}
-                                </Text>
+                                </div>
                             )}
-                            <View className="w-6 h-6 rounded-full flex items-center justify-center bg-blue-600 border-2 border-white shadow-lg text-white">
-                                <MapPin size={14} color="#ffffff" />
-                            </View>
-                        </View>
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center border shadow transition-all duration-200 ${selectedResort?.ID === resort.ID
+                                ? 'bg-primary border-primary text-white scale-110'
+                                : 'bg-white border-primary/30 text-primary hover:scale-105'
+                                }`}>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                                    <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.157-1.127C18.061 17.7 22 13.666 22 9.5 22 4.253 17.523 0 12 0S2 4.253 2 9.5c0 4.166 3.939 8.2 8.18 11.724a16.977 16.977 0 001.36 1.127zm-1.54-12.85a2 2 0 114 0 2 2 0 01-4 0z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                        </div>
                     </Marker>
                 ))}
 
+                {/* 2. Zoom >= 10: Render pistes in detail and also the central or resort marker */}
                 {viewState.zoom >= 10 && (
                     <>
                         <Source id="pistes-source" type="geojson" data={pistesGeoJSON}>
@@ -740,6 +807,171 @@ export default function InteractiveSkiMapWeb() {
                     </>
                 )}
             </Map>
-        </View>
+
+            {searchParams.sessionId && trackPoints.length > 0 && (
+                <div className="absolute top-16 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 text-white md:w-80 max-h-[75vh] shadow-2xl space-y-3">
+                    <div className="flex flex-row justify-between items-center pb-2 border-b border-slate-800 w-full">
+                        <div>
+                            <h3 className="font-bold text-sm">Session Analyser</h3>
+                            <p className="text-[10px] opacity-70">
+                                {sessionDetails ? `Date: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            className="btn btn-xs btn-circle btn-ghost font-bold text-white"
+                            onClick={() => {
+                                setTrackPoints([]);
+                                setMatchedPisteIds([]);
+                                setSelectedRun(null);
+                                setSessionDetails(null);
+                                router.setParams({ sessionId: '' });
+                            }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    {selectedRun ? (
+                        <div className="space-y-3">
+                            <button
+                                type="button"
+                                className="bg-blue-600 p-2 rounded-md flex-row items-center justify-center shadow-xl cursor-pointer text-sm"
+                                onClick={() => setSelectedRun(null)}
+                            >
+                                ← Back to list
+                            </button>
+                            <div className="p-2 bg-slate-700/60 rounded-md">
+                                <h4 className="font-bold text-xs">Run #{selectedRun.index} Details</h4>
+                                <div className="grid grid-cols-2 gap-2 mt-1 text-[11px] opacity-80">
+                                    <div>Drop: {selectedRun.verticalDrop.toFixed(1)} m</div>
+                                    <div>Max Speed: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="text-[11px] font-semibold opacity-70 uppercase">Elevation Profile (m)</div>
+                                <div className="h-32 bg-slate-700/60 rounded-md p-1">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, alt: p.altitude }))}>
+                                            <XAxis dataKey="name" hide />
+                                            <YAxis domain={['dataMin - 10', 'dataMax + 10']} hide />
+                                            <Tooltip content={<AltitudeTooltip />} />
+                                            <Area type="monotone" dataKey="alt" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                <div className="text-[11px] font-semibold opacity-70 uppercase">Speed Profile (km/h)</div>
+                                <div className="h-32 bg-slate-700/60 rounded-md p-1">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, speed: p.speed * 3.6 }))}>
+                                            <XAxis dataKey="name" hide />
+                                            <YAxis hide />
+                                            <Tooltip content={<SpeedTooltip />} />
+                                            <Line type="monotone" dataKey="speed" stroke="#ef4444" strokeWidth={2} dot={false} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="tabs tabs-boxed tabs-sm w-full grid grid-cols-3">
+                                <button
+                                    type="button"
+                                    className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
+                                    onClick={() => setActiveTab('runs')}
+                                >
+                                    Runs
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
+                                    onClick={() => setActiveTab('elevation')}
+                                >
+                                    Elevation
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
+                                    onClick={() => setActiveTab('speed')}
+                                >
+                                    Speed
+                                </button>
+                            </div>
+
+                            {activeTab === 'runs' && (
+                                <div className="space-y-2">
+                                    <div className="text-xs font-semibold opacity-75">Detected Descents ({detectedRuns.length})</div>
+                                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                        {detectedRuns.map((run) => (
+                                            <button
+                                                key={run.id}
+                                                type="button"
+                                                className="flex items-center justify-between bg-slate-800 border border-slate-700 p-4 rounded-md space-y-4 w-full"
+                                                onMouseEnter={() => setHoveredRun(run)}
+                                                onMouseLeave={() => setHoveredRun(null)}
+                                                onClick={() => {
+                                                    setSelectedRun(run);
+                                                    // Fly/Center map on this run's starting point
+                                                    if (run.points.length > 0 && mapRef.current) {
+                                                        mapRef.current.getMap().flyTo({
+                                                            center: [run.points[0].lon, run.points[0].lat],
+                                                            zoom: 15,
+                                                            essential: true
+                                                        });
+                                                    }
+                                                }}
+                                            >
+                                                <div>
+                                                    <div className="font-bold text-xs">Run #{run.index}</div>
+                                                    <div className="text-[10px] opacity-70 mt-0.5">
+                                                        Drop: {run.verticalDrop.toFixed(0)}m | Max Speed: {run.maxSpeed.toFixed(1)} km/h
+                                                    </div>
+                                                </div>
+                                                <span className="text-[11px] text-white font-medium">Charts →</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'elevation' && (
+                                <div className="space-y-2">
+                                    <div className="text-xs font-semibold opacity-75">Full Session Elevation (m)</div>
+                                    <div className="h-44 bg-slate-700/60 rounded-md p-1">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={trackPoints.map((p, idx) => ({ name: idx, alt: p.altitude }))}>
+                                                <XAxis dataKey="name" hide />
+                                                <YAxis domain={['dataMin - 20', 'dataMax + 20']} hide />
+                                                <Tooltip content={<AltitudeTooltip />} />
+                                                <Area type="monotone" dataKey="alt" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'speed' && (
+                                <div className="space-y-2">
+                                    <div className="text-xs font-semibold opacity-75">Full Session Speed Profile (km/h)</div>
+                                    <div className="h-44 bg-slate-700/60 rounded-md p-1">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <LineChart data={trackPoints.map((p, idx) => ({ name: idx, speed: p.speed * 3.6 }))}>
+                                                <XAxis dataKey="name" hide />
+                                                <YAxis hide />
+                                                <Tooltip content={<SpeedTooltip />} />
+                                                <Line type="monotone" dataKey="speed" stroke="#ef4444" strokeWidth={2} dot={false} />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }

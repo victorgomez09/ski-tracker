@@ -33,17 +33,17 @@ const getPisteDistance = (piste: Piste) => {
     let dist = 0;
     for (let i = 0; i < coords.length - 1; i++) {
         const p1 = coords[i];
-        const p2 = coords[i+1];
+        const p2 = coords[i + 1];
         const R = 6371e3;
-        const phi1 = p1[1] * Math.PI/180;
-        const phi2 = p2[1] * Math.PI/180;
-        const deltaPhi = (p2[1]-p1[1]) * Math.PI/180;
-        const deltaLambda = (p2[0]-p1[0]) * Math.PI/180;
+        const phi1 = p1[1] * Math.PI / 180;
+        const phi2 = p2[1] * Math.PI / 180;
+        const deltaPhi = (p2[1] - p1[1]) * Math.PI / 180;
+        const deltaLambda = (p2[0] - p1[0]) * Math.PI / 180;
 
-        const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
-                  Math.cos(phi1) * Math.cos(phi2) *
-                  Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+            Math.cos(phi1) * Math.cos(phi2) *
+            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         dist += R * c;
     }
     return Math.round(dist);
@@ -199,111 +199,113 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
     if (!resort) return null;
 
     return (
-        <View className="absolute top-12 left-4 right-4 z-50 bg-slate-900/95 border border-slate-700 shadow-2xl p-4 rounded-3xl max-h-[75vh]">
-            <ScrollView className="space-y-4">
-                <View className="flex-row justify-between items-start">
-                    <Text className="text-xs text-slate-400 font-medium">
-                        {resort.Country || "Ski Resort"}
-                    </Text>
-                    <TouchableOpacity onPress={onClose} className="p-1.5 rounded-full bg-slate-800">
-                        <X size={18} color="#94a3b8" />
-                    </TouchableOpacity>
-                </View>
-
-                <View className="flex-row items-center gap-3">
-                    <View className="w-10 h-10 rounded-full bg-blue-900/60 items-center justify-center border border-blue-700">
-                        <Text className="text-xl">🏔️</Text>
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-2xl font-bold text-white leading-tight">{resort.Name}</Text>
-                        {resort.Website && (
-                            <TouchableOpacity onPress={() => Linking.openURL(resort.Website!)}>
-                                <Text className="text-xs font-semibold text-blue-400 text-right underline" numberOfLines={1}>
-                                    {resort.Website.replace(/^https?:\/\//, '')}
-                                </Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                </View>
-
-                <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
-                    <View className="items-center">
-                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Total Slopes</Text>
-                        <Text className="text-sm font-bold text-white mt-0.5">{stats.totalPistes} ({formattedPisteLength} km)</Text>
-                    </View>
-                    <View className="items-center">
-                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Lifts</Text>
-                        <Text className="text-sm font-bold text-white mt-0.5">{stats.totalLifts}</Text>
-                    </View>
-                    <View className="items-center">
-                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Elevation</Text>
-                        <Text className="text-sm font-bold text-white mt-0.5">
-                            {stats.minElev && stats.maxElev ? `${stats.minElev}m - ${stats.maxElev}m` : 'N/A'}
+        <View className="absolute inset-0 flex items-center justify-center bg-black/50 z-50">
+            <View className="absolute z-50 bg-slate-900/95 border border-slate-700 shadow-md p-4 rounded-md w-11/12 h-11/12">
+                <ScrollView className="space-y-4">
+                    <View className="flex-row justify-between items-start">
+                        <Text className="text-xs text-slate-400 font-medium">
+                            {resort.Country || "Ski Resort"}
                         </Text>
+                        <TouchableOpacity onPress={onClose} className="p-1.5 rounded-full bg-slate-800">
+                            <X size={18} color="#94a3b8" />
+                        </TouchableOpacity>
                     </View>
-                </View>
 
-                {difficultyDistribution.length > 0 && (
+                    <View className="flex-row items-center gap-3">
+                        <View className="w-10 h-10 rounded-full bg-blue-900/60 items-center justify-center border border-blue-700">
+                            <Text className="text-xl">🏔️</Text>
+                        </View>
+                        <View className="flex-1">
+                            <Text className="text-2xl font-bold text-white leading-tight">{resort.Name}</Text>
+                            {resort.Website && (
+                                <TouchableOpacity onPress={() => Linking.openURL(resort.Website!)}>
+                                    <Text className="text-xs font-semibold text-blue-400 text-right underline" numberOfLines={1}>
+                                        {resort.Website.replace(/^https?:\/\//, '')}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </View>
+
+                    <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
+                        <View className="items-center">
+                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">Total Slopes</Text>
+                            <Text className="text-sm font-bold text-white mt-0.5">{stats.totalPistes} ({formattedPisteLength} km)</Text>
+                        </View>
+                        <View className="items-center">
+                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">Lifts</Text>
+                            <Text className="text-sm font-bold text-white mt-0.5">{stats.totalLifts}</Text>
+                        </View>
+                        <View className="items-center">
+                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">Elevation</Text>
+                            <Text className="text-sm font-bold text-white mt-0.5">
+                                {stats.minElev && stats.maxElev ? `${stats.minElev}m - ${stats.maxElev}m` : 'N/A'}
+                            </Text>
+                        </View>
+                    </View>
+
+                    {difficultyDistribution.length > 0 && (
+                        <View className="my-2">
+                            <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">Difficulty Breakdown</Text>
+                            <View className="w-full h-3 rounded-full overflow-hidden flex-row bg-slate-800">
+                                {difficultyDistribution.map(item => {
+                                    const meta = getDifficultyMeta(item.key);
+                                    return (
+                                        <View
+                                            key={item.key}
+                                            style={{ width: `${item.pct}%` }}
+                                            className={`${meta.bg} h-full`}
+                                        />
+                                    );
+                                })}
+                            </View>
+                        </View>
+                    )}
+
                     <View className="my-2">
-                        <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">Difficulty Breakdown</Text>
-                        <View className="w-full h-3 rounded-full overflow-hidden flex-row bg-slate-800">
-                            {difficultyDistribution.map(item => {
-                                const meta = getDifficultyMeta(item.key);
+                        <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">Pistes</Text>
+                        <View className="flex-row flex-wrap gap-2">
+                            {Object.entries(stats.difficultyCounts).map(([diff, count]) => {
+                                if (count === 0 && diff === 'other') return null;
+                                const meta = getDifficultyMeta(diff);
+                                const len = stats.difficultyLengths[diff as keyof typeof stats.difficultyLengths] || 0;
                                 return (
-                                    <View
-                                        key={item.key}
-                                        style={{ width: `${item.pct}%` }}
-                                        className={`${meta.bg} h-full`}
-                                    />
+                                    <View key={diff} className="flex-row items-center bg-slate-800 rounded-md p-2.5 border border-slate-700 w-[48%]">
+                                        <View className={`w-3 h-3 rounded-full ${meta.bg} mr-2`} />
+                                        <View>
+                                            <Text className="text-xs font-bold text-white">{count} <Text className="font-normal text-slate-300">{meta.label}</Text></Text>
+                                            <Text className="text-[10px] text-slate-400">{(len / 1000).toFixed(1)} km</Text>
+                                        </View>
+                                    </View>
                                 );
                             })}
                         </View>
                     </View>
-                )}
 
-                <View className="my-2">
-                    <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">Pistes</Text>
-                    <View className="flex-row flex-wrap gap-2">
-                        {Object.entries(stats.difficultyCounts).map(([diff, count]) => {
-                            if (count === 0 && diff === 'other') return null;
-                            const meta = getDifficultyMeta(diff);
-                            const len = stats.difficultyLengths[diff as keyof typeof stats.difficultyLengths] || 0;
-                            return (
-                                <View key={diff} className="flex-row items-center bg-slate-800 rounded-xl p-2.5 border border-slate-700 w-[48%]">
-                                    <View className={`w-3 h-3 rounded-full ${meta.bg} mr-2`} />
-                                    <View>
-                                        <Text className="text-xs font-bold text-white">{count} <Text className="font-normal text-slate-300">{meta.label}</Text></Text>
-                                        <Text className="text-[10px] text-slate-400">{(len / 1000).toFixed(1)} km</Text>
-                                    </View>
-                                </View>
-                            );
-                        })}
-                    </View>
-                </View>
-
-                {stats.totalLifts > 0 && (
-                    <View className="my-2">
-                        <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">Lifts & Capacity</Text>
-                        {stats.totalCapacity > 0 && (
-                            <View className="flex-row justify-between border-b border-slate-800 pb-2 mb-2">
-                                <Text className="text-xs text-slate-400">Hourly capacity:</Text>
-                                <Text className="text-xs font-semibold text-white">
-                                    {stats.totalHourlyCapacity ? `${stats.totalHourlyCapacity.toLocaleString()} pers./h` : 'N/A'}
-                                </Text>
-                            </View>
-                        )}
-                        <View className="flex-row flex-wrap gap-1.5">
-                            {Object.entries(stats.liftTypeCounts).map(([type, count]) => (
-                                <View key={type} className="px-2.5 py-1 bg-blue-950/80 border border-blue-800/60 rounded-lg">
-                                    <Text className="text-[10px] text-blue-300 font-semibold uppercase">
-                                        {count}x {parseLiftType(type)}
+                    {stats.totalLifts > 0 && (
+                        <View className="my-2">
+                            <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">Lifts & Capacity</Text>
+                            {stats.totalCapacity > 0 && (
+                                <View className="flex-row justify-between border-b border-slate-800 pb-2 mb-2">
+                                    <Text className="text-xs text-slate-400">Hourly capacity:</Text>
+                                    <Text className="text-xs font-semibold text-white">
+                                        {stats.totalHourlyCapacity ? `${stats.totalHourlyCapacity.toLocaleString()} pers./h` : 'N/A'}
                                     </Text>
                                 </View>
-                            ))}
+                            )}
+                            <View className="flex-row flex-wrap gap-1.5">
+                                {Object.entries(stats.liftTypeCounts).map(([type, count]) => (
+                                    <View key={type} className="px-2.5 py-1 bg-blue-950/80 border border-blue-800/60 rounded-md">
+                                        <Text className="text-[10px] text-blue-300 font-semibold uppercase">
+                                            {count}x {parseLiftType(type)}
+                                        </Text>
+                                    </View>
+                                ))}
+                            </View>
                         </View>
-                    </View>
-                )}
-            </ScrollView>
+                    )}
+                </ScrollView>
+            </View>
         </View>
     );
 };

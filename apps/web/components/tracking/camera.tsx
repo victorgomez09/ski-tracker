@@ -28,7 +28,7 @@ export const Camera = ({ onClose }: CameraProps) => {
                 <Text className="text-lg font-semibold text-white text-center mb-4">
                     We need your permission to use the camera
                 </Text>
-                <TouchableOpacity onPress={requestPermission} className="bg-blue-600 px-6 py-3 rounded-xl">
+                <TouchableOpacity onPress={requestPermission} className="bg-blue-600 px-6 py-3 rounded-md">
                     <Text className="text-white font-bold text-base">Grant permission</Text>
                 </TouchableOpacity>
             </View>
@@ -52,7 +52,7 @@ export const Camera = ({ onClose }: CameraProps) => {
                     contentFit="contain"
                     style={{ width: 300, aspectRatio: 1, borderRadius: 16 }}
                 />
-                <TouchableOpacity onPress={() => setUri(null)} className="bg-blue-600 px-6 py-3 rounded-xl mt-4">
+                <TouchableOpacity onPress={() => setUri(null)} className="bg-blue-600 px-6 py-3 rounded-md mt-4">
                     <Text className="text-white font-bold text-base">Take another picture</Text>
                 </TouchableOpacity>
             </View>

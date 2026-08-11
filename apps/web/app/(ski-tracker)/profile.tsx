@@ -116,12 +116,12 @@ export default function ProfileView() {
         <ScrollView contentContainerStyle={{ 
                     flexGrow: 1, 
                     justifyContent: 'center', 
-                    alignItems: 'center' 
+                    alignItems: 'center',
                 }} 
                 className="bg-slate-900 p-6">
-            <View className="w-full max-w-md space-y-6">
+            <View className="w-full max-w-md space-y-6 gap-4">
                 {/* USER INFORMATION CARD */}
-                <View className="bg-slate-800 rounded-3xl p-6 shadow-xl border border-slate-700 items-center">
+                <View className="bg-slate-800 rounded-md p-6 shadow-xl border border-slate-700 items-center">
                     <View className="w-20 h-20 rounded-full bg-slate-700 items-center justify-center mb-3 border-2 border-blue-500">
                         <Text className="text-3xl font-bold text-white">
                             {user?.first_name ? user.first_name[0].toUpperCase() : "⛷️"}
@@ -140,11 +140,11 @@ export default function ProfileView() {
                 </View>
 
                 {/* SNOW SPORT SELECTOR */}
-                <View className="bg-slate-800 rounded-3xl p-6 shadow-xl border border-slate-700">
+                <View className="bg-slate-800 rounded-md p-6 shadow-xl border border-slate-700">
                     <Text className="text-base font-semibold text-white mb-4">Snow modality</Text>
                     <View className="flex-row gap-3">
                         <TouchableOpacity
-                            className={`flex-1 p-4 rounded-2xl items-center border ${
+                            className={`flex-1 p-4 rounded-md items-center border ${
                                 user?.activity_type === 'ski'
                                     ? 'bg-blue-600 border-blue-500'
                                     : 'bg-slate-700 border-slate-600'
@@ -155,7 +155,7 @@ export default function ProfileView() {
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            className={`flex-1 p-4 rounded-2xl items-center border ${
+                            className={`flex-1 p-4 rounded-md items-center border ${
                                 user?.activity_type === 'snow'
                                     ? 'bg-blue-600 border-blue-500'
                                     : 'bg-slate-700 border-slate-600'
@@ -169,7 +169,7 @@ export default function ProfileView() {
 
                 {/* LOGOUT BUTTON */}
                 <TouchableOpacity
-                    className="bg-red-600 rounded-3xl p-4 shadow-xl items-center justify-center"
+                    className="bg-red-600 rounded-md p-4 shadow-xl items-center justify-center"
                     onPress={handleLogout}
                 >
                     <Text className="text-white font-bold text-base">Logout</Text>
@@ -188,13 +188,13 @@ export default function ProfileView() {
                     activeOpacity={1}
                     onPress={() => setThemeModalVisible(false)}
                 >
-                    <View className="bg-slate-800 border border-slate-700 rounded-3xl p-6 w-full max-w-sm max-h-[70vh]">
+                    <View className="bg-slate-800 border border-slate-700 rounded-md p-6 w-full max-w-sm max-h-[70vh]">
                         <Text className="text-lg font-bold text-white mb-4">Select Theme</Text>
                         <ScrollView className="space-y-2">
                             {Object.entries(themes).map(([key, value]) => (
                                 <TouchableOpacity
                                     key={key}
-                                    className={`p-3 rounded-xl mb-2 ${
+                                    className={`p-3 rounded-md mb-2 ${
                                         theme === key ? 'bg-blue-600' : 'bg-slate-700'
                                     }`}
                                     onPress={() => {
