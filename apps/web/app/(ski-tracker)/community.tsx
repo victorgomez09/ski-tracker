@@ -90,7 +90,6 @@ export default function CommunityView() {
         const sessionsRequest = await api.get<{ sessions: Session[] }>(`${API_BASE_URL}/ski-sessions`);
 
         if (sessionsRequest.status === 200) {
-          console.log("Fetched community sessions:", sessionsRequest.data.sessions);
           setCommunityData(sessionsRequest.data.sessions);
         }
       } catch (error) {
@@ -118,7 +117,6 @@ export default function CommunityView() {
 
   return (
     <View className="flex-1 bg-slate-900 p-4">
-      {/* Cabecera del Módulo */}
       <View className="flex-row items-center justify-between mb-4">
         <View>
           <Text className="text-2xl font-extrabold text-white leading-tight">
@@ -136,7 +134,7 @@ export default function CommunityView() {
         </View>
       </View>
 
-      {/* Lista Principal de Sesiones */}
+      {/* SESSION LIST */}
       <FlatList
         data={communityData}
         keyExtractor={(item) => item.id}

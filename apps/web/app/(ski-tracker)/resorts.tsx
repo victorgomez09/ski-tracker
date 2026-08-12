@@ -24,6 +24,7 @@ import { Resort } from "models/ski-resort.model";
 import { useAuth } from "context/auth.context";
 import { WeatherForecast } from "models/weather.model";
 import { WeatherForecastDetails } from "components/resorts/weather-forecast";
+import api from "interceptor/api";
 
 // Cache state to survive tab navigation / component remounting
 let cachedResorts: Resort[] = [];
@@ -80,12 +81,8 @@ export default function ResortsView() {
         setIsLoadingResorts(true);
         const delayDebounceFn = setTimeout(async () => {
             try {
-                const response = await axios.get(`${API_BASE_URL}/resorts/by-name`, {
+                const response = await api.get(`${API_BASE_URL}/resorts/by-name`, {
                     params: { name: searchTerm },
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
                 });
 
                 if (response.status === 200) {
