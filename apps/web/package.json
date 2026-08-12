@@ -18,17 +18,17 @@
     "@types/react-native-charts-wrapper": "^0.5.11",
     "axios": "^1.18.1",
     "daisyui": "^5.6.18",
-    "expo": "~56.0.4",
+    "expo": "~56.0.19",
     "expo-camera": "~56.0.8",
     "expo-image": "~56.0.11",
-    "expo-location": "~56.0.21",
-    "expo-router": "~56.2.15",
+    "expo-location": "~56.0.23",
+    "expo-router": "~56.2.18",
     "expo-secure-store": "~56.0.4",
     "expo-sensors": "~56.0.6",
-    "expo-splash-screen": "~56.0.10",
+    "expo-splash-screen": "~56.0.14",
     "expo-sqlite": "~56.0.5",
     "expo-status-bar": "~56.0.4",
-    "expo-task-manager": "~56.0.22",
+    "expo-task-manager": "~56.0.25",
     "lucide-react": "^1.25.0",
     "lucide-react-native": "^1.31.0",
     "maplibre-gl": "^5.24.0",
@@ -43,8 +43,9 @@
     "react-native-chart-kit": "^7.0.2",
     "react-native-charts-wrapper": "^0.7.0",
     "react-native-css": "latest",
-    "react-native-maps": "^1.29.0",
+    "react-native-maps": "1.27.2",
     "react-native-reanimated": "4.3.1",
+    "react-native-safe-area-context": "^5.8.1",
     "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
     "react-native-worklets": "0.8.3",
@@ -52,25 +53,25 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "@types/react-native": "^0.73.0",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
     "eslint": "^9.25.1",
     "eslint-config-expo": "~56.0.4",
     "eslint-config-prettier": "^10.1.2",
     "prettier": "^3.2.5",
     "prettier-plugin-tailwindcss": "^0.6.14",
     "tailwindcss": "^4.1.13",
-    "typescript": "^7.0.2"
+    "typescript": "~6.0.3"
   },
   "main": "expo-router/entry",
-  "overrides": {
-    "lightningcss": "1.30.1"
-  },
   "resolutions": {
-    "@types/react": "19.2.3",
-    "@types/react-dom": "19.2.3",
-    "@types/react-native": "0.73.0"
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4"
+  },
+  "overrides": {
+    "lightningcss": "1.30.1",
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4"
   },
   "private": true
 }

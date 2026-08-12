@@ -43,6 +43,13 @@ export default function RootLayout() {
         }} 
       />
       <Tabs.Screen 
+        name="community" 
+        options={{ 
+          title: 'Community', 
+          tabBarIcon: ({ color }) => <Ionicons name="people-outline" size={16} color={color} />
+        }} 
+      />
+      <Tabs.Screen 
         name="profile" 
         options={{ 
           title: 'Profile', 

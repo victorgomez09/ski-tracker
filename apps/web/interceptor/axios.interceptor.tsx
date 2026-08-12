@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
+
 import api from './api';
 import { useAuth } from 'context/auth.context';
 

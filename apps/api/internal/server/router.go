@@ -63,7 +63,8 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 
 			// Ski session routes
 			skiSessionHandler := v1.NewSkiSessionHandler(deps.Services.SkiSession, deps.Store)
-			protected.GET("/ski-sessions", skiSessionHandler.ListByResort)
+			protected.GET("/ski-sessions", skiSessionHandler.List)
+			protected.GET("/ski-sessions/by-resort", skiSessionHandler.ListByResort)
 			protected.GET("/ski-sessions/:id", skiSessionHandler.GetSession)
 			protected.POST("/ski-sessions", skiSessionHandler.StartSession)
 			protected.POST("/ski-sessions/:id/points", skiSessionHandler.AddPoints)

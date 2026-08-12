@@ -11,7 +11,6 @@ let MapComponent: React.ComponentType<any>;
 if (Platform.OS === 'web') {
   console.log("is web")
     MapComponent = require('../../components/map/map.web').default;
-    // MapComponent = require('../../components/map/map.native').default;
 } else {
     MapComponent = require('../../components/map/map.native').default;
 }

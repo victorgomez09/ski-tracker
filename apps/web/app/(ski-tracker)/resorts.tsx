@@ -116,7 +116,7 @@ export default function ResortsView() {
         setIsLoadingSessions(true);
 
         try {
-            const sessionsRequest = await axios.get(`${API_BASE_URL}/ski-sessions`, {
+            const sessionsRequest = await axios.get(`${API_BASE_URL}/ski-sessions/by-resort`, {
                 params: { resort_id: resort.ID },
                 headers: {
                     "Content-Type": "application/json",

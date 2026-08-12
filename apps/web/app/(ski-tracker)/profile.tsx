@@ -38,7 +38,7 @@ export default function ProfileView() {
             if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
                 const saved = localStorage.getItem('theme');
                 if (saved) {
-                    try { setTheme(JSON.parse(saved)); } catch {}
+                    try { setTheme(JSON.parse(saved)); } catch { }
                 }
             } else {
                 const saved = await SecureStore.getItemAsync('theme');
@@ -113,12 +113,12 @@ export default function ProfileView() {
     };
 
     return (
-        <ScrollView contentContainerStyle={{ 
-                    flexGrow: 1, 
-                    justifyContent: 'center', 
-                    alignItems: 'center',
-                }} 
-                className="bg-slate-900 p-6">
+        <ScrollView contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+        }}
+            className="bg-slate-900 p-6">
             <View className="w-full max-w-md space-y-6 gap-4">
                 {/* USER INFORMATION CARD */}
                 <View className="bg-slate-800 rounded-md p-6 shadow-xl border border-slate-700 items-center">
@@ -144,22 +144,20 @@ export default function ProfileView() {
                     <Text className="text-base font-semibold text-white mb-4">Snow modality</Text>
                     <View className="flex-row gap-3">
                         <TouchableOpacity
-                            className={`flex-1 p-4 rounded-md items-center border ${
-                                user?.activity_type === 'ski'
+                            className={`flex-1 p-4 rounded-md items-center border ${user?.activity_type === 'ski'
                                     ? 'bg-blue-600 border-blue-500'
                                     : 'bg-slate-700 border-slate-600'
-                            }`}
+                                }`}
                             onPress={() => updateActivityType("ski")}
                         >
                             <Text className="text-white font-bold text-base">🎿 Ski</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            className={`flex-1 p-4 rounded-md items-center border ${
-                                user?.activity_type === 'snow'
+                            className={`flex-1 p-4 rounded-md items-center border ${user?.activity_type === 'snow'
                                     ? 'bg-blue-600 border-blue-500'
                                     : 'bg-slate-700 border-slate-600'
-                            }`}
+                                }`}
                             onPress={() => updateActivityType("snow")}
                         >
                             <Text className="text-white font-bold text-base">🏂 Snowboard</Text>
@@ -194,9 +192,8 @@ export default function ProfileView() {
                             {Object.entries(themes).map(([key, value]) => (
                                 <TouchableOpacity
                                     key={key}
-                                    className={`p-3 rounded-md mb-2 ${
-                                        theme === key ? 'bg-blue-600' : 'bg-slate-700'
-                                    }`}
+                                    className={`p-3 rounded-md mb-2 ${theme === key ? 'bg-blue-600' : 'bg-slate-700'
+                                        }`}
                                     onPress={() => {
                                         setTheme(key);
                                         setThemeModalVisible(false);

@@ -7,17 +7,31 @@ const api = axios.create({
   baseURL: API_BASE_URL
 });
 
-// Interceptor de petición: adjunta el token automáticamente
-api.interceptors.request.use(async (config) => {
-  const token =
-    Platform.OS === 'web'
-      ? localStorage.getItem('jwt_key')
-      : await SecureStore.getItemAsync('jwt_key');
+api.interceptors.request.use(
+  async (config) => {
+    try {
+      const token =
+        Platform.OS === 'web'
+          ? localStorage.getItem('jwt_key')
+          : await SecureStore.getItemAsync('jwt_key');
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+      if (token) {
+        if (config.headers && typeof config.headers.set === 'function') {
+          config.headers.set('Authorization', `Bearer ${token}`);
+        } else {
+          config.headers = config.headers || {};
+          config.headers['Authorization'] = `Bearer ${token}`;
+        }
+      }
+    } catch (error) {
+      console.error('Error al recuperar el token en el interceptor:', error);
+    }
+
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
-  return config;
-});
+);
 
 export default api;

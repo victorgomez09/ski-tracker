@@ -55,6 +55,15 @@ func NewSkiSessionService(store store.Store, jwtManager *auth.JWTManager, logger
 	}
 }
 
+func (s *SkiSessionService) List(ctx context.Context) ([]models.SkiSession, error) {
+	sessions, err := s.store.SkiSession().List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list ski sessions: %w", err)
+	}
+
+	return sessions, nil
+}
+
 func (s *SkiSessionService) ListByResort(ctx context.Context, resortID string, userID uuid.UUID) ([]models.SkiSession, error) {
 	sessions, err := s.store.SkiSession().ListByResortID(ctx, resortID, userID)
 	if err != nil {

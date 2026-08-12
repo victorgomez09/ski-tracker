@@ -21,6 +21,22 @@ func (u *skiSessionStore) Raw(ctx context.Context, query string, wktLine string,
 	return nil
 }
 
+func (u *skiSessionStore) List(ctx context.Context) ([]models.SkiSession, error) {
+	var sessions []models.SkiSession
+	err := u.db.NewSelect().
+		Model(&sessions).
+		Relation("Runs").
+		Relation("User").
+		Relation("Resort").
+		Where("ss.is_public = ?", true).
+		Order("ss.created_at DESC").
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
 func (u *skiSessionStore) ListByResortID(ctx context.Context, resortID string, userID uuid.UUID) ([]models.SkiSession, error) {
 	var sessions []models.SkiSession
 	err := u.db.NewSelect().
