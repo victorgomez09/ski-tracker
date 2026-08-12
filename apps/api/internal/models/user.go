@@ -13,6 +13,7 @@ type User struct {
 	Email        string    `bun:"email,notnull,unique" json:"email"`
 	PasswordHash []byte    `bun:"password_hash,notnull" json:"-"`
 	DisplayName  string    `bun:"display_name" json:"display_name"`
+	AvatarURL    string    `bun:"avatar_url" json:"avatar_url"`
 	FirstName    string    `bun:"first_name,default:''" json:"first_name"`
 	LastName     string    `bun:"last_name,default:''" json:"last_name"`
 	ActivityType string    `bun:"activity_type" json:"activity_type"`

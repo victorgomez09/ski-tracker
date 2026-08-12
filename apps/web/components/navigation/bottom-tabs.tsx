@@ -12,6 +12,8 @@ export default function BottomTabs({ state, descriptors, navigation }: BottomTab
                     const isFocused = state.index === index;
                     const descriptor = descriptors[route.key];
 
+                    if (route.name === 'tracking' && isWeb) return;
+
                     const onPress = () => {
                         const event = navigation.emit({
                             type: 'tabPress',

@@ -5,4 +5,5 @@ export interface User {
     id: string;
     last_name: string;
     activity_type: string;
+    avatar_url: string | null;
 }

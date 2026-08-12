@@ -128,6 +128,7 @@ func (s *UserService) Update(ctx context.Context, user *models.User) error {
 	userToUpdate.FirstName = user.FirstName
 	userToUpdate.LastName = user.LastName
 	userToUpdate.ActivityType = user.ActivityType
+	userToUpdate.AvatarURL = user.AvatarURL
 
 	err = s.store.User().Update(ctx, userToUpdate)
 	if err != nil {

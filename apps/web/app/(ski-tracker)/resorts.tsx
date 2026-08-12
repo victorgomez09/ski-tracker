@@ -1,29 +1,26 @@
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
 import {
-    Search,
-    MapPin,
     Activity,
     ChevronRight,
+    Compass,
     ExternalLink,
     Globe,
-    Navigation,
-    X,
-    Compass,
-    TrendingUp,
-    Map as MapIcon,
-    User,
     Lock,
-    Unlock
+    Map as MapIcon,
+    MapPin,
+    Search,
+    Unlock,
+    X
 } from "lucide-react-native";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Linking, Modal } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Image, Linking, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 
-import { API_BASE_URL } from "constants/constants";
-import { Resort } from "models/ski-resort.model";
-import { useAuth } from "context/auth.context";
-import { WeatherForecast } from "models/weather.model";
 import { WeatherForecastDetails } from "components/resorts/weather-forecast";
+import { API_BASE_URL } from "constants/constants";
+import { useAuth } from "context/auth.context";
 import api from "interceptor/api";
+import { Resort } from "models/ski-resort.model";
+import { WeatherForecast } from "models/weather.model";
 
 // Cache state to survive tab navigation / component remounting
 let cachedResorts: Resort[] = [];
@@ -347,10 +344,20 @@ export default function ResortsView() {
                                             </Text>
                                         </View>
                                         <View className="flex-row items-center gap-2 mt-1">
-                                            <User size={12} color="#94a3b8" />
-                                            <Text className="text-xs text-slate-300">
-                                                {session.user ? (session.user.display_name || `${session.user.first_name} ${session.user.last_name}`.trim() || session.user.email) : 'User'}
-                                            </Text>
+                                            <View className="size-6 rounded-full bg-slate-700 items-center justify-center border-2 border-blue-500 overflow-hidden">
+                                                {session.user?.avatar_url ? (
+                                                    <Image
+                                                        source={{ uri: session.user?.avatar_url }}
+                                                        className="w-full h-full"
+                                                        resizeMode="cover"
+                                                    />) : (
+
+                                                    <Text className="text-white font-extrabold text-xs tracking-wider">
+                                                        {session.user ? (session.user.display_name || `${session.user.first_name} ${session.user.last_name}`.trim() || session.user.email) : 'User'}
+                                                    </Text>
+                                                )}
+                                            </View>
+
                                             {session.is_public ? (
                                                 <View className="flex-row items-center gap-1">
                                                     <Unlock size={10} color="#34d399" />
@@ -432,11 +439,10 @@ export default function ResortsView() {
                                 return (
                                     <TouchableOpacity
                                         key={resort.ID}
-                                        className={`rounded-md border p-4 mb-2 ${
-                                            isSelected
+                                        className={`rounded-md border p-4 mb-2 ${isSelected
                                                 ? "border-blue-500 bg-blue-950/40"
                                                 : "border-slate-800 bg-slate-900"
-                                        }`}
+                                            }`}
                                         onPress={() => handleResortSelect(resort)}
                                     >
                                         <View className="flex-row justify-between items-start">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   FlatList,
+  Image,
   LayoutAnimation,
   Platform,
   Text,
@@ -163,10 +164,18 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
 
       <View className="flex-row items-center justify-between mb-3">
         <View className="flex-row items-center gap-3 flex-1">
-          <View className="w-10 h-10 rounded-full bg-blue-600 items-center justify-center border border-blue-400 shadow-sm">
-            <Text className="text-white font-extrabold text-xs tracking-wider">
-              {initials}
-            </Text>
+          <View className="size-9 rounded-full bg-slate-700 items-center justify-center border-2 border-blue-500 overflow-hidden">
+            {session.user?.avatar_url ? (
+              <Image
+                source={{ uri: session.user?.avatar_url }}
+                className="w-full h-full"
+                resizeMode="cover"
+              />) : (
+
+              <Text className="text-white font-extrabold text-xs tracking-wider">
+                {initials}
+              </Text>
+            )}
           </View>
 
           <View className="flex-1">
