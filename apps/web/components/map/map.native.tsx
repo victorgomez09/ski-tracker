@@ -243,6 +243,36 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
+    // const pisteLabelStyle: any = {
+    //     id: 'piste-labels',
+    //     sourceID: 'pistes-source',
+    //     type: 'symbol',
+    //     layout: {
+    //         'symbol-placement': 'line-center',
+    //         'symbol-spacing': 220,
+    //         'text-field': ['get', 'name'],
+    //         'text-size': 10.5,
+    //         'text-offset': [0, 0.6],
+    //         'text-allow-overlap': true,
+    //         'text-ignore-placement': true,
+    //         'text-optional': true,
+    //         'text-rotation-alignment': 'map',
+    //         'text-max-angle': 30,
+    //         'text-letter-spacing': 0.1,
+    //         'text-anchor': 'center'
+    //     },
+    //     paint: {
+    //         'text-color': [
+    //             'case',
+    //             ['==', ['get', 'id'], selectedFeature?.ID || ''], '#f8fafc',
+    //             '#ffffff'
+    //         ],
+    //         'text-halo-color': '#000000',
+    //         'text-halo-width': 1.5,
+    //         'text-opacity': 0.95
+    //     }
+    // };
+
     const pisteLabelStyle: any = {
         id: 'piste-labels',
         sourceID: 'pistes-source',
@@ -251,51 +281,57 @@ export default function InteractiveSkiMapNative() {
             'symbol-placement': 'line-center',
             'symbol-spacing': 220,
             'text-field': ['get', 'name'],
-            'text-size': 10.5,
-            'text-offset': [0, 0.6],
-            'text-allow-overlap': true,
-            'text-ignore-placement': true,
+            'text-size': 9.5,
+            'text-offset': [0, -0],
+            'text-allow-overlap': false,
+            'text-ignore-placement': false,
             'text-optional': true,
             'text-rotation-alignment': 'map',
-            'text-max-angle': 30,
-            'text-letter-spacing': 0.1,
-            'text-anchor': 'center'
+            'text-max-angle': 30
         },
         paint: {
-            'text-color': [
-                'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#f8fafc',
-                '#ffffff'
+            'line-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00e676',
+                'easy', '#2979ff',
+                'intermediate', '#ff1744',
+                'advanced', '#212121',
+                '#9e9e9e'
             ],
-            'text-halo-color': '#000000',
-            'text-halo-width': 1.5,
-            'text-opacity': 0.95
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1
         }
     };
 
     const pisteDirectionStyle: any = {
         id: 'piste-arrows',
-        sourceID: 'piste-direction-source',
+        sourceID: 'pistes-source',
         type: 'symbol',
+        minzoom: 14,
         layout: {
-            'symbol-placement': 'point',
-            'text-field': '>>',
-            'text-size': 11,
-            'text-font': ['Open Sans Bold'],
+            'symbol-placement': 'line',
+            'symbol-spacing': 150,
+            'text-field': '>',
+            'text-size': 12,
             'text-rotation-alignment': 'map',
-            'text-rotate': ['get', 'rotation'],
-            'text-anchor': 'center',
-            'text-allow-overlap': true,
-            'text-ignore-placement': true,
-            'text-offset': [0, -0.25]
+            'text-keep-upright': false,
+            'text-allow-overlap': false,
+            'text-ignore-placement': false
         },
         paint: {
-            'text-color': '#f8fafc',
+            // 'text-color': [
+            //     'match', ['get', 'difficulty'],
+            //     'novice', '#00e676',
+            //     'easy', '#2979ff',
+            //     'intermediate', '#ff1744',
+            //     'advanced', '#212121',
+            //     '#9e9e9e'
+            // ],
+            'text-color': '#ffffff',
             'text-halo-color': '#000000',
-            'text-halo-width': 1.2,
-            'text-opacity': 0.95
+            'text-halo-width': 0.5
         }
-    };
+    }
 
     const liftLineStyle: any = {
         id: 'lift-lines',
@@ -330,7 +366,7 @@ export default function InteractiveSkiMapNative() {
             'symbol-spacing': 220,
             'text-field': ['get', 'name'],
             'text-size': 9.5,
-            'text-offset': [0, -0.7],
+            'text-offset': [0, -0],
             'text-allow-overlap': false,
             'text-ignore-placement': false,
             'text-optional': true,
@@ -707,7 +743,7 @@ export default function InteractiveSkiMapNative() {
 
             <TouchableOpacity
                 onPress={() => setShowOfflineModal(true)}
-                className="bg-slate-800 border border-slate-700 p-3 rounded-md shadow-xl flex-row items-center gap-2"
+                className="absolute bottom-4 left-16 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-xl flex-row items-center gap-2"
             >
                 <Download size={18} color="#60a5fa" />
                 {packs.length > 0 && (
@@ -740,7 +776,7 @@ export default function InteractiveSkiMapNative() {
             )}
 
             {searchParams.sessionId && trackPoints.length > 0 && (
-                <View className="absolute top-16 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 md:w-80 max-h-[75vh] shadow-2xl space-y-3">
+                <View className="absolute top-4 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 md:w-80 max-h-[75vh] shadow-2xl space-y-3">
                     <View className="flex-row justify-between items-center pb-2 border-b border-slate-800">
                         <View>
                             <Text className="font-extrabold text-sm text-white">Session Analyser</Text>
@@ -902,9 +938,6 @@ export default function InteractiveSkiMapNative() {
                         <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                             <NativeLayer {...pisteLineStyle} onPress={handleNativeFeaturePress} />
                             <NativeLayer {...pisteLabelStyle} onPress={handleNativeFeaturePress} />
-                        </NativeGeoJSONSource>
-
-                        <NativeGeoJSONSource id="piste-direction-source" data={pisteDirectionGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                             <NativeLayer {...pisteDirectionStyle} onPress={handleNativeFeaturePress} />
                         </NativeGeoJSONSource>
 

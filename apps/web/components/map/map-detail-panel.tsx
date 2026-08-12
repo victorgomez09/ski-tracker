@@ -344,6 +344,7 @@ export const ElevationChart: React.FC<{
 };
 
 export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose }) => {
+    const isWeb = Platform.OS === 'web';
     const tags = data?.Tags || {};
     const elevationProfile = tags.elevationProfile || {};
     const heights = elevationProfile.heights || [];
@@ -424,7 +425,7 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
 
     return (
         <View className="absolute inset-0 flex items-center justify-center bg-black/60 z-50 p-3">
-            <View className="bg-slate-900 border border-slate-700 shadow-xl p-4 rounded-xl w-11/12 h-11/12 flex">
+            <View className={`bg-slate-900 border border-slate-700 shadow-xl p-4 rounded-xl ${isWeb ? 'w-11/12 h-11/12' : 'w-full h-full'} flex`}>
                 <ScrollView className="space-y-4" showsVerticalScrollIndicator={false}>
                     <View className="flex-row justify-between items-start">
                         <Text className="text-xs text-slate-400 font-medium flex-1 pr-2">

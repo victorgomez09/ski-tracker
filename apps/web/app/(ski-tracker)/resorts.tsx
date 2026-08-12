@@ -21,6 +21,7 @@ import { useAuth } from "context/auth.context";
 import api from "interceptor/api";
 import { Resort } from "models/ski-resort.model";
 import { WeatherForecast } from "models/weather.model";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 // Cache state to survive tab navigation / component remounting
 let cachedResorts: Resort[] = [];
@@ -167,346 +168,356 @@ export default function ResortsView() {
         if (!selectedResort) return null;
 
         return (
-            <ScrollView className="flex-1 bg-slate-900 p-4 space-y-6">
-                {/* Header Banner */}
-                <View className="bg-slate-800 rounded-md p-5 border border-slate-700 shadow-xl flex-row justify-between items-start mb-4">
-                    <View className="flex-1">
-                        <View className="bg-blue-900/60 px-3 py-1 rounded-full self-start flex-row items-center gap-1 border border-blue-700">
-                            <Globe size={12} color="#60a5fa" />
-                            <Text className="text-xs text-blue-300 font-bold">{selectedResort.Country}</Text>
+            <SafeAreaView
+                edges={['top', 'bottom']}
+                style={{ flex: 1, backgroundColor: 'transparent' }}
+            >
+                <ScrollView className="flex-1 bg-slate-900 p-4 space-y-6">
+                    {/* Header Banner */}
+                    <View className="bg-slate-800 rounded-md p-5 border border-slate-700 shadow-xl flex-row justify-between items-start mb-4">
+                        <View className="flex-1">
+                            <View className="bg-blue-900/60 px-3 py-1 rounded-full self-start flex-row items-center gap-1 border border-blue-700">
+                                <Globe size={12} color="#60a5fa" />
+                                <Text className="text-xs text-blue-300 font-bold">{selectedResort.Country}</Text>
+                            </View>
+                            <Text className="text-2xl font-extrabold text-white mt-2 leading-tight">{selectedResort.Name}</Text>
                         </View>
-                        <Text className="text-2xl font-extrabold text-white mt-2 leading-tight">{selectedResort.Name}</Text>
+                        <TouchableOpacity
+                            className="p-2 bg-slate-700 rounded-full"
+                            onPress={() => setSelectedResortWithCache(null)}
+                        >
+                            <X size={18} color="#94a3b8" />
+                        </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                        className="p-2 bg-slate-700 rounded-full"
-                        onPress={() => setSelectedResortWithCache(null)}
-                    >
-                        <X size={18} color="#94a3b8" />
-                    </TouchableOpacity>
-                </View>
 
-                {/* Key Metrics Grid */}
-                <View className="mb-4">
-                    <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Resort Metrics</Text>
-                    <View className="flex-row gap-3">
-                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
-                            <Text className="text-slate-400 text-xs font-medium">Lifts</Text>
-                            <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.lifts}</Text>
-                        </View>
-
-                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
-                            <Text className="text-slate-400 text-xs font-medium">Pistes</Text>
-                            <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.pistes}</Text>
-                        </View>
-
-                        <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
-                            <Text className="text-slate-400 text-xs font-medium">Distance</Text>
-                            <Text className="text-2xl font-bold text-white mt-1">
-                                {selectedResortSummary?.distance.toFixed(1)} <Text className="text-xs text-slate-400">km</Text>
-                            </Text>
-                        </View>
-                    </View>
-                </View>
-
-                {/* Pistes Breakdown */}
-                {selectedResortSummary && (
-                    <View className="mb-4 w-full">
-                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Pistes Breakdown</Text>
-                        <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                <View className="w-3 h-3 rounded-full bg-[#00a859]" />
-                                <View>
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Novice</Text>
-                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.novice} runs</Text>
-                                </View>
-                            </View>
-
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                <View className="w-3 h-3 rounded-full bg-[#0072bc]" />
-                                <View>
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Easy</Text>
-                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.easy} runs</Text>
-                                </View>
-                            </View>
-
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                <View className="w-3 h-3 rounded-full bg-[#f0141e]" />
-                                <View>
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Intermediate</Text>
-                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.intermediate} runs</Text>
-                                </View>
-                            </View>
-
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                <View className="w-3 h-3 rounded-full bg-black border border-slate-600" />
-                                <View>
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Expert</Text>
-                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.advanced} runs</Text>
-                                </View>
-                            </View>
-                        </View>
-                    </View>
-                )}
-
-                {/* Lifts Breakdown */}
-                {selectedResortSummary && (
+                    {/* Key Metrics Grid */}
                     <View className="mb-4">
-                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Lifts Breakdown</Text>
-                        <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                <Text className="text-base">🚡</Text>
-                                <View>
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Chair Lifts</Text>
-                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.chair_lift}</Text>
-                                </View>
+                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Resort Metrics</Text>
+                        <View className="flex-row gap-3">
+                            <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
+                                <Text className="text-slate-400 text-xs font-medium">Lifts</Text>
+                                <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.lifts}</Text>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                <Text className="text-base">⛷️</Text>
-                                <View>
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Drag Lifts</Text>
-                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.drag_lift}</Text>
-                                </View>
+                            <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
+                                <Text className="text-slate-400 text-xs font-medium">Pistes</Text>
+                                <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.pistes}</Text>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                <Text className="text-base">🛹</Text>
-                                <View>
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Magic Carpets</Text>
-                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.magic_carpet}</Text>
-                                </View>
-                            </View>
-
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                <Text className="text-base">🪢</Text>
-                                <View>
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Rope Tows</Text>
-                                    <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.rope_tow}</Text>
-                                </View>
+                            <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
+                                <Text className="text-slate-400 text-xs font-medium">Distance</Text>
+                                <Text className="text-2xl font-bold text-white mt-1">
+                                    {selectedResortSummary?.distance.toFixed(1)} <Text className="text-xs text-slate-400">km</Text>
+                                </Text>
                             </View>
                         </View>
                     </View>
-                )}
 
-                {/* Website CTA */}
-                {selectedResortSummary?.website && (
-                    <View className="mb-4">
-                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Website</Text>
-                        <View className="bg-slate-800 border border-slate-700 p-4 rounded-md flex-row items-center justify-between">
-                            <View className="flex-row items-center gap-3">
-                                <View className="w-10 h-10 rounded-md bg-blue-900/60 items-center justify-center">
-                                    <Globe size={20} color="#60a5fa" />
+                    {/* Pistes Breakdown */}
+                    {selectedResortSummary && (
+                        <View className="mb-4 w-full">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Pistes Breakdown</Text>
+                            <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <View className="w-3 h-3 rounded-full bg-[#00a859]" />
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Novice</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.novice} runs</Text>
+                                    </View>
                                 </View>
-                                <View>
-                                    <Text className="font-semibold text-sm text-white">Resort Website</Text>
-                                    <Text className="text-xs text-slate-400">Visit official page</Text>
+
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <View className="w-3 h-3 rounded-full bg-[#0072bc]" />
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Easy</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.easy} runs</Text>
+                                    </View>
+                                </View>
+
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <View className="w-3 h-3 rounded-full bg-[#f0141e]" />
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Intermediate</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.intermediate} runs</Text>
+                                    </View>
+                                </View>
+
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <View className="w-3 h-3 rounded-full bg-black border border-slate-600" />
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Expert</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.pistesBreakdown.advanced} runs</Text>
+                                    </View>
                                 </View>
                             </View>
-                            <TouchableOpacity
-                                className="bg-blue-600 px-3.5 py-2 rounded-md flex-row items-center gap-1"
-                                onPress={() => Linking.openURL(selectedResortSummary.website!)}
-                            >
-                                <Text className="text-white text-xs font-bold">Open</Text>
-                                <ExternalLink size={14} color="#ffffff" />
-                            </TouchableOpacity>
                         </View>
-                    </View>
-                )}
+                    )}
 
-                {/* Weather Forecast */}
-                {weatherData && (
-                    <WeatherForecastDetails data={weatherData} />
-                )}
+                    {/* Lifts Breakdown */}
+                    {selectedResortSummary && (
+                        <View className="mb-4">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Lifts Breakdown</Text>
+                            <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <Text className="text-base">🚡</Text>
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Chair Lifts</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.chair_lift}</Text>
+                                    </View>
+                                </View>
 
-                {/* Sessions Log */}
-                <View className="my-4">
-                    <View className="flex-row items-center justify-between mb-3">
-                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">Ski Sessions ({sessions.length})</Text>
-                        {isLoadingSessions && <ActivityIndicator size="small" color="#3b82f6" />}
-                    </View>
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <Text className="text-base">⛷️</Text>
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Drag Lifts</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.drag_lift}</Text>
+                                    </View>
+                                </View>
 
-                    {sessions.length > 0 ? (
-                        <View className="space-y-3">
-                            {sessions.map((session) => (
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <Text className="text-base">🛹</Text>
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Magic Carpets</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.magic_carpet}</Text>
+                                    </View>
+                                </View>
+
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <Text className="text-base">🪢</Text>
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">Rope Tows</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.rope_tow}</Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Website CTA */}
+                    {selectedResortSummary?.website && (
+                        <View className="mb-4">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Website</Text>
+                            <View className="bg-slate-800 border border-slate-700 p-4 rounded-md flex-row items-center justify-between">
+                                <View className="flex-row items-center gap-3">
+                                    <View className="w-10 h-10 rounded-md bg-blue-900/60 items-center justify-center">
+                                        <Globe size={20} color="#60a5fa" />
+                                    </View>
+                                    <View>
+                                        <Text className="font-semibold text-sm text-white">Resort Website</Text>
+                                        <Text className="text-xs text-slate-400">Visit official page</Text>
+                                    </View>
+                                </View>
                                 <TouchableOpacity
-                                    key={session.id}
-                                    onPress={() => handleSessionClick(session)}
-                                    className="bg-slate-800 p-4 rounded-md border border-slate-700 flex-row items-center justify-between my-1"
+                                    className="bg-blue-600 px-3.5 py-2 rounded-md flex-row items-center gap-1"
+                                    onPress={() => Linking.openURL(selectedResortSummary.website!)}
                                 >
-                                    <View className="space-y-1">
-                                        <View className="flex-row items-center gap-2">
-                                            <View className="w-2 h-2 rounded-full bg-emerald-500" />
-                                            <Text className="font-bold text-xs text-white">
-                                                {new Date(session.start_time).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                            </Text>
-                                            <Text className="text-[10px] text-slate-400">
-                                                {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </Text>
-                                        </View>
-                                        <View className="flex-row items-center gap-2 mt-1">
-                                            <View className="size-6 rounded-full bg-slate-700 items-center justify-center border-2 border-blue-500 overflow-hidden">
-                                                {session.user?.avatar_url ? (
-                                                    <Image
-                                                        source={{ uri: session.user?.avatar_url }}
-                                                        className="w-full h-full"
-                                                        resizeMode="cover"
-                                                    />) : (
+                                    <Text className="text-white text-xs font-bold">Open</Text>
+                                    <ExternalLink size={14} color="#ffffff" />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    )}
 
-                                                    <Text className="text-white font-extrabold text-xs tracking-wider">
-                                                        {session.user ? (session.user.display_name || `${session.user.first_name} ${session.user.last_name}`.trim() || session.user.email) : 'User'}
-                                                    </Text>
+                    {/* Weather Forecast */}
+                    {weatherData && (
+                        <WeatherForecastDetails data={weatherData} />
+                    )}
+
+                    {/* Sessions Log */}
+                    <View className="my-4">
+                        <View className="flex-row items-center justify-between mb-3">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">Ski Sessions ({sessions.length})</Text>
+                            {isLoadingSessions && <ActivityIndicator size="small" color="#3b82f6" />}
+                        </View>
+
+                        {sessions.length > 0 ? (
+                            <View className="space-y-3">
+                                {sessions.map((session) => (
+                                    <TouchableOpacity
+                                        key={session.id}
+                                        onPress={() => handleSessionClick(session)}
+                                        className="bg-slate-800 p-4 rounded-md border border-slate-700 flex-row items-center justify-between my-1"
+                                    >
+                                        <View className="space-y-1">
+                                            <View className="flex-row items-center gap-2">
+                                                <View className="w-2 h-2 rounded-full bg-emerald-500" />
+                                                <Text className="font-bold text-xs text-white">
+                                                    {new Date(session.start_time).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                </Text>
+                                                <Text className="text-[10px] text-slate-400">
+                                                    {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </Text>
+                                            </View>
+                                            <View className="flex-row items-center gap-2 mt-1">
+                                                <View className="size-6 rounded-full bg-slate-700 items-center justify-center border-2 border-blue-500 overflow-hidden">
+                                                    {session.user?.avatar_url ? (
+                                                        <Image
+                                                            source={{ uri: session.user?.avatar_url }}
+                                                            className="w-full h-full"
+                                                            resizeMode="cover"
+                                                        />) : (
+
+                                                        <Text className="text-white font-extrabold text-xs tracking-wider">
+                                                            {session.user ? (session.user.display_name || `${session.user.first_name} ${session.user.last_name}`.trim() || session.user.email) : 'User'}
+                                                        </Text>
+                                                    )}
+                                                </View>
+
+                                                {session.is_public ? (
+                                                    <View className="flex-row items-center gap-1">
+                                                        <Unlock size={10} color="#34d399" />
+                                                        <Text className="text-[10px] text-emerald-400 font-semibold">Public</Text>
+                                                    </View>
+                                                ) : (
+                                                    <View className="flex-row items-center gap-1">
+                                                        <Lock size={10} color="#fbbf24" />
+                                                        <Text className="text-[10px] text-amber-400 font-semibold">Private</Text>
+                                                    </View>
                                                 )}
                                             </View>
-
-                                            {session.is_public ? (
-                                                <View className="flex-row items-center gap-1">
-                                                    <Unlock size={10} color="#34d399" />
-                                                    <Text className="text-[10px] text-emerald-400 font-semibold">Public</Text>
-                                                </View>
-                                            ) : (
-                                                <View className="flex-row items-center gap-1">
-                                                    <Lock size={10} color="#fbbf24" />
-                                                    <Text className="text-[10px] text-amber-400 font-semibold">Private</Text>
-                                                </View>
-                                            )}
+                                            <View className="flex-row items-center gap-3 mt-1.5">
+                                                <Text className="text-[11px] text-slate-300">{(session.total_distance / 1000).toFixed(2)} km</Text>
+                                                <Text className="text-[11px] text-slate-300">{(session.max_speed * 3.6).toFixed(1)} km/h</Text>
+                                                <Text className="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-slate-200 font-bold uppercase">{session.activity_type}</Text>
+                                            </View>
                                         </View>
-                                        <View className="flex-row items-center gap-3 mt-1.5">
-                                            <Text className="text-[11px] text-slate-300">{(session.total_distance / 1000).toFixed(2)} km</Text>
-                                            <Text className="text-[11px] text-slate-300">{(session.max_speed * 3.6).toFixed(1)} km/h</Text>
-                                            <Text className="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-slate-200 font-bold uppercase">{session.activity_type}</Text>
-                                        </View>
-                                    </View>
 
-                                    <ChevronRight size={20} color="#60a5fa" />
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    ) : !isLoadingSessions ? (
-                        <View className="border border-dashed border-slate-700 rounded-md p-6 items-center justify-center bg-slate-800/40">
-                            <Activity size={32} color="#64748b" />
-                            <Text className="font-semibold text-sm text-slate-300 mt-2">No sessions recorded</Text>
-                            <Text className="text-xs text-slate-500 text-center mt-1">No sessions at this ski resort yet.</Text>
-                        </View>
-                    ) : null}
-                </View>
+                                        <ChevronRight size={20} color="#60a5fa" />
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        ) : !isLoadingSessions ? (
+                            <View className="border border-dashed border-slate-700 rounded-md p-6 items-center justify-center bg-slate-800/40">
+                                <Activity size={32} color="#64748b" />
+                                <Text className="font-semibold text-sm text-slate-300 mt-2">No sessions recorded</Text>
+                                <Text className="text-xs text-slate-500 text-center mt-1">No sessions at this ski resort yet.</Text>
+                            </View>
+                        ) : null}
+                    </View>
 
-                {/* Footer Action Bar */}
-                <TouchableOpacity
-                    className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-xl"
-                    onPress={() => {
-                        router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`);
-                        setSelectedResortWithCache(null);
-                    }}
-                >
-                    <MapIcon size={18} color="#ffffff" />
-                    <Text className="text-white font-bold text-base">View on Map</Text>
-                </TouchableOpacity>
-            </ScrollView>
+                    {/* Footer Action Bar */}
+                    <TouchableOpacity
+                        className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-xl"
+                        onPress={() => {
+                            router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`);
+                            setSelectedResortWithCache(null);
+                        }}
+                    >
+                        <MapIcon size={18} color="#ffffff" />
+                        <Text className="text-white font-bold text-base">View on Map</Text>
+                    </TouchableOpacity>
+                </ScrollView>
+            </SafeAreaView>
         );
     };
 
     return (
-        <View className="flex-1 bg-slate-950 p-4 pt-6">
-            {/* Search Header Container */}
-            <View className="mb-4">
-                <Text className="text-xl font-extrabold text-white mb-3">Ski Resorts</Text>
-                <View className="relative flex-row items-center bg-slate-800 rounded-md px-4 border border-slate-700">
-                    {isLoadingResorts ? (
-                        <ActivityIndicator size="small" color="#3b82f6" />
-                    ) : (
-                        <Search size={18} color="#94a3b8" />
-                    )}
-                    <TextInput
-                        className="flex-1 p-3.5 text-sm text-white ml-2"
-                        placeholder="Search by name, country..."
-                        placeholderTextColor="#94a3b8"
-                        value={searchTerm}
-                        onChangeText={handleSearch}
-                    />
+        <SafeAreaView
+            edges={['top']}
+            style={{ flex: 1, backgroundColor: 'transparent' }}
+        >
+            <View className="flex-1 bg-slate-950 p-4 pt-6">
+                {/* Search Header Container */}
+                <View className="mb-4">
+                    <Text className="text-xl font-extrabold text-white mb-3">Ski Resorts</Text>
+                    <View className="relative flex-row items-center bg-slate-800 rounded-md px-4 border border-slate-700">
+                        {isLoadingResorts ? (
+                            <ActivityIndicator size="small" color="#3b82f6" />
+                        ) : (
+                            <Search size={18} color="#94a3b8" />
+                        )}
+                        <TextInput
+                            className="flex-1 p-3.5 text-sm text-white ml-2"
+                            placeholder="Search by name, country..."
+                            placeholderTextColor="#94a3b8"
+                            value={searchTerm}
+                            onChangeText={handleSearch}
+                        />
+                    </View>
                 </View>
-            </View>
 
-            {/* List Body Container */}
-            <ScrollView className="flex-1 space-y-3">
-                {resorts.length > 0 && (
-                    <View className="mb-4">
-                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                            Matching Resorts ({resorts.length})
-                        </Text>
-                        <View className="space-y-2">
-                            {resorts.map((resort) => {
-                                const isSelected = selectedResort?.ID === resort.ID;
-                                return (
-                                    <TouchableOpacity
-                                        key={resort.ID}
-                                        className={`rounded-md border p-4 mb-2 ${isSelected
+                {/* List Body Container */}
+                <ScrollView className="flex-1 space-y-3">
+                    {resorts.length > 0 && (
+                        <View className="mb-4">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                Matching Resorts ({resorts.length})
+                            </Text>
+                            <View className="space-y-2">
+                                {resorts.map((resort) => {
+                                    const isSelected = selectedResort?.ID === resort.ID;
+                                    return (
+                                        <TouchableOpacity
+                                            key={resort.ID}
+                                            className={`rounded-md border p-4 mb-2 ${isSelected
                                                 ? "border-blue-500 bg-blue-950/40"
                                                 : "border-slate-800 bg-slate-900"
-                                            }`}
-                                        onPress={() => handleResortSelect(resort)}
-                                    >
-                                        <View className="flex-row justify-between items-start">
-                                            <View>
-                                                <Text className="font-bold text-base text-white">{resort.Name}</Text>
-                                                <View className="flex-row items-center gap-1 mt-1">
-                                                    <MapPin size={12} color="#94a3b8" />
-                                                    <Text className="text-xs text-slate-400">{resort.Country}</Text>
+                                                }`}
+                                            onPress={() => handleResortSelect(resort)}
+                                        >
+                                            <View className="flex-row justify-between items-start">
+                                                <View>
+                                                    <Text className="font-bold text-base text-white">{resort.Name}</Text>
+                                                    <View className="flex-row items-center gap-1 mt-1">
+                                                        <MapPin size={12} color="#94a3b8" />
+                                                        <Text className="text-xs text-slate-400">{resort.Country}</Text>
+                                                    </View>
+                                                </View>
+                                                <View className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                                                    <Text className="text-xs font-bold text-slate-200">{resort.total_lifts ?? 0} Lifts</Text>
                                                 </View>
                                             </View>
-                                            <View className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
-                                                <Text className="text-xs font-bold text-slate-200">{resort.total_lifts ?? 0} Lifts</Text>
+
+                                            <View className="flex-row items-center gap-3 pt-3 mt-2 border-t border-slate-800">
+                                                <Text className="text-xs text-slate-400">{resort.total_pistes ?? 0} Pistes</Text>
+                                                <Text className="text-xs text-slate-400">•</Text>
+                                                <Text className="text-xs text-slate-400">{resort.distance_km?.toFixed(1) ?? "0.0"} km runs</Text>
                                             </View>
-                                        </View>
-
-                                        <View className="flex-row items-center gap-3 pt-3 mt-2 border-t border-slate-800">
-                                            <Text className="text-xs text-slate-400">{resort.total_pistes ?? 0} Pistes</Text>
-                                            <Text className="text-xs text-slate-400">•</Text>
-                                            <Text className="text-xs text-slate-400">{resort.distance_km?.toFixed(1) ?? "0.0"} km runs</Text>
-                                        </View>
-                                    </TouchableOpacity>
-                                );
-                            })}
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
                         </View>
-                    </View>
-                )}
+                    )}
 
-                {/* Welcome / Initial State */}
-                {resorts.length === 0 && searchTerm.length <= 2 && (
-                    <View className="items-center justify-center p-8 text-center my-12">
-                        <View className="w-16 h-16 rounded-md bg-blue-900/40 items-center justify-center mb-4 border border-blue-700">
-                            <Compass size={32} color="#60a5fa" />
+                    {/* Welcome / Initial State */}
+                    {resorts.length === 0 && searchTerm.length <= 2 && (
+                        <View className="items-center justify-center p-8 text-center my-12">
+                            <View className="w-16 h-16 rounded-md bg-blue-900/40 items-center justify-center mb-4 border border-blue-700">
+                                <Compass size={32} color="#60a5fa" />
+                            </View>
+                            <Text className="font-bold text-base text-white">Explore Ski Resorts</Text>
+                            <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
+                                Enter 3 or more characters in the search bar above to look up global ski resorts and check metrics.
+                            </Text>
                         </View>
-                        <Text className="font-bold text-base text-white">Explore Ski Resorts</Text>
-                        <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
-                            Enter 3 or more characters in the search bar above to look up global ski resorts and check metrics.
-                        </Text>
-                    </View>
-                )}
+                    )}
 
-                {/* No results state */}
-                {resorts.length === 0 && searchTerm.length > 2 && !isLoadingResorts && (
-                    <View className="items-center justify-center p-8 text-center my-12">
-                        <View className="w-16 h-16 rounded-md bg-red-900/40 items-center justify-center mb-4 border border-red-700">
-                            <X size={32} color="#f87171" />
+                    {/* No results state */}
+                    {resorts.length === 0 && searchTerm.length > 2 && !isLoadingResorts && (
+                        <View className="items-center justify-center p-8 text-center my-12">
+                            <View className="w-16 h-16 rounded-md bg-red-900/40 items-center justify-center mb-4 border border-red-700">
+                                <X size={32} color="#f87171" />
+                            </View>
+                            <Text className="font-bold text-base text-white">No Resorts Found</Text>
+                            <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
+                                We couldn't find any resorts matching “{searchTerm}”. Check spelling or try another term.
+                            </Text>
                         </View>
-                        <Text className="font-bold text-base text-white">No Resorts Found</Text>
-                        <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
-                            We couldn't find any resorts matching “{searchTerm}”. Check spelling or try another term.
-                        </Text>
-                    </View>
-                )}
-            </ScrollView>
+                    )}
+                </ScrollView>
 
-            {/* Modal Detail View for Selected Resort */}
-            <Modal
-                visible={!!selectedResort}
-                animationType="slide"
-                onRequestClose={() => setSelectedResortWithCache(null)}
-            >
-                <View className="flex-1 bg-slate-950">
-                    {renderDetailsContent()}
-                </View>
-            </Modal>
-        </View>
+                {/* Modal Detail View for Selected Resort */}
+                <Modal
+                    visible={!!selectedResort}
+                    animationType="slide"
+                    onRequestClose={() => setSelectedResortWithCache(null)}
+                >
+                    <View className="flex-1 bg-slate-950">
+                        {renderDetailsContent()}
+                    </View>
+                </Modal>
+            </View>
+        </SafeAreaView>
     );
 }

@@ -1,5 +1,6 @@
 import time
 import random
+import json
 from datetime import datetime, timedelta
 import requests
 import psycopg2
@@ -147,10 +148,10 @@ def send_points_batch(session_id, points, auth_headers):
         resp = requests.post(
             f"{API_BASE_URL}/api/v1/ski-sessions/{session_id}/points",
             headers=auth_headers,
-            json=payload,
+            files={"points": (None, json.dumps(payload), "application/json")},
         )
         if resp.status_code != 200:
-            print(f"⚠️ Error sending points: {resp.text}")
+            print(f"⚠️ Error sending points: {resp.status_code} {resp.text}")
     except Exception as e:
         print(f"⚠️ HTTP exception while sending points: {e}")
 

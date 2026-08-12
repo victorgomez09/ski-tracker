@@ -15,6 +15,7 @@ import { useRouter } from "expo-router";
 import api from "interceptor/api";
 import { Activity, Calendar, ChevronDown, ChevronUp, MapIcon, Ruler, TrendingDown, Users, Zap } from "lucide-react-native";
 import { Session } from "models/session.model";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -89,7 +90,7 @@ export default function CommunityView() {
         const sessionsRequest = await api.get<{ sessions: Session[] }>(`${API_BASE_URL}/ski-sessions`);
 
         if (sessionsRequest.status === 200) {
-          setCommunityData(sessionsRequest.data.sessions);
+          setCommunityData(sessionsRequest.data.sessions || []);
         }
       } catch (error) {
         console.error("Failed to fetch community data:", error);
@@ -102,46 +103,56 @@ export default function CommunityView() {
 
   if (loading || communityData.length === 0) {
     return (
-      <View className="flex-1 justify-center items-center bg-slate-900 p-4">
-        <View className="bg-slate-800 border border-slate-700 p-6 rounded-xl items-center max-w-xs w-full">
-          <Users size={32} color="#94a3b8" />
-          <Text className="text-white font-bold text-base mt-3">No activity yet</Text>
-          <Text className="text-slate-400 text-xs text-center mt-1">
-            {loading ? "Loading community sessions..." : "No community sessions available right now."}
-          </Text>
+      <SafeAreaView
+        edges={['top']}
+        style={{ flex: 1, backgroundColor: 'transparent' }}
+      >
+        <View className="flex-1 justify-center items-center bg-slate-900 p-4">
+          <View className="bg-slate-800 border border-slate-700 p-6 rounded-xl items-center max-w-xs w-full">
+            <Users size={32} color="#94a3b8" />
+            <Text className="text-white font-bold text-base mt-3">No activity yet</Text>
+            <Text className="text-slate-400 text-xs text-center mt-1">
+              {loading ? "Loading community sessions..." : "No community sessions available right now."}
+            </Text>
+          </View>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View className="flex-1 bg-slate-900 p-4">
-      <View className="flex-row items-center justify-between mb-4">
-        <View>
-          <Text className="text-2xl font-extrabold text-white leading-tight">
-            Community Feed
-          </Text>
-          <Text className="text-xs text-slate-400 font-medium mt-0.5">
-            Live rider activity & session tracking
-          </Text>
+    <SafeAreaView
+      edges={['top']}
+      style={{ flex: 1, backgroundColor: 'transparent' }}
+    >
+      <View className="flex-1 bg-slate-900 p-4">
+        <View className="flex-row items-center justify-between mb-4">
+          <View>
+            <Text className="text-2xl font-extrabold text-white leading-tight">
+              Community Feed
+            </Text>
+            <Text className="text-xs text-slate-400 font-medium mt-0.5">
+              Live rider activity & session tracking
+            </Text>
+          </View>
+          <View className="bg-blue-900/40 px-3 py-1.5 rounded-full border border-blue-700/60 flex-row items-center gap-1.5">
+            <Users size={12} color="#60a5fa" />
+            <Text className="text-xs text-blue-300 font-bold">
+              {communityData.length} Sessions
+            </Text>
+          </View>
         </View>
-        <View className="bg-blue-900/40 px-3 py-1.5 rounded-full border border-blue-700/60 flex-row items-center gap-1.5">
-          <Users size={12} color="#60a5fa" />
-          <Text className="text-xs text-blue-300 font-bold">
-            {communityData.length} Sessions
-          </Text>
-        </View>
-      </View>
 
-      {/* SESSION LIST */}
-      <FlatList
-        data={communityData}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <SkiSessionCard session={item} />}
-        contentContainerStyle={{ paddingBottom: 24 }}
-        showsVerticalScrollIndicator={false}
-      />
-    </View>
+        {/* SESSION LIST */}
+        <FlatList
+          data={communityData}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <SkiSessionCard session={item} />}
+          contentContainerStyle={{ paddingBottom: 24 }}
+          showsVerticalScrollIndicator={false}
+        />
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -161,7 +172,6 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
 
   return (
     <View className="bg-slate-800 border border-slate-700 p-4 rounded-xl mb-4 shadow-lg">
-
       <View className="flex-row items-center justify-between mb-3">
         <View className="flex-row items-center gap-3 flex-1">
           <View className="size-9 rounded-full bg-slate-700 items-center justify-center border-2 border-blue-500 overflow-hidden">
@@ -222,7 +232,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
         <View className="w-px h-7 bg-slate-700/80" />
 
         <View className="items-center flex-1">
-          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vertical Drop</Text>
+          <Text className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vertical Drop</Text>
           <Text className="text-sm font-extrabold text-white mt-0.5">
             {Math.round(session.vertical_drop)} <Text className="text-[10px] font-normal text-slate-400">m</Text>
           </Text>

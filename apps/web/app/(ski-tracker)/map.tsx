@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { initDB } from 'tracking/database';
 
@@ -9,9 +9,9 @@ import '../../styles/global.css';
 
 let MapComponent: React.ComponentType<any>;
 if (Platform.OS === 'web') {
-    MapComponent = require('../../components/map/map.web').default;
+  MapComponent = require('../../components/map/map.web').default;
 } else {
-    MapComponent = require('../../components/map/map.native').default;
+  MapComponent = require('../../components/map/map.native').default;
 }
 
 export default function MapView(props: any) {
@@ -26,8 +26,11 @@ export default function MapView(props: any) {
   }, []);
 
   return (
-    <SafeAreaProvider>
-        <MapComponent {...props} />
-    </SafeAreaProvider>
+    <SafeAreaView
+      edges={['top']}
+      style={{ flex: 1, backgroundColor: 'transparent' }}
+    >
+      <MapComponent {...props} />
+    </SafeAreaView>
   );
 }
