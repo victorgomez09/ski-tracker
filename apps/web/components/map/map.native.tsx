@@ -9,7 +9,8 @@ import {
     Camera as NativeCamera,
     GeoJSONSource as NativeGeoJSONSource,
     Layer as NativeLayer,
-    Marker as NativeMarker
+    Marker as NativeMarker,
+    LngLatBounds
 } from '@maplibre/maplibre-react-native';
 
 import { API_BASE_URL } from 'constants/constants';
@@ -18,7 +19,11 @@ import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
 import { MapDetailPanel } from './map-detail-panel';
 import { ResortDetailPanel } from './resort-detail-panel';
 import { LegendDetailPanel } from './legend-detail-panel';
-import { CircleHelp, MapPin, X, ArrowLeft } from 'lucide-react-native';
+import { CircleHelp, MapPin, X, ArrowLeft, Download } from 'lucide-react-native';
+import { useOfflineMaps } from 'hooks/use-offline.hook';
+import { OfflineMapsModal } from './offline-maps-panel';
+
+const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
@@ -35,6 +40,14 @@ export default function InteractiveSkiMapNative() {
     const [selectedRun, setSelectedRun] = useState<any | null>(null);
     const [hoveredRun, setHoveredRun] = useState<any | null>(null);
     const [sessionDetails, setSessionDetails] = useState<any | null>(null);
+    const [showOfflineModal, setShowOfflineModal] = useState(false);
+    const {
+        packs,
+        downloadingPack,
+        downloadingProgress,
+        downloadRegion,
+        deletePack,
+    } = useOfflineMaps(mapStyleUrl);
 
     const detectedRuns = useMemo(() => {
         if (trackPoints.length === 0) return [];
@@ -671,6 +684,18 @@ export default function InteractiveSkiMapNative() {
         );
     };
 
+    const handleDownloadCurrentView = (customName: string) => {
+        const delta = 0.08;
+        const bounds: LngLatBounds = [
+            viewState.longitude - delta,
+            viewState.latitude - delta,
+            viewState.longitude + delta,
+            viewState.latitude + delta,
+        ];
+
+        downloadRegion(customName, bounds, 10, 16);
+    };
+
     return (
         <View className="flex-1 w-full h-full bg-slate-950 relative">
             <TouchableOpacity
@@ -680,8 +705,30 @@ export default function InteractiveSkiMapNative() {
                 <CircleHelp size={18} color="#60a5fa" />
             </TouchableOpacity>
 
+            <TouchableOpacity
+                onPress={() => setShowOfflineModal(true)}
+                className="bg-slate-800 border border-slate-700 p-3 rounded-md shadow-xl flex-row items-center gap-2"
+            >
+                <Download size={18} color="#60a5fa" />
+                {packs.length > 0 && (
+                    <View className="w-2 h-2 rounded-full bg-emerald-500" />
+                )}
+            </TouchableOpacity>
+
             {selectedLegend && (
                 <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
+            )}
+
+            {showOfflineModal && (
+                <OfflineMapsModal
+                    onClose={() => setShowOfflineModal(false)}
+                    packs={packs}
+                    downloadingPack={downloadingPack}
+                    downloadProgress={downloadingProgress}
+                    onDownloadCurrentArea={handleDownloadCurrentView}
+                    onDeletePack={deletePack}
+                    currentResortName={selectedResort?.Name}
+                />
             )}
 
             {selectedFeature && (

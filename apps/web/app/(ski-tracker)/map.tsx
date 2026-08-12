@@ -15,7 +15,6 @@ if (Platform.OS === 'web') {
     MapComponent = require('../../components/map/map.native').default;
 }
 
-
 export default function MapView(props: any) {
   useEffect(() => {
     const initDatabase = async () => {

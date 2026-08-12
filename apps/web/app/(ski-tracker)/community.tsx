@@ -1,21 +1,19 @@
 import { useEffect, useState } from "react";
 import {
-  View,
-  Text,
   FlatList,
-  TouchableOpacity,
-  StyleSheet,
   LayoutAnimation,
   Platform,
+  Text,
+  TouchableOpacity,
   UIManager,
-  ScrollView
+  View
 } from 'react-native';
 
 import { API_BASE_URL } from "constants/constants";
-import api from "interceptor/api";
-import { Session } from "models/session.model";
-import { Activity, Calendar, ChevronDown, ChevronUp, MapIcon, Ruler, TrendingDown, Users, Zap } from "lucide-react-native";
 import { useRouter } from "expo-router";
+import api from "interceptor/api";
+import { Activity, Calendar, ChevronDown, ChevronUp, MapIcon, Ruler, TrendingDown, Users, Zap } from "lucide-react-native";
+import { Session } from "models/session.model";
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);

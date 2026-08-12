@@ -473,7 +473,7 @@ export default function InteractiveSkiMapNative() {
                                 </View>
 
                                 <TouchableOpacity
-                                    className="bg-blue-600 p-2 rounded-md items-center flex-row justify-center gap-2"
+                                    className="bg-slate-600 p-2 rounded-md items-center flex-row justify-center gap-2"
                                     onPress={handleUploadTrack}
                                     disabled={isLoading}
                                 >

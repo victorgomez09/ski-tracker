@@ -1,6 +1,5 @@
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import {
     Search,
     MapPin,
@@ -113,20 +112,12 @@ export default function ResortsView() {
         setIsLoadingSessions(true);
 
         try {
-            const sessionsRequest = await axios.get(`${API_BASE_URL}/ski-sessions/by-resort`, {
+            const sessionsRequest = await api.get(`${API_BASE_URL}/ski-sessions/by-resort`, {
                 params: { resort_id: resort.ID },
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
             });
 
-            const weatherRequest = await axios.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
+            const weatherRequest = await api.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
                 params: { lat: resort.Latitude, lon: resort.Longitude },
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
             });
 
             if (sessionsRequest.status === 200 && weatherRequest.status === 200) {
@@ -222,10 +213,10 @@ export default function ResortsView() {
 
                 {/* Pistes Breakdown */}
                 {selectedResortSummary && (
-                    <View className="mb-4">
+                    <View className="mb-4 w-full">
                         <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Pistes Breakdown</Text>
-                        <View className="flex-row flex-wrap gap-2">
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
+                        <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
                                 <View className="w-3 h-3 rounded-full bg-[#00a859]" />
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Novice</Text>
@@ -233,7 +224,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
                                 <View className="w-3 h-3 rounded-full bg-[#0072bc]" />
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Easy</Text>
@@ -241,7 +232,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
                                 <View className="w-3 h-3 rounded-full bg-[#f0141e]" />
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Intermediate</Text>
@@ -249,7 +240,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
                                 <View className="w-3 h-3 rounded-full bg-black border border-slate-600" />
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Expert</Text>
@@ -264,8 +255,8 @@ export default function ResortsView() {
                 {selectedResortSummary && (
                     <View className="mb-4">
                         <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Lifts Breakdown</Text>
-                        <View className="flex-row flex-wrap gap-2">
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
+                        <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
                                 <Text className="text-base">🚡</Text>
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Chair Lifts</Text>
@@ -273,7 +264,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
                                 <Text className="text-base">⛷️</Text>
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Drag Lifts</Text>
@@ -281,7 +272,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
                                 <Text className="text-base">🛹</Text>
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Magic Carpets</Text>
@@ -289,7 +280,7 @@ export default function ResortsView() {
                                 </View>
                             </View>
 
-                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 w-[48%] mb-2">
+                            <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
                                 <Text className="text-base">🪢</Text>
                                 <View>
                                     <Text className="text-[10px] text-slate-400 uppercase font-semibold">Rope Tows</Text>
@@ -395,7 +386,10 @@ export default function ResortsView() {
                 {/* Footer Action Bar */}
                 <TouchableOpacity
                     className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-xl"
-                    onPress={() => router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`)}
+                    onPress={() => {
+                        router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`);
+                        setSelectedResortWithCache(null);
+                    }}
                 >
                     <MapIcon size={18} color="#ffffff" />
                     <Text className="text-white font-bold text-base">View on Map</Text>
