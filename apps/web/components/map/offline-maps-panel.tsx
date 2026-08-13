@@ -66,7 +66,7 @@ export const OfflineMapsModal = ({
 
                 {/* Pestaña: Descargar Zona Actual */}
                 {activeTab === 'download' && (
-                    <View className="space-y-3">
+                    <View className="flex flex-col gap-2">
                         <Text className="text-xs text-slate-300">
                             Descarga las losetas vectoriales y las pistas de la zona visible para utilizarlas sin cobertura GPS/Red.
                         </Text>
@@ -110,11 +110,11 @@ export const OfflineMapsModal = ({
 
                 {/* Pestaña: Gestionar Zonas Guardadas */}
                 {activeTab === 'manage' && (
-                    <ScrollView className="max-h-60 space-y-2">
+                    <ScrollView className="max-h-60 flex flex-col gap-2 mt-2">
                         {packs.length === 0 ? (
                             <View className="py-6 items-center justify-center">
                                 <HardDrive size={32} color="#475569" />
-                                <Text className="text-xs text-slate-400 mt-2">No tienes zonas descargadas.</Text>
+                                <Text className="text-xs text-slate-400 mt-2">No downloaded zones.</Text>
                             </View>
                         ) : (
                             packs.map((pack) => (

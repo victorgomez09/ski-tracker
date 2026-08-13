@@ -243,36 +243,6 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
-    // const pisteLabelStyle: any = {
-    //     id: 'piste-labels',
-    //     sourceID: 'pistes-source',
-    //     type: 'symbol',
-    //     layout: {
-    //         'symbol-placement': 'line-center',
-    //         'symbol-spacing': 220,
-    //         'text-field': ['get', 'name'],
-    //         'text-size': 10.5,
-    //         'text-offset': [0, 0.6],
-    //         'text-allow-overlap': true,
-    //         'text-ignore-placement': true,
-    //         'text-optional': true,
-    //         'text-rotation-alignment': 'map',
-    //         'text-max-angle': 30,
-    //         'text-letter-spacing': 0.1,
-    //         'text-anchor': 'center'
-    //     },
-    //     paint: {
-    //         'text-color': [
-    //             'case',
-    //             ['==', ['get', 'id'], selectedFeature?.ID || ''], '#f8fafc',
-    //             '#ffffff'
-    //         ],
-    //         'text-halo-color': '#000000',
-    //         'text-halo-width': 1.5,
-    //         'text-opacity': 0.95
-    //     }
-    // };
-
     const pisteLabelStyle: any = {
         id: 'piste-labels',
         sourceID: 'pistes-source',
@@ -493,48 +463,6 @@ export default function InteractiveSkiMapNative() {
                 }];
             })
         );
-        return { type: 'FeatureCollection' as const, features: features as any };
-    }, [resorts]);
-
-    const pisteDirectionGeoJSON = useMemo(() => {
-        const features = resorts.flatMap(resort =>
-            (resort.pistes || []).flatMap(piste => {
-                const geometry = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
-                if (!geometry) return [];
-
-                const coordinates = geometry.type === 'MultiLineString'
-                    ? geometry.coordinates.flatMap((segment: any[]) => segment)
-                    : geometry.coordinates;
-
-                if (!Array.isArray(coordinates) || coordinates.length < 2) return [];
-
-                const start = coordinates[0];
-                const end = coordinates[coordinates.length - 1];
-                if (!Array.isArray(start) || !Array.isArray(end)) return [];
-
-                const dx = end[0] - start[0];
-                const dy = end[1] - start[1];
-                const rotation = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
-                const midpoint: [number, number] = [
-                    (start[0] + end[0]) / 2,
-                    (start[1] + end[1]) / 2,
-                ];
-
-                return [{
-                    type: 'Feature' as const,
-                    properties: {
-                        id: piste.ID,
-                        resortId: resort.ID,
-                        rotation,
-                    },
-                    geometry: {
-                        type: 'Point' as const,
-                        coordinates: midpoint,
-                    },
-                }];
-            })
-        );
-
         return { type: 'FeatureCollection' as const, features: features as any };
     }, [resorts]);
 
