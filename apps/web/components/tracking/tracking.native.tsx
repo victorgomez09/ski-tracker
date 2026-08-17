@@ -20,6 +20,7 @@ import { useAuth } from 'context/auth.context';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
 import { clearTrack, getAllPhotos, getAllPoints, initDB } from 'tracking/database';
 import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
+import { ResortDetailPanel } from 'components/map/resort-detail-panel';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
@@ -444,7 +445,6 @@ export default function InteractiveSkiMapNative() {
         }
     }, [resort]);
 
-
     return (
         <View className="w-full h-full relative flex-1 bg-slate-950">
             {/* {takePictureMode && (
@@ -459,9 +459,18 @@ export default function InteractiveSkiMapNative() {
                         <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
                     )}
 
+                    <View className="grid grid-cols-2 gap-2 absolute bottom-4 left-4 z-50">
+                        <TouchableOpacity
+                            className={`absolute bottom-4 left-16 z-50 ${isTracking ? 'bg-red-800' : 'bg-slate-800'} border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2`}
+                            onPress={handleToggleTracking}
+                        >
+                            {isTracking ? <Square size={20} color="#ffffff" /> : <Play size={20} color="#ffffff" />}
+                        </TouchableOpacity>
+                    </View>
+
                     <View className="absolute bottom-10 right-4 z-40 flex flex-col items-end gap-3">
                         {!isTracking && hasTrackData && (
-                            <View className="bg-slate-900/95 border border-slate-800 p-4 rounded-md shadow-xl w-72 flex flex-col gap-3">
+                            <View className="bg-slate-900/95 border border-slate-800 p-4 rounded-md shadow-md w-72 flex flex-col gap-3">
                                 <View className="flex flex-col gap-0.5">
                                     <View className="flex-row items-center gap-1.5">
                                         <Activity size={16} color="#3b82f6" />
@@ -485,21 +494,21 @@ export default function InteractiveSkiMapNative() {
                             </View>
                         )}
 
-                        <View className="flex-row gap-2">
+                        {/* <View className="flex-row gap-2">
                             <TouchableOpacity
-                                className={`absolute bottom-4 left-16 z-50 ${isTracking ? 'bg-red-800' : 'bg-slate-800'} border border-slate-700 p-3 rounded-md shadow-xl flex-row items-center gap-2`}
+                                className={`absolute bottom-4 left-16 z-50 ${isTracking ? 'bg-red-800' : 'bg-slate-800'} border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2`}
                                 onPress={handleToggleTracking}
                             >
                                 {isTracking ? <Square size={20} color="#ffffff" /> : <Play size={20} color="#ffffff" />}
                             </TouchableOpacity>
 
-                            {/* <TouchableOpacity
+                            <TouchableOpacity
                                 className="w-12 h-12 rounded-full items-center justify-center shadow-lg bg-blue-600"
                                 onPress={() => setTakePictureMode(true)}
                             >
                                 <CameraIcon size={20} color="#ffffff" />
-                            </TouchableOpacity> */}
-                        </View>
+                            </TouchableOpacity>
+                        </View> */}
                     </View>
 
                     <NativeMap

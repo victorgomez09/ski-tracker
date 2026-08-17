@@ -836,7 +836,7 @@ export default function InteractiveSkiMap() {
                         <div className="space-y-3">
                             <button
                                 type="button"
-                                className="bg-blue-600 p-2 rounded-md flex-row items-center justify-center shadow-xl cursor-pointer text-sm"
+                                className="bg-blue-600 p-2 rounded-md flex-row items-center justify-center shadow-md cursor-pointer text-sm"
                                 onClick={() => setSelectedRun(null)}
                             >
                                 ← Back to list

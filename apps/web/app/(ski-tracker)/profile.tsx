@@ -3,12 +3,13 @@ import { Camera, Check, Pencil, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { ActivityIndicator, Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
+import RNPickerSelect from 'react-native-picker-select';
 
 import { API_BASE_URL } from "constants/constants";
 import { useAuth } from "context/auth.context";
 import api from "interceptor/api";
 import type { User } from "models/user.model";
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 export type ProfileFormValues = {
     first_name: string;
@@ -16,6 +17,7 @@ export type ProfileFormValues = {
     display_name: string;
     email: string;
     avatar_url: string | null;
+    time_tracking: number;
 };
 
 export default function ProfileView() {
@@ -38,6 +40,7 @@ export default function ProfileView() {
             display_name: '',
             email: '',
             avatar_url: null,
+            time_tracking: 5000,
         },
     });
 
@@ -52,6 +55,7 @@ export default function ProfileView() {
                 display_name: user.display_name || '',
                 email: user.email || '',
                 avatar_url: user.avatar_url || null,
+                time_tracking: user.time_tracking || 5000,
             });
         }
     }, [user, reset]);
@@ -167,7 +171,7 @@ export default function ProfileView() {
                 className="bg-slate-900 p-6"
             >
                 <View className="w-full max-w-md space-y-6 gap-4">
-                    <View className="bg-slate-800 rounded-md p-6 shadow-xl border border-slate-700 items-center relative">
+                    <View className="bg-slate-800 rounded-md p-6 shadow-md border border-slate-700 items-center relative">
                         <TouchableOpacity
                             onPress={() => (isEditing ? handleCancel() : setIsEditing(true))}
                             className="absolute top-4 right-4 bg-slate-700 p-2 rounded-full border border-slate-600"
@@ -305,6 +309,36 @@ export default function ProfileView() {
                                     )}
                                 </View>
 
+                                <View>
+                                    <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">Time Tracking</Text>
+                                    <Controller
+                                        control={control}
+                                        name="time_tracking"
+                                        rules={{
+                                            required: 'Time tracking is required',
+                                            pattern: {
+                                                value: /^[0-9]+$/,
+                                                message: 'Time tracking must be a number',
+                                            },
+                                        }}
+                                        render={({ field: { onChange, value } }) => (
+                                            <RNPickerSelect
+                                            onValueChange={onChange}
+                                            items={[
+                                                { label: 'Each 5 seconds', value: 5000 },
+                                                { label: 'Each 3 seconds', value: 3000 },
+                                                { label: 'Each 1 second', value: 1000 },
+                                            ]}
+                                            value={value}
+                                        />
+                                        )}
+                                    />
+                                    <Text className="text-slate-400 text-[10px] mt-1">Select how often the app should track your location. Less time is more precise, but consumes more battery.</Text>
+                                    {errors.time_tracking && (
+                                        <Text className="text-rose-400 text-[10px] mt-1">{errors.time_tracking.message}</Text>
+                                    )}
+                                </View>
+
                                 <View className="flex-row gap-2 mt-4 pt-2 border-t border-slate-700">
                                     <TouchableOpacity
                                         onPress={handleCancel}
@@ -333,7 +367,7 @@ export default function ProfileView() {
                         )}
                     </View>
 
-                    <View className="bg-slate-800 rounded-md p-6 shadow-xl border border-slate-700">
+                    <View className="bg-slate-800 rounded-md p-6 shadow-md border border-slate-700">
                         <Text className="text-base font-semibold text-white mb-4">Snow modality</Text>
                         <View className="flex-row gap-3">
                             <TouchableOpacity
@@ -359,7 +393,7 @@ export default function ProfileView() {
                     </View>
 
                     <TouchableOpacity
-                        className="bg-red-600 rounded-md p-4 shadow-xl items-center justify-center"
+                        className="bg-red-600 rounded-md p-4 shadow-md items-center justify-center"
                         onPress={handleLogout}
                     >
                         <Text className="text-white font-bold text-base">Logout</Text>

@@ -3,11 +3,13 @@ import {
     Activity,
     ChevronRight,
     Compass,
+    Download,
     ExternalLink,
     Globe,
     Lock,
     Map as MapIcon,
     MapPin,
+    Navigation,
     Search,
     Unlock,
     X
@@ -22,6 +24,9 @@ import api from "interceptor/api";
 import { Resort } from "models/ski-resort.model";
 import { WeatherForecast } from "models/weather.model";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { OfflineMapsModal } from "components/map/offline-maps-panel";
+import { useOfflineMaps } from "hooks/use-offline.hook";
+import { LngLatBounds } from "@maplibre/maplibre-react-native";
 
 // Cache state to survive tab navigation / component remounting
 let cachedResorts: Resort[] = [];
@@ -30,9 +35,20 @@ let cachedSelectedResort: Resort | null = null;
 let cachedSessions: any[] = [];
 let lastFetchedSearchTerm = cachedSearchTerm;
 
+const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
+
 export default function ResortsView() {
     const router = useRouter();
+    const { token } = useAuth();
+    const {
+        packs,
+        downloadingPack,
+        downloadingProgress,
+        downloadRegion,
+        deletePack,
+    } = useOfflineMaps(mapStyleUrl);
 
+    const [showOfflineModal, setShowOfflineModal] = useState(false);
     const [resorts, setResorts] = useState<Resort[]>(cachedResorts);
     const [searchTerm, setSearchTerm] = useState(cachedSearchTerm);
     const [selectedResort, setSelectedResort] = useState<Resort | null>(cachedSelectedResort);
@@ -40,7 +56,6 @@ export default function ResortsView() {
     const [isLoadingResorts, setIsLoadingResorts] = useState(false);
     const [isLoadingSessions, setIsLoadingSessions] = useState(false);
     const [weatherData, setWeatherData] = useState<WeatherForecast | null>(null);
-    const { token } = useAuth();
 
     // Cache sync helpers
     const setResortsWithCache = (val: Resort[]) => {
@@ -136,6 +151,20 @@ export default function ResortsView() {
         setSelectedResortWithCache(null);
     };
 
+    const handleDownloadCurrentView = (customName: string) => {
+        if (!selectedResort) return null;
+
+        const delta = 0.08;
+        const bounds: LngLatBounds = [
+            selectedResort.Longitude - delta,
+            selectedResort.Latitude - delta,
+            selectedResort.Longitude + delta,
+            selectedResort.Latitude + delta,
+        ];
+
+        downloadRegion(customName, bounds, 10, 16);
+    };
+
     const selectedResortSummary = useMemo(() => {
         if (!selectedResort) return null;
 
@@ -174,7 +203,7 @@ export default function ResortsView() {
             >
                 <ScrollView className="flex-1 bg-slate-900 p-4 space-y-6">
                     {/* Header Banner */}
-                    <View className="bg-slate-800 rounded-md p-5 border border-slate-700 shadow-xl flex-row justify-between items-start mb-4">
+                    <View className="bg-slate-800 rounded-md p-5 border border-slate-700 shadow-md flex-row justify-between items-start mb-4">
                         <View className="flex-1">
                             <View className="bg-blue-900/60 px-3 py-1 rounded-full self-start flex-row items-center gap-1 border border-blue-700">
                                 <Globe size={12} color="#60a5fa" />
@@ -396,16 +425,35 @@ export default function ResortsView() {
                     </View>
 
                     {/* Footer Action Bar */}
-                    <TouchableOpacity
-                        className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-xl"
-                        onPress={() => {
-                            router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`);
-                            setSelectedResortWithCache(null);
-                        }}
-                    >
-                        <MapIcon size={18} color="#ffffff" />
-                        <Text className="text-white font-bold text-base">View on Map</Text>
-                    </TouchableOpacity>
+                    <View className="grid grid-cols-3 gap-2 w-full">
+                        <TouchableOpacity
+                            className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
+                            onPress={() => {
+                                router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`);
+                                setSelectedResortWithCache(null);
+                            }}
+                        >
+                            <MapIcon size={18} color="#ffffff" />
+                            {/* <Text className="text-white font-bold text-base">View on Map</Text> */}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
+                            onPress={() => {
+                                router.push(`/tracking?lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=12`);
+                                setSelectedResortWithCache(null);
+                            }}
+                        >
+                            <Navigation size={18} color="#ffffff" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
+                            onPress={() => setShowOfflineModal(true)}
+                        >
+                            <Download size={18} color="#ffffff" />
+                        </TouchableOpacity>
+                    </View>
                 </ScrollView>
             </SafeAreaView>
         );
@@ -416,6 +464,18 @@ export default function ResortsView() {
             edges={['top']}
             style={{ flex: 1, backgroundColor: 'transparent' }}
         >
+            {showOfflineModal && (
+                <OfflineMapsModal
+                    onClose={() => setShowOfflineModal(false)}
+                    packs={packs}
+                    downloadingPack={downloadingPack}
+                    downloadProgress={downloadingProgress}
+                    onDownloadCurrentArea={handleDownloadCurrentView}
+                    onDeletePack={deletePack}
+                    currentResortName={selectedResort?.Name}
+                />
+            )}
+
             <View className="flex-1 bg-slate-950 p-4 pt-6">
                 {/* Search Header Container */}
                 <View className="mb-4">

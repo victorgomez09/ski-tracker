@@ -17,4 +17,5 @@ type User struct {
 	FirstName    string    `bun:"first_name,default:''" json:"first_name"`
 	LastName     string    `bun:"last_name,default:''" json:"last_name"`
 	ActivityType string    `bun:"activity_type" json:"activity_type"`
+	TimeTracking int64     `bun:"time_tracking,default:5000" json:"time_tracking"`
 }

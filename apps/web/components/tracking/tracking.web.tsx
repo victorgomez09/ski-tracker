@@ -498,7 +498,7 @@ export default function InteractiveSkiMapWeb() {
 
                     <div className="absolute bottom-10 right-4 z-1000 flex flex-col items-end gap-3">
                         {!isTracking && hasTrackData && (
-                            <div className="bg-base-100/95 backdrop-blur-md p-4 rounded-md shadow-xl border border-base-200 w-72 flex flex-col gap-3 transition-all duration-300">
+                            <div className="bg-base-100/95 backdrop-blur-md p-4 rounded-md shadow-md border border-base-200 w-72 flex flex-col gap-3 transition-all duration-300">
                                 <div className="flex flex-col gap-0.5">
                                     <h4 className="font-bold text-sm text-base-content flex items-center gap-1.5">
                                         <Activity className="w-4 h-4 text-primary animate-pulse" />

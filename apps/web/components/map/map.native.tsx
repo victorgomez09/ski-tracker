@@ -664,14 +664,14 @@ export default function InteractiveSkiMapNative() {
         <View className="flex-1 w-full h-full bg-slate-950 relative">
             <TouchableOpacity
                 onPress={() => setSelectedLegend(true)}
-                className="absolute bottom-4 left-4 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-xl flex-row items-center gap-2"
+                className="absolute bottom-4 left-4 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
             >
                 <CircleHelp size={18} color="#60a5fa" />
             </TouchableOpacity>
 
             <TouchableOpacity
                 onPress={() => setShowOfflineModal(true)}
-                className="absolute bottom-4 left-16 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-xl flex-row items-center gap-2"
+                className="absolute bottom-4 left-16 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
             >
                 <Download size={18} color="#60a5fa" />
                 {packs.length > 0 && (

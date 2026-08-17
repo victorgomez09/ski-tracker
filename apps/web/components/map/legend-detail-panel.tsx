@@ -19,7 +19,7 @@ export const LegendDetailPanel: React.FC<LegendDetailPanelProps> = ({ onClose })
 
     return (
         <View className="absolute inset-0 flex items-center justify-center bg-black/60 z-50 p-3">
-            <View className={`bg-slate-900 border border-slate-700 shadow-xl p-4 rounded-xl ${isWeb ? 'w-11/12 h-11/12' : 'w-full h-full'} flex`}>
+            <View className={`bg-slate-900 border border-slate-700 shadow-md p-4 rounded-xl ${isWeb ? 'w-11/12 h-11/12' : 'w-full h-full'} flex`}>
                 <View className="flex-row justify-between items-center mb-3">
                     <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">
                         Legend

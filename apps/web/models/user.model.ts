@@ -6,4 +6,5 @@ export interface User {
     last_name: string;
     activity_type: string;
     avatar_url: string | null;
+    time_tracking: number;
 }
