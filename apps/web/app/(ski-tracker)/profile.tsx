@@ -325,14 +325,43 @@ export default function ProfileView() {
                                         }}
                                         render={({ field: { onChange, value } }) => (
                                             <RNPickerSelect
-                                            onValueChange={onChange}
-                                            items={[
-                                                { label: t('each_5_seconds'), value: 5000 },
-                                                { label: t('each_3_seconds'), value: 3000 },
-                                                { label: t('each_1_second'), value: 1000 },
-                                            ]}
-                                            value={value}
-                                        />
+                                                onValueChange={onChange}
+                                                items={[
+                                                    { label: t('each_5_seconds'), value: 5000 },
+                                                    { label: t('each_3_seconds'), value: 3000 },
+                                                    { label: t('each_1_second'), value: 1000 },
+                                                ]}
+                                                value={value}
+                                                style={{
+                                                    inputIOS: {
+                                                        backgroundColor: '#314158',
+                                                        borderColor: errors.time_tracking ? '#f87171' : '#475569',
+                                                        color: '#ffffff',
+                                                        paddingVertical: 10,
+                                                        paddingHorizontal: 10,
+                                                        borderRadius: 6,
+                                                        fontSize: 14,
+                                                    },
+                                                    inputAndroid: {
+                                                        backgroundColor: '#314158',
+                                                        borderColor: errors.time_tracking ? '#f87171' : '#475569',
+                                                        color: '#ffffff',
+                                                        paddingVertical: 10,
+                                                        paddingHorizontal: 10,
+                                                        borderRadius: 6,
+                                                        fontSize: 14,
+                                                    },
+                                                    inputWeb: {
+                                                        backgroundColor: '#314158',
+                                                        borderColor: errors.time_tracking ? '#f87171' : '#475569',
+                                                        color: '#ffffff',
+                                                        paddingVertical: 10,
+                                                        paddingHorizontal: 10,
+                                                        borderRadius: 6,
+                                                        fontSize: 14,
+                                                    },
+                                                }}
+                                            />
                                         )}
                                     />
                                     <Text className="text-slate-400 text-[10px] mt-1">{t('time_tracking_desc')}</Text>

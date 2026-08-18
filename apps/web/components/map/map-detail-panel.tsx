@@ -347,6 +347,7 @@ export const ElevationChart: React.FC<{
 
 export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose }) => {
     const isWeb = Platform.OS === 'web';
+    const { t } = useTranslation();
     const tags = data?.Tags || {};
     const elevationProfile = tags.elevationProfile || {};
     const heights = elevationProfile.heights || [];

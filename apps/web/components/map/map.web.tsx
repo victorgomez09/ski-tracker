@@ -1,11 +1,12 @@
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
 import { Area, AreaChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CircleQuestionMark } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
+import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
@@ -15,8 +16,6 @@ import { ResortDetailPanel } from './resort-detail-panel';
 import { AltitudeTooltip } from './altitude-tooltip';
 import { SpeedTooltip } from './speed-tooltip';
 import { LegendDetailPanel } from './legend-detail-panel';
-import { CircleQuestionMark } from 'lucide-react';
-import { View } from 'react-native';
 import api from 'interceptor/api';
 
 export default function InteractiveSkiMap() {

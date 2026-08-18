@@ -1,32 +1,30 @@
 import {
+    LngLatBounds,
     Camera as NativeCamera,
     GeoJSONSource as NativeGeoJSONSource,
     Layer as NativeLayer,
-    Map as NativeMap,
-    LngLatBounds
+    Map as NativeMap
 } from '@maplibre/maplibre-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
-import { Activity, CameraIcon, Play, Square, Upload, Download } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { Activity, Download, Play, Square, Upload } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Text, TouchableOpacity, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
-import { Camera } from 'components/tracking/camera';
+import { OfflineMapsModal } from 'components/map/offline-maps-panel';
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
+import { useOfflineMaps } from 'hooks/use-offline.hook';
+import api from 'interceptor/api';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
+import { User } from 'models/user.model';
+import { useTranslation } from 'react-i18next';
 import { clearTrack, getAllPhotos, getAllPoints, initDB } from 'tracking/database';
 import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
-import { ResortDetailPanel } from 'components/map/resort-detail-panel';
-import api from 'interceptor/api';
-import { User } from 'models/user.model';
-import { useOfflineMaps } from 'hooks/use-offline.hook';
-import { OfflineMapsModal } from 'components/map/offline-maps-panel';
-import { useTranslation } from 'react-i18next';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 

@@ -129,6 +129,7 @@ func (s *UserService) Update(ctx context.Context, user *models.User) error {
 	userToUpdate.LastName = user.LastName
 	userToUpdate.ActivityType = user.ActivityType
 	userToUpdate.AvatarURL = user.AvatarURL
+	userToUpdate.TimeTracking = user.TimeTracking
 
 	err = s.store.User().Update(ctx, userToUpdate)
 	if err != nil {
