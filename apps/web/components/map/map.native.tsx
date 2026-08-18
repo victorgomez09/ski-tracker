@@ -22,10 +22,12 @@ import { CircleHelp, MapPin, X, ArrowLeft, Download } from 'lucide-react-native'
 import { useOfflineMaps } from 'hooks/use-offline.hook';
 import { OfflineMapsModal } from './offline-maps-panel';
 import api from 'interceptor/api';
+import { useTranslation } from 'react-i18next';
 
 const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
 export default function InteractiveSkiMapNative() {
+    const { t } = useTranslation();
     const searchParams = useLocalSearchParams();
     const isInternalMoveRef = useRef(false);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
@@ -715,9 +717,9 @@ export default function InteractiveSkiMapNative() {
                 <View className="absolute top-4 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 md:w-80 max-h-[75vh] shadow-2xl space-y-3">
                     <View className="flex-row justify-between items-center pb-2 border-b border-slate-800">
                         <View>
-                            <Text className="font-extrabold text-sm text-white">Session Analyser</Text>
+                            <Text className="font-extrabold text-sm text-white">{t('session_analyser')}</Text>
                             <Text className="text-[10px] text-slate-400">
-                                {sessionDetails ? `Date: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
+                                {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
                             </Text>
                         </View>
                         <TouchableOpacity
@@ -741,24 +743,24 @@ export default function InteractiveSkiMapNative() {
                                 onPress={() => setSelectedRun(null)}
                             >
                                 <ArrowLeft size={14} color="#60a5fa" />
-                                <Text className="text-xs font-bold text-blue-400">Back to runs</Text>
+                                <Text className="text-xs font-bold text-blue-400">{t('back_to_runs')}</Text>
                             </TouchableOpacity>
 
                             <View className="bg-slate-800/80 p-3 rounded-md border border-slate-700">
-                                <Text className="font-bold text-xs text-white">Run #{selectedRun.index} Details</Text>
+                                <Text className="font-bold text-xs text-white">{t('run_details', { index: selectedRun.index })}</Text>
                                 <View className="flex-row justify-between mt-2">
-                                    <Text className="text-xs text-slate-300">Drop: {selectedRun.verticalDrop.toFixed(0)}m</Text>
-                                    <Text className="text-xs text-slate-300">Max Speed: {selectedRun.maxSpeed.toFixed(1)} km/h</Text>
+                                    <Text className="text-xs text-slate-300">{t('drop')}: {selectedRun.verticalDrop.toFixed(0)}m</Text>
+                                    <Text className="text-xs text-slate-300">{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</Text>
                                 </View>
                             </View>
 
                             <View className="space-y-2 mt-3">
-                                <Text className="text-[10px] font-bold text-slate-400 uppercase">Elevation Profile (m)</Text>
+                                <Text className="text-[10px] font-bold text-slate-400 uppercase">{t('elevation_profile')}</Text>
                                 <View className="bg-slate-800/40 rounded-md p-2 border border-slate-700">
                                     {renderSvgChart(selectedRun.points.map((p: any) => p.altitude), '#3b82f6', '#3b82f6')}
                                 </View>
 
-                                <Text className="text-[10px] font-bold text-slate-400 uppercase mt-3">Speed Profile (km/h)</Text>
+                                <Text className="text-[10px] font-bold text-slate-400 uppercase mt-3">{t('speed_profile')}</Text>
                                 <View className="bg-slate-800/40 rounded-md p-2 border border-slate-700">
                                     {renderSvgChart(selectedRun.points.map((p: any) => p.speed * 3.6), '#ef4444', '#ef4444')}
                                 </View>
@@ -771,25 +773,25 @@ export default function InteractiveSkiMapNative() {
                                     className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
                                     onPress={() => setActiveTab('runs')}
                                 >
-                                    <Text className={`text-xs font-bold ${activeTab === 'runs' ? 'text-white' : 'text-slate-400'}`}>Runs</Text>
+                                    <Text className={`text-xs font-bold ${activeTab === 'runs' ? 'text-white' : 'text-slate-400'}`}>{t('runs')}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
                                     onPress={() => setActiveTab('elevation')}
                                 >
-                                    <Text className={`text-xs font-bold ${activeTab === 'elevation' ? 'text-white' : 'text-slate-400'}`}>Elevation</Text>
+                                    <Text className={`text-xs font-bold ${activeTab === 'elevation' ? 'text-white' : 'text-slate-400'}`}>{t('elevation')}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
                                     onPress={() => setActiveTab('speed')}
                                 >
-                                    <Text className={`text-xs font-bold ${activeTab === 'speed' ? 'text-white' : 'text-slate-400'}`}>Speed</Text>
+                                    <Text className={`text-xs font-bold ${activeTab === 'speed' ? 'text-white' : 'text-slate-400'}`}>{t('speed')}</Text>
                                 </TouchableOpacity>
                             </View>
 
                             {activeTab === 'runs' && (
                                 <ScrollView className="max-h-64 space-y-2">
-                                    <Text className="text-xs font-bold text-slate-400 mb-2">Descent Runs ({detectedRuns.length})</Text>
+                                    <Text className="text-xs font-bold text-slate-400 mb-2">{t('descent_runs')} ({detectedRuns.length})</Text>
                                     {detectedRuns.map((run) => (
                                         <TouchableOpacity
                                             key={run.id}
@@ -797,12 +799,12 @@ export default function InteractiveSkiMapNative() {
                                             onPress={() => setSelectedRun(run)}
                                         >
                                             <View>
-                                                <Text className="font-bold text-xs text-white">Run #{run.index}</Text>
+                                                <Text className="font-bold text-xs text-white">{t('run_title', { index: run.index })}</Text>
                                                 <Text className="text-[10px] text-slate-400 mt-0.5">
-                                                    Drop: {run.verticalDrop.toFixed(0)}m | Max: {run.maxSpeed.toFixed(1)} km/h
+                                                    {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
                                                 </Text>
                                             </View>
-                                            <Text className="text-xs font-bold text-blue-400">Charts →</Text>
+                                            <Text className="text-xs font-bold text-blue-400">{t('charts')} →</Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>

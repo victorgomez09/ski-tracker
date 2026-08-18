@@ -3,6 +3,7 @@ import { Controller, SubmitHandler, useForm } from "react-hook-form";
 import axios from "axios";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { API_BASE_URL } from "constants/constants";
 import { useAuth } from "context/auth.context";
@@ -18,6 +19,7 @@ interface LoginResponse {
 }
 
 export default function LoginView() {
+    const { t } = useTranslation();
     const router = useRouter();
     const { signIn } = useAuth();
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,24 +67,24 @@ export default function LoginView() {
                 }} 
                 className="bg-slate-900 p-6">
             <View className="bg-slate-800 rounded-md p-6 w-full max-w-sm border border-slate-700 shadow-2xl">
-                <Text className="text-2xl font-bold text-white mb-6 text-center">Login</Text>
+                <Text className="text-2xl font-bold text-white mb-6 text-center">{t('login')}</Text>
 
                 {/* EMAIL */}
-                <Text className="text-sm font-semibold text-slate-300 mb-1">Email</Text>
+                <Text className="text-sm font-semibold text-slate-300 mb-1">{t('email')}</Text>
                 <Controller
                     control={control}
                     name="email"
                     rules={{
-                        required: "Email is required",
+                        required: t('email_required') as string,
                         pattern: {
                             value: /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/,
-                            message: "Invalid email address"
+                            message: t('invalid_email') as string
                         }
                     }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
                             className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.email ? "border-red-500" : "border-slate-600"} mb-1`}
-                            placeholder="Email"
+                            placeholder={t('email') as string}
                             placeholderTextColor="#94a3b8"
                             keyboardType="email-address"
                             autoCapitalize="none"
@@ -97,15 +99,15 @@ export default function LoginView() {
                 )}
 
                 {/* PASSWORD */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">Password</Text>
+                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('password')}</Text>
                 <Controller
                     control={control}
                     name="password"
-                    rules={{ required: "Password is required" }}
+                    rules={{ required: t('password_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
                             className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.password ? "border-red-500" : "border-slate-600"} mb-1`}
-                            placeholder="Password"
+                            placeholder={t('password') as string}
                             placeholderTextColor="#94a3b8"
                             secureTextEntry
                             onBlur={onBlur}
@@ -127,13 +129,13 @@ export default function LoginView() {
                     {isSubmitting ? (
                         <ActivityIndicator color="#ffffff" />
                     ) : (
-                        <Text className="text-white font-bold text-base">Login</Text>
+                        <Text className="text-white font-bold text-base">{t('login')}</Text>
                     )}
                 </TouchableOpacity>
 
                 <TouchableOpacity onPress={() => router.push("/register")} className="mt-4">
                     <Text className="text-blue-400 text-xs text-center font-medium">
-                        If you do not have an account, register here!
+                        {t('no_account_register')}
                     </Text>
                 </TouchableOpacity>
             </View>

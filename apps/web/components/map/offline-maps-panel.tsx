@@ -2,6 +2,7 @@ import { OfflinePackInfo } from 'hooks/use-offline.hook';
 import { CheckCircle2, Download, HardDrive, Trash2, WifiOff, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 interface OfflineMapsModalProps {
     onClose: () => void;
@@ -22,7 +23,8 @@ export const OfflineMapsModal = ({
     onDeletePack,
     currentResortName,
 }: OfflineMapsModalProps) => {
-    const [zoneName, setZoneName] = useState(currentResortName || 'Zona Esquí');
+    const { t } = useTranslation();
+    const [zoneName, setZoneName] = useState(currentResortName || t('zona_esqui'));
     const [activeTab, setActiveTab] = useState<'download' | 'manage'>('download');
 
     const handleStartDownload = () => {
@@ -37,7 +39,7 @@ export const OfflineMapsModal = ({
                 <View className="flex-row justify-between items-center pb-2 border-b border-slate-800">
                     <View className="flex-row items-center gap-2">
                         <WifiOff size={18} color="#60a5fa" />
-                        <Text className="font-extrabold text-sm text-white">Mapas Offline</Text>
+                        <Text className="font-extrabold text-sm text-white">{t('mapas_offline')}</Text>
                     </View>
                     <TouchableOpacity onPress={onClose} className="p-1.5 bg-slate-800 rounded-full">
                         <X size={16} color="#94a3b8" />
@@ -51,7 +53,7 @@ export const OfflineMapsModal = ({
                         onPress={() => setActiveTab('download')}
                     >
                         <Text className={`text-xs font-bold ${activeTab === 'download' ? 'text-white' : 'text-slate-400'}`}>
-                            Descargar
+                            {t('descargar')}
                         </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -59,7 +61,7 @@ export const OfflineMapsModal = ({
                         onPress={() => setActiveTab('manage')}
                     >
                         <Text className={`text-xs font-bold ${activeTab === 'manage' ? 'text-white' : 'text-slate-400'}`}>
-                            Zonas ({packs.length})
+                            {t('zonas_count', { count: packs.length })}
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -68,15 +70,15 @@ export const OfflineMapsModal = ({
                 {activeTab === 'download' && (
                     <View className="flex flex-col gap-2">
                         <Text className="text-xs text-slate-300">
-                            Descarga las losetas vectoriales y las pistas de la zona visible para utilizarlas sin cobertura GPS/Red.
+                            {t('descargar_desc')}
                         </Text>
 
                         <View className="space-y-1">
-                            <Text className="text-[10px] font-bold text-slate-400 uppercase">Nombre de la Zona</Text>
+                            <Text className="text-[10px] font-bold text-slate-400 uppercase">{t('nombre_zona')}</Text>
                             <TextInput
                                 value={zoneName}
                                 onChangeText={setZoneName}
-                                placeholder="Ej: Baqueira Beret"
+                                placeholder={t('ej_baqueira') as string}
                                 placeholderTextColor="#64748b"
                                 className="bg-slate-800 border border-slate-700 text-white rounded-md px-3 py-2 text-xs font-semibold"
                             />
@@ -85,7 +87,7 @@ export const OfflineMapsModal = ({
                         {downloadingPack ? (
                             <View className="bg-slate-800/80 p-3 rounded-md border border-slate-700 space-y-2">
                                 <View className="flex-row justify-between items-center">
-                                    <Text className="text-xs font-bold text-blue-400">Descargando {downloadingPack}...</Text>
+                                    <Text className="text-xs font-bold text-blue-400">{t('descargando_pack', { pack: downloadingPack })}</Text>
                                     <Text className="text-xs font-bold text-white">{downloadProgress.toFixed(0)}%</Text>
                                 </View>
                                 {/* Barra de Progreso */}
@@ -102,7 +104,7 @@ export const OfflineMapsModal = ({
                                 className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 p-3 rounded-md flex-row items-center justify-center gap-2 shadow-lg"
                             >
                                 <Download size={16} color="#ffffff" />
-                                <Text className="text-xs font-bold text-white">Guardar Zona Actual</Text>
+                                <Text className="text-xs font-bold text-white">{t('guardar_zona')}</Text>
                             </TouchableOpacity>
                         )}
                     </View>
@@ -114,7 +116,7 @@ export const OfflineMapsModal = ({
                         {packs.length === 0 ? (
                             <View className="py-6 items-center justify-center">
                                 <HardDrive size={32} color="#475569" />
-                                <Text className="text-xs text-slate-400 mt-2">No downloaded zones.</Text>
+                                <Text className="text-xs text-slate-400 mt-2">{t('no_downloaded_zones')}</Text>
                             </View>
                         ) : (
                             packs.map((pack) => (
@@ -126,7 +128,7 @@ export const OfflineMapsModal = ({
                                         <CheckCircle2 size={16} color="#10b981" />
                                         <View>
                                             <Text className="font-bold text-xs text-white">{pack.name}</Text>
-                                            <Text className="text-[10px] text-slate-400">Disponible Offline</Text>
+                                            <Text className="text-[10px] text-slate-400">{t('disponible_offline')}</Text>
                                         </View>
                                     </View>
 

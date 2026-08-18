@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { Controller, SubmitHandler, useForm } from "react-hook-form";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface Register {
     email: string;
@@ -13,6 +14,7 @@ interface Register {
 }
 
 export default function RegisterView() {
+    const { t } = useTranslation();
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const {
@@ -59,18 +61,18 @@ export default function RegisterView() {
                 }} 
                 className="bg-slate-900 p-6">
             <View className="bg-slate-800 rounded-md p-6 w-full max-w-sm border border-slate-700 shadow-2xl">
-                <Text className="text-2xl font-bold text-white mb-6 text-center">Register</Text>
+                <Text className="text-2xl font-bold text-white mb-6 text-center">{t('register')}</Text>
 
                 {/* FIRST NAME */}
-                <Text className="text-sm font-semibold text-slate-300 mb-1">First Name</Text>
+                <Text className="text-sm font-semibold text-slate-300 mb-1">{t('first_name')}</Text>
                 <Controller
                     control={control}
                     name="first_name"
-                    rules={{ required: "First Name is required" }}
+                    rules={{ required: t('first_name_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
                             className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.first_name ? "border-red-500" : "border-slate-600"} mb-1`}
-                            placeholder="First Name"
+                            placeholder={t('first_name') as string}
                             placeholderTextColor="#94a3b8"
                             onBlur={onBlur}
                             onChangeText={onChange}
@@ -83,15 +85,15 @@ export default function RegisterView() {
                 )}
 
                 {/* LAST NAME */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">Last Name</Text>
+                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('last_name')}</Text>
                 <Controller
                     control={control}
                     name="last_name"
-                    rules={{ required: "Last Name is required" }}
+                    rules={{ required: t('last_name_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
                             className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.last_name ? "border-red-500" : "border-slate-600"} mb-1`}
-                            placeholder="Last Name"
+                            placeholder={t('last_name') as string}
                             placeholderTextColor="#94a3b8"
                             onBlur={onBlur}
                             onChangeText={onChange}
@@ -104,15 +106,15 @@ export default function RegisterView() {
                 )}
 
                 {/* DISPLAY NAME */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">Display Name</Text>
+                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('display_name')}</Text>
                 <Controller
                     control={control}
                     name="display_name"
-                    rules={{ required: "Display Name is required" }}
+                    rules={{ required: t('display_name_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
                             className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.display_name ? "border-red-500" : "border-slate-600"} mb-1`}
-                            placeholder="Display Name"
+                            placeholder={t('display_name') as string}
                             placeholderTextColor="#94a3b8"
                             onBlur={onBlur}
                             onChangeText={onChange}
@@ -125,21 +127,21 @@ export default function RegisterView() {
                 )}
 
                 {/* EMAIL */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">Email</Text>
+                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('email')}</Text>
                 <Controller
                     control={control}
                     name="email"
                     rules={{
-                        required: "Email is required",
+                        required: t('email_required') as string,
                         pattern: {
                             value: /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/,
-                            message: "Invalid email address"
+                            message: t('invalid_email') as string
                         }
                     }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
                             className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.email ? "border-red-500" : "border-slate-600"} mb-1`}
-                            placeholder="Email"
+                            placeholder={t('email') as string}
                             placeholderTextColor="#94a3b8"
                             keyboardType="email-address"
                             autoCapitalize="none"
@@ -154,15 +156,15 @@ export default function RegisterView() {
                 )}
 
                 {/* PASSWORD */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">Password</Text>
+                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('password')}</Text>
                 <Controller
                     control={control}
                     name="password"
-                    rules={{ required: "Password is required" }}
+                    rules={{ required: t('password_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
                             className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.password ? "border-red-500" : "border-slate-600"} mb-1`}
-                            placeholder="Password"
+                            placeholder={t('password') as string}
                             placeholderTextColor="#94a3b8"
                             secureTextEntry
                             onBlur={onBlur}
@@ -184,13 +186,13 @@ export default function RegisterView() {
                     {isSubmitting ? (
                         <ActivityIndicator color="#ffffff" />
                     ) : (
-                        <Text className="text-white font-bold text-base">Register</Text>
+                        <Text className="text-white font-bold text-base">{t('register')}</Text>
                     )}
                 </TouchableOpacity>
 
                 <TouchableOpacity onPress={() => router.push("/login")} className="mt-4">
                     <Text className="text-blue-400 text-xs text-center font-medium">
-                        If you already have an account, login here!
+                        {t('already_account_login')}
                     </Text>
                 </TouchableOpacity>
             </View>

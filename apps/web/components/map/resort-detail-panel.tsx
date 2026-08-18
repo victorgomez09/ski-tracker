@@ -2,6 +2,7 @@ import { Resort, ResortDetail, Piste, Lift } from 'models/ski-resort.model';
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Linking } from 'react-native';
 import { X } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 
 interface ResortDetailPanelProps {
     resort: Resort | ResortDetail;
@@ -9,17 +10,18 @@ interface ResortDetailPanelProps {
 }
 
 const getDifficultyMeta = (difficulty: string) => {
-    switch (difficulty) {
+    switch (difficulty?.toLowerCase()) {
         case 'novice':
-            return { label: 'Novice', bg: 'bg-[#00a859]', hex: '#00a859' };
+            return { labelKey: 'novice', bg: 'bg-[#00a859]', hex: '#00a859' };
         case 'easy':
-            return { label: 'Easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
+            return { labelKey: 'easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
         case 'intermediate':
-            return { label: 'Intermediate', bg: 'bg-[#f0141e]', hex: '#f0141e' };
+            return { labelKey: 'intermediate', bg: 'bg-[#f0141e]', hex: '#f0141e' };
         case 'advanced':
-            return { label: 'Expert', bg: 'bg-black', hex: '#000000' };
+        case 'expert':
+            return { labelKey: 'expert', bg: 'bg-black', hex: '#000000' };
         default:
-            return { label: 'Other', bg: 'bg-gray-400', hex: '#9ca3af' };
+            return { labelKey: 'other', bg: 'bg-gray-400', hex: '#9ca3af' };
     }
 };
 
@@ -49,19 +51,20 @@ const getPisteDistance = (piste: Piste) => {
     return Math.round(dist);
 };
 
-const parseLiftType = (liftType: string) => {
+const parseLiftType = (liftType: string, t: any) => {
     switch (liftType?.toLowerCase()) {
-        case 'chair_lift': return 'Chair Lift';
-        case 'drag_lift': return 'Drag Lift';
-        case 'gondola': return 'Gondola';
-        case 'cable_car': return 'Cable Car';
-        case 'funicular': return 'Funicular';
-        case 'magic_carpet': return 'Magic Carpet';
-        default: return liftType ? liftType.replace(/_/g, ' ') : 'Lift';
+        case 'chair_lift': return t('chair_lift');
+        case 'drag_lift': return t('drag_lift');
+        case 'gondola': return t('gondola');
+        case 'cable_car': return t('cable_car');
+        case 'funicular': return t('funicular');
+        case 'magic_carpet': return t('magic_carpet');
+        default: return liftType ? liftType.replace(/_/g, ' ') : t('lift');
     }
 };
 
 export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, onClose }) => {
+    const { t } = useTranslation();
     const stats = useMemo(() => {
         const pistes = resort?.pistes || [];
         const lifts = resort?.lifts || [];
@@ -204,7 +207,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                 <ScrollView className="space-y-4">
                     <View className="flex-row justify-between items-start">
                         <Text className="text-xs text-slate-400 font-medium">
-                            {resort.Country || "Ski Resort"}
+                            {resort.Country || t('ski_resort')}
                         </Text>
                         <TouchableOpacity onPress={onClose} className="p-1.5 rounded-full bg-slate-800">
                             <X size={18} color="#94a3b8" />
@@ -229,24 +232,24 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
 
                     <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
                         <View className="items-center">
-                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">Total Slopes</Text>
-                            <Text className="text-sm font-bold text-white mt-0.5">{stats.totalPistes} ({formattedPisteLength} km)</Text>
+                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('total_slopes')}</Text>
+                            <Text className="text-sm font-bold text-white mt-0.5">{stats.totalPistes} ({formattedPisteLength} {t('km')})</Text>
                         </View>
                         <View className="items-center">
-                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">Lifts</Text>
+                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('lifts')}</Text>
                             <Text className="text-sm font-bold text-white mt-0.5">{stats.totalLifts}</Text>
                         </View>
                         <View className="items-center">
-                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">Elevation</Text>
+                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('elevation')}</Text>
                             <Text className="text-sm font-bold text-white mt-0.5">
-                                {stats.minElev && stats.maxElev ? `${stats.minElev}m - ${stats.maxElev}m` : 'N/A'}
+                                {stats.minElev && stats.maxElev ? `${stats.minElev}m - ${stats.maxElev}m` : t('n_a')}
                             </Text>
                         </View>
                     </View>
 
                     {difficultyDistribution.length > 0 && (
                         <View className="my-2">
-                            <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">Difficulty Breakdown</Text>
+                            <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">{t('difficulty_breakdown')}</Text>
                             <View className="w-full h-3 rounded-full overflow-hidden flex-row bg-slate-800">
                                 {difficultyDistribution.map(item => {
                                     const meta = getDifficultyMeta(item.key);
@@ -263,7 +266,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                     )}
 
                     <View className="my-2">
-                        <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">Pistes</Text>
+                        <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">{t('pistes')}</Text>
                         <View className="flex-row flex-wrap gap-2">
                             {Object.entries(stats.difficultyCounts).map(([diff, count]) => {
                                 if (count === 0 && diff === 'other') return null;
@@ -273,8 +276,8 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                                     <View key={diff} className="flex-row items-center bg-slate-800 rounded-md p-2.5 border border-slate-700 w-[48%]">
                                         <View className={`w-3 h-3 rounded-full ${meta.bg} mr-2`} />
                                         <View>
-                                            <Text className="text-xs font-bold text-white">{count} <Text className="font-normal text-slate-300">{meta.label}</Text></Text>
-                                            <Text className="text-[10px] text-slate-400">{(len / 1000).toFixed(1)} km</Text>
+                                            <Text className="text-xs font-bold text-white">{count} <Text className="font-normal text-slate-300">{t(meta.labelKey)}</Text></Text>
+                                            <Text className="text-[10px] text-slate-400">{(len / 1000).toFixed(1)} {t('km')}</Text>
                                         </View>
                                     </View>
                                 );
@@ -284,12 +287,12 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
 
                     {stats.totalLifts > 0 && (
                         <View className="my-2">
-                            <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">Lifts & Capacity</Text>
+                            <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">{t('lifts_capacity')}</Text>
                             {stats.totalCapacity > 0 && (
                                 <View className="flex-row justify-between border-b border-slate-800 pb-2 mb-2">
-                                    <Text className="text-xs text-slate-400">Hourly capacity:</Text>
+                                    <Text className="text-xs text-slate-400">{t('hourly_capacity')}</Text>
                                     <Text className="text-xs font-semibold text-white">
-                                        {stats.totalHourlyCapacity ? `${stats.totalHourlyCapacity.toLocaleString()} pers./h` : 'N/A'}
+                                        {stats.totalHourlyCapacity ? t('person_per_hour', { count: stats.totalHourlyCapacity }) : t('n_a')}
                                     </Text>
                                 </View>
                             )}
@@ -297,7 +300,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                                 {Object.entries(stats.liftTypeCounts).map(([type, count]) => (
                                     <View key={type} className="px-2.5 py-1 bg-blue-950/80 border border-blue-800/60 rounded-md">
                                         <Text className="text-[10px] text-blue-300 font-semibold uppercase">
-                                            {count}x {parseLiftType(type)}
+                                            {count}x {parseLiftType(type, t)}
                                         </Text>
                                     </View>
                                 ))}

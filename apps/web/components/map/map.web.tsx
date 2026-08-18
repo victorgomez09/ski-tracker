@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
 import { Area, AreaChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useTranslation } from 'react-i18next';
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
@@ -19,6 +20,7 @@ import { View } from 'react-native';
 import api from 'interceptor/api';
 
 export default function InteractiveSkiMap() {
+    const { t } = useTranslation();
     const searchParams = useLocalSearchParams();
     const mapRef = useRef<MapRef>(null);
     const isInternalMoveRef = useRef(false);
@@ -791,9 +793,9 @@ export default function InteractiveSkiMap() {
                 <div className="absolute top-16 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 text-white md:w-80 max-h-[75vh] shadow-2xl space-y-3">
                     <div className="flex flex-row justify-between items-center pb-2 border-b border-slate-800 w-full">
                         <div>
-                            <h3 className="font-bold text-sm">Session Analyser</h3>
+                            <h3 className="font-bold text-sm">{t('session_analyser')}</h3>
                             <p className="text-[10px] opacity-70">
-                                {sessionDetails ? `Date: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
+                                {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
                             </p>
                         </div>
                         <button
@@ -818,18 +820,18 @@ export default function InteractiveSkiMap() {
                                 className="bg-blue-600 p-2 rounded-md flex-row items-center justify-center shadow-md cursor-pointer text-sm"
                                 onClick={() => setSelectedRun(null)}
                             >
-                                ← Back to list
+                                {t('back_to_runs')}
                             </button>
                             <div className="p-2 bg-slate-700/60 rounded-md">
-                                <h4 className="font-bold text-xs">Run #{selectedRun.index} Details</h4>
+                                <h4 className="font-bold text-xs">{t('run_details', { index: selectedRun.index })}</h4>
                                 <div className="grid grid-cols-2 gap-2 mt-1 text-[11px] opacity-80">
-                                    <div>Drop: {selectedRun.verticalDrop.toFixed(1)} m</div>
-                                    <div>Max Speed: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
+                                    <div>{t('drop')}: {selectedRun.verticalDrop.toFixed(1)} m</div>
+                                    <div>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <div className="text-[11px] font-semibold opacity-70 uppercase">Elevation Profile (m)</div>
+                                <div className="text-[11px] font-semibold opacity-70 uppercase">{t('elevation_profile')}</div>
                                 <div className="h-32 bg-slate-700/60 rounded-md p-1">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <AreaChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, alt: p.altitude }))}>
@@ -841,7 +843,7 @@ export default function InteractiveSkiMap() {
                                     </ResponsiveContainer>
                                 </div>
 
-                                <div className="text-[11px] font-semibold opacity-70 uppercase">Speed Profile (km/h)</div>
+                                <div className="text-[11px] font-semibold opacity-70 uppercase">{t('speed_profile')}</div>
                                 <div className="h-32 bg-slate-700/60 rounded-md p-1">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <LineChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, speed: p.speed * 3.6 }))}>
@@ -862,27 +864,27 @@ export default function InteractiveSkiMap() {
                                     className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
                                     onClick={() => setActiveTab('runs')}
                                 >
-                                    Runs
+                                    {t('runs')}
                                 </button>
                                 <button
                                     type="button"
                                     className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
                                     onClick={() => setActiveTab('elevation')}
                                 >
-                                    Elevation
+                                    {t('elevation')}
                                 </button>
                                 <button
                                     type="button"
                                     className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
                                     onClick={() => setActiveTab('speed')}
                                 >
-                                    Speed
+                                    {t('speed')}
                                 </button>
                             </div>
 
                             {activeTab === 'runs' && (
                                 <div className="space-y-2">
-                                    <div className="text-xs font-semibold opacity-75">Detected Descents ({detectedRuns.length})</div>
+                                    <div className="text-xs font-semibold opacity-75">{t('descent_runs')} ({detectedRuns.length})</div>
                                     <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                                         {detectedRuns.map((run) => (
                                             <button
@@ -904,12 +906,12 @@ export default function InteractiveSkiMap() {
                                                 }}
                                             >
                                                 <div>
-                                                    <div className="font-bold text-xs">Run #{run.index}</div>
+                                                    <div className="font-bold text-xs">{t('run_title', { index: run.index })}</div>
                                                     <div className="text-[10px] opacity-70 mt-0.5">
-                                                        Drop: {run.verticalDrop.toFixed(0)}m | Max Speed: {run.maxSpeed.toFixed(1)} km/h
+                                                        {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
                                                     </div>
                                                 </div>
-                                                <span className="text-[11px] text-white font-medium">Charts →</span>
+                                                <span className="text-[11px] text-white font-medium">{t('charts')} →</span>
                                             </button>
                                         ))}
                                     </div>
@@ -918,7 +920,7 @@ export default function InteractiveSkiMap() {
 
                             {activeTab === 'elevation' && (
                                 <div className="space-y-2">
-                                    <div className="text-xs font-semibold opacity-75">Full Session Elevation (m)</div>
+                                    <div className="text-xs font-semibold opacity-75">{t('elevation_profile')}</div>
                                     <div className="h-44 bg-slate-700/60 rounded-md p-1">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <AreaChart data={trackPoints.map((p, idx) => ({ name: idx, alt: p.altitude }))}>
@@ -934,7 +936,7 @@ export default function InteractiveSkiMap() {
 
                             {activeTab === 'speed' && (
                                 <div className="space-y-2">
-                                    <div className="text-xs font-semibold opacity-75">Full Session Speed Profile (km/h)</div>
+                                    <div className="text-xs font-semibold opacity-75">{t('speed_profile')}</div>
                                     <div className="h-44 bg-slate-700/60 rounded-md p-1">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <LineChart data={trackPoints.map((p, idx) => ({ name: idx, speed: p.speed * 3.6 }))}>

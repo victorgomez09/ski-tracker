@@ -26,12 +26,14 @@ import api from 'interceptor/api';
 import { User } from 'models/user.model';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
+import { useTranslation } from 'react-i18next';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
     const { token } = useAuth();
+    const { t } = useTranslation();
 
     const isInternalMoveRef = useRef(false);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
@@ -575,10 +577,10 @@ export default function InteractiveSkiMapNative() {
                                 <View className="flex flex-col gap-0.5">
                                     <View className="flex-row items-center gap-1.5">
                                         <Activity size={16} color="#3b82f6" />
-                                        <Text className="font-bold text-sm text-white">Session recorded</Text>
+                                        <Text className="font-bold text-sm text-white">{t('session_recorded')}</Text>
                                     </View>
                                     <Text className="text-[11px] text-slate-400">
-                                        {trackPoints.length} points recorded at {resort.Name || "Sierra Nevada"}
+                                        {t('points_recorded', { count: trackPoints.length, resortName: resort.Name || "Sierra Nevada" })}
                                     </Text>
                                 </View>
 
@@ -589,7 +591,7 @@ export default function InteractiveSkiMapNative() {
                                 >
                                     <Upload size={14} color="#ffffff" />
                                     <Text className="text-white font-bold text-xs">
-                                        {isLoading ? "Uploading..." : "Upload Track"}
+                                        {isLoading ? t('uploading') : t('upload_track')}
                                     </Text>
                                 </TouchableOpacity>
                             </View>

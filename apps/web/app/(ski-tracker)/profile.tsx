@@ -5,6 +5,7 @@ import { Controller, useForm } from "react-hook-form";
 import { ActivityIndicator, Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import RNPickerSelect from 'react-native-picker-select';
+import { useTranslation } from "react-i18next";
 
 import { API_BASE_URL } from "constants/constants";
 import { useAuth } from "context/auth.context";
@@ -21,6 +22,7 @@ export type ProfileFormValues = {
 };
 
 export default function ProfileView() {
+    const { t } = useTranslation();
     const { token, signOut } = useAuth();
     const [user, setUser] = useState<User | null>(null);
     const [isEditing, setIsEditing] = useState(false);
@@ -108,7 +110,7 @@ export default function ProfileView() {
     const handlePickImage = async () => {
         const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!permissionResult.granted) {
-            Alert.alert('Permission denied', 'We need access to the gallery to change your photo.');
+            Alert.alert(t('permission_denied'), t('permission_denied_gallery'));
             return;
         }
 
@@ -140,9 +142,9 @@ export default function ProfileView() {
 
             setUser(response.data);
             setIsEditing(false);
-            Alert.alert('Success', 'Profile updated successfully');
+            Alert.alert(t('success'), t('profile_updated'));
         } catch (error) {
-            Alert.alert('Error', 'Failed to save changes');
+            Alert.alert(t('error'), t('failed_save_changes'));
         } finally {
             setSaving(false);
         }
@@ -219,17 +221,17 @@ export default function ProfileView() {
                             <View className="w-full space-y-3 mt-2">
                                 <View className="flex-row gap-2">
                                     <View className="flex-1">
-                                        <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">First Name</Text>
+                                        <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('first_name')}</Text>
                                         <Controller
                                             control={control}
                                             name="first_name"
-                                            rules={{ required: 'First name is required' }}
+                                            rules={{ required: t('first_name_required') as string }}
                                             render={({ field: { onChange, onBlur, value } }) => (
                                                 <TextInput
                                                     onBlur={onBlur}
                                                     onChangeText={onChange}
                                                     value={value}
-                                                    placeholder="Name"
+                                                    placeholder={t('first_name') as string}
                                                     placeholderTextColor="#64748b"
                                                     className={`bg-slate-700 border text-white p-2.5 rounded-md text-sm ${errors.first_name ? 'border-rose-500' : 'border-slate-600'
                                                         }`}
@@ -242,7 +244,7 @@ export default function ProfileView() {
                                     </View>
 
                                     <View className="flex-1">
-                                        <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">Last Name</Text>
+                                        <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('last_name')}</Text>
                                         <Controller
                                             control={control}
                                             name="last_name"
@@ -251,7 +253,7 @@ export default function ProfileView() {
                                                     onBlur={onBlur}
                                                     onChangeText={onChange}
                                                     value={value}
-                                                    placeholder="Last Name"
+                                                    placeholder={t('last_name') as string}
                                                     placeholderTextColor="#64748b"
                                                     className="bg-slate-700 border border-slate-600 text-white p-2.5 rounded-md text-sm"
                                                 />
@@ -261,7 +263,7 @@ export default function ProfileView() {
                                 </View>
 
                                 <View>
-                                    <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">Display Name</Text>
+                                    <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('display_name')}</Text>
                                     <Controller
                                         control={control}
                                         name="display_name"
@@ -270,7 +272,7 @@ export default function ProfileView() {
                                                 onBlur={onBlur}
                                                 onChangeText={onChange}
                                                 value={value}
-                                                placeholder="SkierMaster99"
+                                                placeholder={t('skier_master_placeholder') as string}
                                                 placeholderTextColor="#64748b"
                                                 className="bg-slate-700 border border-slate-600 text-white p-2.5 rounded-md text-sm"
                                             />
@@ -279,15 +281,15 @@ export default function ProfileView() {
                                 </View>
 
                                 <View>
-                                    <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">Email</Text>
+                                    <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('email')}</Text>
                                     <Controller
                                         control={control}
                                         name="email"
                                         rules={{
-                                            required: 'Email is required',
+                                            required: t('email_required') as string,
                                             pattern: {
                                                 value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                                                message: 'Email not valid',
+                                                message: t('email_not_valid') as string,
                                             },
                                         }}
                                         render={({ field: { onChange, onBlur, value } }) => (
@@ -297,7 +299,7 @@ export default function ProfileView() {
                                                 value={value}
                                                 keyboardType="email-address"
                                                 autoCapitalize="none"
-                                                placeholder="email@email.com"
+                                                placeholder={t('email_placeholder') as string}
                                                 placeholderTextColor="#64748b"
                                                 className={`bg-slate-700 border text-white p-2.5 rounded-md text-sm ${errors.email ? 'border-rose-500' : 'border-slate-600'
                                                     }`}
@@ -310,30 +312,30 @@ export default function ProfileView() {
                                 </View>
 
                                 <View>
-                                    <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">Time Tracking</Text>
+                                    <Text className="text-[10px] font-bold text-slate-400 uppercase mb-1">{t('time_tracking')}</Text>
                                     <Controller
                                         control={control}
                                         name="time_tracking"
                                         rules={{
-                                            required: 'Time tracking is required',
+                                            required: t('time_tracking_required') as string,
                                             pattern: {
                                                 value: /^[0-9]+$/,
-                                                message: 'Time tracking must be a number',
+                                                message: t('time_tracking_number') as string,
                                             },
                                         }}
                                         render={({ field: { onChange, value } }) => (
                                             <RNPickerSelect
                                             onValueChange={onChange}
                                             items={[
-                                                { label: 'Each 5 seconds', value: 5000 },
-                                                { label: 'Each 3 seconds', value: 3000 },
-                                                { label: 'Each 1 second', value: 1000 },
+                                                { label: t('each_5_seconds'), value: 5000 },
+                                                { label: t('each_3_seconds'), value: 3000 },
+                                                { label: t('each_1_second'), value: 1000 },
                                             ]}
                                             value={value}
                                         />
                                         )}
                                     />
-                                    <Text className="text-slate-400 text-[10px] mt-1">Select how often the app should track your location. Less time is more precise, but consumes more battery.</Text>
+                                    <Text className="text-slate-400 text-[10px] mt-1">{t('time_tracking_desc')}</Text>
                                     {errors.time_tracking && (
                                         <Text className="text-rose-400 text-[10px] mt-1">{errors.time_tracking.message}</Text>
                                     )}
@@ -345,7 +347,7 @@ export default function ProfileView() {
                                         disabled={saving}
                                         className="flex-1 bg-slate-700 p-3 rounded-md items-center justify-center border border-slate-600"
                                     >
-                                        <Text className="text-slate-300 font-bold text-xs">Cancel</Text>
+                                        <Text className="text-slate-300 font-bold text-xs">{t('cancel')}</Text>
                                     </TouchableOpacity>
 
                                     <TouchableOpacity
@@ -358,7 +360,7 @@ export default function ProfileView() {
                                         ) : (
                                             <>
                                                 <Check size={14} color="#ffffff" />
-                                                <Text className="text-white font-bold text-xs">Save</Text>
+                                                <Text className="text-white font-bold text-xs">{t('save')}</Text>
                                             </>
                                         )}
                                     </TouchableOpacity>
@@ -368,7 +370,7 @@ export default function ProfileView() {
                     </View>
 
                     <View className="bg-slate-800 rounded-md p-6 shadow-md border border-slate-700">
-                        <Text className="text-base font-semibold text-white mb-4">Snow modality</Text>
+                        <Text className="text-base font-semibold text-white mb-4">{t('snow_modality')}</Text>
                         <View className="flex-row gap-3">
                             <TouchableOpacity
                                 className={`flex-1 p-4 rounded-md items-center border ${user?.activity_type === 'ski'
@@ -377,7 +379,7 @@ export default function ProfileView() {
                                     }`}
                                 onPress={() => updateActivityType('ski')}
                             >
-                                <Text className="text-white font-bold text-base">🎿 Ski</Text>
+                                <Text className="text-white font-bold text-base">{t('ski_emoji')}</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -387,7 +389,7 @@ export default function ProfileView() {
                                     }`}
                                 onPress={() => updateActivityType('snow')}
                             >
-                                <Text className="text-white font-bold text-base">🏂 Snowboard</Text>
+                                <Text className="text-white font-bold text-base">{t('snowboard_emoji')}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -396,7 +398,7 @@ export default function ProfileView() {
                         className="bg-red-600 rounded-md p-4 shadow-md items-center justify-center"
                         onPress={handleLogout}
                     >
-                        <Text className="text-white font-bold text-base">Logout</Text>
+                        <Text className="text-white font-bold text-base">{t('logout')}</Text>
                     </TouchableOpacity>
                 </View>
             </ScrollView>

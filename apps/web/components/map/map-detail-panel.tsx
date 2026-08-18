@@ -2,6 +2,7 @@ import { Lift, Piste } from 'models/ski-resort.model';
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform, processColor } from 'react-native';
 import { X } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 
 let LineChart: any = null;
 if (Platform.OS !== 'web') {
@@ -28,16 +29,16 @@ const getDifficultyMeta = (difficulty: string) => {
     const diff = difficulty?.toLowerCase() || '';
     switch (diff) {
         case 'novice':
-            return { label: 'Novice', bg: 'bg-[#00a859]', hex: '#00a859' };
+            return { labelKey: 'novice', bg: 'bg-[#00a859]', hex: '#00a859' };
         case 'easy':
-            return { label: 'Easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
+            return { labelKey: 'easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
         case 'intermediate':
-            return { label: 'Advanced', bg: 'bg-[#f0141e]', hex: '#f0141e' };
+            return { labelKey: 'intermediate', bg: 'bg-[#f0141e]', hex: '#f0141e' };
         case 'advanced':
         case 'expert':
-            return { label: 'Expert', bg: 'bg-black', hex: '#000000' };
+            return { labelKey: 'expert', bg: 'bg-black', hex: '#000000' };
         default:
-            return { label: 'Easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
+            return { labelKey: 'easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
     }
 };
 
@@ -269,6 +270,7 @@ export const ElevationChart: React.FC<{
     data: ChartDatum[];
     height?: number;
 }> = ({ data, height = 160 }) => {
+    const { t } = useTranslation();
     const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
     useEffect(() => {
@@ -290,13 +292,13 @@ export const ElevationChart: React.FC<{
             {selectedDatum && (
                 <View className="flex-row justify-between items-center px-2 py-1.5 mb-2 rounded bg-slate-900/90 border border-slate-700">
                     <Text className="text-[10px] font-semibold text-slate-100">
-                        Alt: <Text className="text-blue-400 font-bold">{selectedDatum.elevation}m</Text>
+                        {t('alt', { elevation: selectedDatum.elevation })}
                     </Text>
                     <Text className="text-[10px] text-slate-300">
-                        Dist: <Text className="text-slate-100 font-bold">{selectedDatum.distance.toFixed(1)}km</Text>
+                        {t('dist', { distance: selectedDatum.distance.toFixed(1) })}
                     </Text>
                     <Text className="text-[10px] text-slate-400">
-                        Slope: <Text className="text-amber-400 font-bold">{selectedDatum.slopeDeg}° ({selectedDatum.slopePct}%)</Text>
+                        {t('slope', { slopeDeg: selectedDatum.slopeDeg, slopePct: selectedDatum.slopePct })}
                     </Text>
                 </View>
             )}
@@ -317,26 +319,26 @@ export const ElevationChart: React.FC<{
             )}
 
             <View className="flex-row justify-between mt-2 px-1">
-                <Text className="text-[10px] text-slate-400">Min: {minElev}m</Text>
-                <Text className="text-[10px] text-slate-400">Max: {maxElev}m</Text>
+                <Text className="text-[10px] text-slate-400">{t('min_label', { minElev })}</Text>
+                <Text className="text-[10px] text-slate-400">{t('max_label', { maxElev })}</Text>
             </View>
 
             <View className="flex-row justify-around items-center mt-3 pt-2 border-t border-slate-700/60 flex-wrap gap-1">
                 <View className="flex-row items-center gap-1.5">
                     <View className="w-3 h-3 rounded bg-[#00a859]/40 border border-[#00a859]" />
-                    <Text className="text-[9px] text-slate-300">&lt;15% (Novice)</Text>
+                    <Text className="text-[9px] text-slate-300">{t('novice_slope_desc')}</Text>
                 </View>
                 <View className="flex-row items-center gap-1.5">
                     <View className="w-3 h-3 rounded bg-[#0072bc]/40 border border-[#0072bc]" />
-                    <Text className="text-[9px] text-slate-300">15-25% (Easy)</Text>
+                    <Text className="text-[9px] text-slate-300">{t('easy_slope_desc')}</Text>
                 </View>
                 <View className="flex-row items-center gap-1.5">
                     <View className="w-3 h-3 rounded bg-[#f0141e]/40 border border-[#f0141e]" />
-                    <Text className="text-[9px] text-slate-300">25-40% (Intermediate)</Text>
+                    <Text className="text-[9px] text-slate-300">{t('intermediate_slope_desc')}</Text>
                 </View>
                 <View className="flex-row items-center gap-1.5">
                     <View className="w-3 h-3 rounded bg-black border border-white" />
-                    <Text className="text-[9px] text-slate-300">&gt;40% (Expert)</Text>
+                    <Text className="text-[9px] text-slate-300">{t('expert_slope_desc')}</Text>
                 </View>
             </View>
         </View>
@@ -407,17 +409,17 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
     const region = places[0]?.localized?.en?.region || 'Madrid';
     const country = places[0]?.localized?.en?.country || 'Spain';
     const skiAreas = tags.skiAreas || [];
-    const skiArea = skiAreas[0]?.properties?.name || 'Ski Resort';
+    const skiArea = skiAreas[0]?.properties?.name || t('ski_resort');
 
     const parseLiftType = (liftType: string) => {
         switch (liftType?.toLowerCase()) {
-            case 'chair_lift': return 'Chair Lift';
-            case 'drag_lift': return 'Drag Lift';
-            case 'gondola': return 'Gondola';
-            case 'cable_car': return 'Cable Car';
-            case 'funicular': return 'Funicular';
-            case 'magic_carpet': return 'Magic Carpet';
-            default: return liftType || 'Lift';
+            case 'chair_lift': return t('chair_lift');
+            case 'drag_lift': return t('drag_lift');
+            case 'gondola': return t('gondola');
+            case 'cable_car': return t('cable_car');
+            case 'funicular': return t('funicular');
+            case 'magic_carpet': return t('magic_carpet');
+            default: return liftType || t('lift');
         }
     };
 
@@ -452,39 +454,39 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
                     {(!(data as Lift).LiftType && type === 'LineString') && (
                         <>
                             <Text className="text-xs text-slate-400 capitalize font-medium">
-                                {diffMeta.label} downhill ski run
+                                {t('downhill_ski_run', { difficulty: t(diffMeta.labelKey) })}
                             </Text>
 
                             <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
                                 <View className="items-center">
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Distance</Text>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('distance')}</Text>
                                     <Text className="text-sm font-bold text-white mt-0.5">{totalDistance}m</Text>
                                 </View>
                                 <View className="items-center">
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Ascent</Text>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('ascent')}</Text>
                                     <Text className="text-sm font-bold text-white mt-0.5">{ascent}m</Text>
                                 </View>
                                 <View className="items-center">
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">Descent</Text>
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('descent')}</Text>
                                     <Text className="text-sm font-bold text-white mt-0.5">{descent}m</Text>
                                 </View>
                                 <View className="items-center">
-                                    <Text className="text-xs text-slate-400">Average Slope</Text>
+                                    <Text className="text-xs text-slate-400">{t('average_slope')}</Text>
                                     <Text className="text-sm font-bold text-slate-200">{avgSlopeDeg}° ({avgSlopePct}%)</Text>
                                 </View>
                                 <View className="items-center">
-                                    <Text className="text-xs text-slate-400">Max Slope</Text>
+                                    <Text className="text-xs text-slate-400">{t('max_slope')}</Text>
                                     <Text className="text-sm font-bold text-slate-200">{maxSlopeDeg}° ({maxSlopePct}%)</Text>
                                 </View>
                             </View>
 
                             <View className="mt-2">
-                                <Text className="text-xs font-bold text-slate-400 uppercase mb-2">Elevation Profile</Text>
+                                <Text className="text-xs font-bold text-slate-400 uppercase mb-2">{t('elevation_profile_title')}</Text>
                                 {chartData.length > 0 ? (
                                     <ElevationChart data={chartData} />
                                 ) : (
                                     <View className="p-4 border border-dashed border-slate-700 rounded-md items-center">
-                                        <Text className="text-xs text-slate-500">No elevation data available</Text>
+                                        <Text className="text-xs text-slate-500">{t('no_elevation_data')}</Text>
                                     </View>
                                 )}
                             </View>
@@ -494,16 +496,16 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
                     {((data as Lift).LiftType && type === 'LineString') && (
                         <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
                             <View className="items-center">
-                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">Type</Text>
+                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('type')}</Text>
                                 <Text className="text-sm font-bold text-white mt-0.5">{parseLiftType((data as Lift).LiftType)}</Text>
                             </View>
                             <View className="items-center">
-                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">Capacity</Text>
-                                <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).Capacity || '-'} pers.</Text>
+                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('capacity')}</Text>
+                                <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).Capacity ? t('persons_count', { count: (data as Lift).Capacity }) : '-'}</Text>
                             </View>
                             <View className="items-center">
-                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">Hourly</Text>
-                                <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).CapacityHourly || '-'} pers.</Text>
+                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('hourly_label')}</Text>
+                                <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).CapacityHourly ? t('persons_count', { count: (data as Lift).CapacityHourly }) : '-'}</Text>
                             </View>
                         </View>
                     )}

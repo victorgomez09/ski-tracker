@@ -9,6 +9,7 @@ import {
   UIManager,
   View
 } from 'react-native';
+import { useTranslation } from "react-i18next";
 
 import { API_BASE_URL } from "constants/constants";
 import { useRouter } from "expo-router";
@@ -28,7 +29,7 @@ const getDifficultyMeta = (diff: string) => {
   switch (diff?.toLowerCase()) {
     case 'novice':
       return {
-        label: 'Novice',
+        labelKey: 'novice',
         dotBg: 'bg-[#00a859]',
         badgeBg: 'bg-emerald-950/80',
         textColor: 'text-emerald-400',
@@ -36,7 +37,7 @@ const getDifficultyMeta = (diff: string) => {
       };
     case 'easy':
       return {
-        label: 'Easy',
+        labelKey: 'easy',
         dotBg: 'bg-[#0072bc]',
         badgeBg: 'bg-blue-950/80',
         textColor: 'text-blue-400',
@@ -44,7 +45,7 @@ const getDifficultyMeta = (diff: string) => {
       };
     case 'intermediate':
       return {
-        label: 'Intermediate',
+        labelKey: 'intermediate',
         dotBg: 'bg-[#f0141e]',
         badgeBg: 'bg-rose-950/80',
         textColor: 'text-rose-400',
@@ -53,7 +54,7 @@ const getDifficultyMeta = (diff: string) => {
     case 'advanced':
     case 'expert':
       return {
-        label: 'Expert',
+        labelKey: 'expert',
         dotBg: 'bg-black border border-slate-600',
         badgeBg: 'bg-slate-950',
         textColor: 'text-slate-200',
@@ -61,7 +62,7 @@ const getDifficultyMeta = (diff: string) => {
       };
     default:
       return {
-        label: diff || 'General',
+        labelKey: diff ? diff.toLowerCase() : 'general',
         dotBg: 'bg-slate-500',
         badgeBg: 'bg-slate-800',
         textColor: 'text-slate-400',
@@ -81,6 +82,7 @@ const formatDate = (dateString: string): string => {
 };
 
 export default function CommunityView() {
+  const { t } = useTranslation();
   const [communityData, setCommunityData] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -110,9 +112,9 @@ export default function CommunityView() {
         <View className="flex-1 justify-center items-center bg-slate-900 p-4">
           <View className="bg-slate-800 border border-slate-700 p-6 rounded-xl items-center max-w-xs w-full">
             <Users size={32} color="#94a3b8" />
-            <Text className="text-white font-bold text-base mt-3">No activity yet</Text>
+            <Text className="text-white font-bold text-base mt-3">{t('no_activity_yet')}</Text>
             <Text className="text-slate-400 text-xs text-center mt-1">
-              {loading ? "Loading community sessions..." : "No community sessions available right now."}
+              {loading ? t('loading_community_sessions') : t('no_community_sessions')}
             </Text>
           </View>
         </View>
@@ -129,16 +131,16 @@ export default function CommunityView() {
         <View className="flex-row items-center justify-between mb-4">
           <View>
             <Text className="text-2xl font-extrabold text-white leading-tight">
-              Community Feed
+              {t('community_feed')}
             </Text>
             <Text className="text-xs text-slate-400 font-medium mt-0.5">
-              Live rider activity & session tracking
+              {t('live_rider_activity')}
             </Text>
           </View>
           <View className="bg-blue-900/40 px-3 py-1.5 rounded-full border border-blue-700/60 flex-row items-center gap-1.5">
             <Users size={12} color="#60a5fa" />
             <Text className="text-xs text-blue-300 font-bold">
-              {communityData.length} Sessions
+              {t('sessions_count', { count: communityData.length })}
             </Text>
           </View>
         </View>
@@ -157,6 +159,7 @@ export default function CommunityView() {
 }
 
 const SkiSessionCard = ({ session }: { session: Session }) => {
+  const { t } = useTranslation();
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
 
@@ -166,7 +169,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
   };
 
   const runsCount = session.runs?.length || 0;
-  const firstName = session.user?.first_name || 'Rider';
+  const firstName = session.user?.first_name || t('rider');
   const lastName = session.user?.last_name || '';
   const initials = `${firstName[0] || 'U'}${lastName[0] || ''}`.toUpperCase();
 
@@ -204,10 +207,10 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
         <View className="flex-row items-center gap-2">
           <View className="bg-slate-900/80 px-2.5 py-1 rounded-full border border-slate-700/80 flex-row items-center gap-1.5">
             <Text className="text-xs">
-              {session.activity_type === 'ski' ? '⛷️' : 'D'}
+              {session.activity_type === 'ski' ? '⛷️' : '🏂'}
             </Text>
             <Text className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">
-              {session.activity_type === 'ski' ? 'Ski' : 'Snowboard'}
+              {session.activity_type === 'ski' ? t('ski') : t('snowboard')}
             </Text>
           </View>
 
@@ -216,41 +219,40 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
             onPress={() => router.push(`/map?sessionId=${session.id}&lat=${session.resort.Latitude}&lng=${session.resort.Longitude}&zoom=14`)}
           >
             <MapIcon size={9} color="#ffffff" />
-            {/* <Text className="text-white font-bold text-base">View on Map</Text> */}
           </TouchableOpacity>
         </View>
       </View>
 
       <View className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 flex-row justify-between items-center my-1">
         <View className="items-center flex-1">
-          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Distance</Text>
+          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('distance')}</Text>
           <Text className="text-sm font-extrabold text-white mt-0.5">
-            {metersToKm(session.total_distance)} <Text className="text-[10px] font-normal text-slate-400">km</Text>
+            {metersToKm(session.total_distance)} <Text className="text-[10px] font-normal text-slate-400">{t('km')}</Text>
           </Text>
         </View>
 
         <View className="w-px h-7 bg-slate-700/80" />
 
         <View className="items-center flex-1">
-          <Text className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vertical Drop</Text>
+          <Text className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('vertical_drop')}</Text>
           <Text className="text-sm font-extrabold text-white mt-0.5">
-            {Math.round(session.vertical_drop)} <Text className="text-[10px] font-normal text-slate-400">m</Text>
+            {Math.round(session.vertical_drop)} <Text className="text-[10px] font-normal text-slate-400">{t('m')}</Text>
           </Text>
         </View>
 
         <View className="w-px h-7 bg-slate-700/80" />
 
         <View className="items-center flex-1">
-          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Max Speed</Text>
+          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('max_speed')}</Text>
           <Text className="text-sm font-extrabold text-white mt-0.5">
-            {msToKmh(session.max_speed)} <Text className="text-[10px] font-normal text-slate-400">km/h</Text>
+            {msToKmh(session.max_speed)} <Text className="text-[10px] font-normal text-slate-400">{t('km_h')}</Text>
           </Text>
         </View>
 
         <View className="w-px h-7 bg-slate-700/80" />
 
         <View className="items-center flex-1">
-          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Downs</Text>
+          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('downs')}</Text>
           <Text className="text-sm font-extrabold text-white mt-0.5">
             {runsCount}
           </Text>
@@ -268,7 +270,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
             <View className="flex-row items-center gap-1.5">
               <Activity size={12} color="#60a5fa" />
               <Text className="text-xs font-semibold text-blue-400">
-                {expanded ? 'Hide' : `View ${runsCount} detailed runs`}
+                {expanded ? t('hide') : t('view_detailed_runs', { count: runsCount })}
               </Text>
             </View>
             {expanded ? (
@@ -289,13 +291,13 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
                   >
                     <View className="flex-row items-center justify-between mb-2">
                       <Text className="text-xs font-bold text-slate-200">
-                        Down #{index + 1}
+                        {t('down_number', { index: index + 1 })}
                       </Text>
 
                       <View className={`flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border ${diffMeta.badgeBg} ${diffMeta.borderColor}`}>
                         <View className={`w-2 h-2 rounded-full ${diffMeta.dotBg}`} />
                         <Text className={`text-[10px] font-bold ${diffMeta.textColor}`}>
-                          {diffMeta.label}
+                          {t(diffMeta.labelKey, { defaultValue: diffMeta.labelKey })}
                         </Text>
                       </View>
                     </View>
@@ -318,7 +320,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
                       <View className="flex-row items-center gap-1">
                         <Zap size={11} color="#94a3b8" />
                         <Text className="text-xs font-semibold text-slate-300">
-                          {msToKmh(run.max_speed)} km/h
+                          {msToKmh(run.max_speed)} {t('km_h')}
                         </Text>
                       </View>
                     </View>

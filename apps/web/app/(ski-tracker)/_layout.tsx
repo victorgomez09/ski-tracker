@@ -3,9 +3,11 @@ import { Ionicons } from '@expo/vector-icons';
 import BottomTabs from 'components/navigation/bottom-tabs';
 import { useAuth } from 'context/auth.context';
 import { View, ActivityIndicator } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 export default function RootLayout() {
   const { token, isLoading } = useAuth();
+  const { t } = useTranslation();
 
   if (isLoading) {
     return (
@@ -24,35 +26,35 @@ export default function RootLayout() {
       <Tabs.Screen 
         name="map" 
         options={{ 
-          title: 'Map', 
+          title: t('map'), 
           tabBarIcon: ({ color }) => <Ionicons name="map" size={16} color={color} /> 
         }} 
       />
       <Tabs.Screen 
         name="tracking" 
         options={{ 
-          title: 'Tracking', 
+          title: t('tracking'), 
           tabBarIcon: ({ color }) => <Ionicons name="navigate-outline" size={16} color={color} />
         }} 
       />
       <Tabs.Screen 
         name="resorts" 
         options={{ 
-          title: 'Resorts', 
+          title: t('resorts'), 
           tabBarIcon: ({ color }) => <Ionicons name="snow-outline" size={16} color={color} />
         }} 
       />
       <Tabs.Screen 
         name="community" 
         options={{ 
-          title: 'Community', 
+          title: t('community'), 
           tabBarIcon: ({ color }) => <Ionicons name="people-outline" size={16} color={color} />
         }} 
       />
       <Tabs.Screen 
         name="profile" 
         options={{ 
-          title: 'Profile', 
+          title: t('profile'), 
           tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={16} color={color} />
         }} 
       />
