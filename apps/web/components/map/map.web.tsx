@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import maplibregl from 'maplibre-gl';
@@ -17,6 +16,7 @@ import { SpeedTooltip } from './speed-tooltip';
 import { LegendDetailPanel } from './legend-detail-panel';
 import { CircleQuestionMark } from 'lucide-react';
 import { View } from 'react-native';
+import api from 'interceptor/api';
 
 export default function InteractiveSkiMap() {
     const searchParams = useLocalSearchParams();
@@ -121,9 +121,7 @@ export default function InteractiveSkiMap() {
         const loadSessionData = async () => {
             if (searchParams.sessionId) {
                 try {
-                    const res = await axios.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
+                    const res = await api.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`);
                     if (res.status === 200 && res.data) {
                         const session = res.data.data || res.data; // Handle either wrap or raw
                         setSessionDetails(session);
@@ -169,16 +167,13 @@ export default function InteractiveSkiMap() {
         const loadInitial = async () => {
             if (Number(searchParams.zoom) < 10) {
                 try {
-                    const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
+                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
                         params: {
                             minLon: searchParams.minLon,
                             minLat: searchParams.minLat,
                             maxLon: searchParams.maxLon,
                             maxLat: searchParams.maxLat
                         },
-                        headers: {
-                            Authorization: `Bearer ${token}`
-                        }
                     });
                     if (request.status !== 200) {
                         throw new Error(`HTTP error! status: ${request.status}`);
@@ -192,15 +187,12 @@ export default function InteractiveSkiMap() {
                     const lat = parseFloat(searchParams.lat as string || '40.797891');
                     const lon = parseFloat(searchParams.lon as string || '-3.971953');
 
-                    const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
                         params: {
                             lat: lat,
                             lon: lon,
                             radius: 50
                         },
-                        headers: {
-                            Authorization: `Bearer ${token}`
-                        }
                     });
                     if (request.status !== 200) {
                         throw new Error(`HTTP error! status: ${request.status}`);
@@ -473,16 +465,13 @@ export default function InteractiveSkiMap() {
             const sw = bounds.getSouthWest();
             const ne = bounds.getNorthEast();
 
-            const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
+            const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
                 params: {
                     minLon: sw.lng,
                     minLat: sw.lat,
                     maxLon: ne.lng,
                     maxLat: ne.lat
                 },
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
             });
             if (request.status !== 200) {
                 throw new Error(`HTTP error! status: ${request.status}`);
@@ -503,15 +492,12 @@ export default function InteractiveSkiMap() {
                 const lat = center.lat;
                 const lon = center.lng;
 
-                const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
                     params: {
                         lat: lat,
                         lon: lon,
                         radius: 50
                     },
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
                 });
                 if (request.status !== 200) {
                     throw new Error(`HTTP error! status: ${request.status}`);
@@ -528,11 +514,7 @@ export default function InteractiveSkiMap() {
 
     const fetchResortWithDetails = async (resortId: string) => {
         try {
-            const request = await axios.get<Resort>(`${API_BASE_URL}/resorts/by-id/${resortId}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
-            });
+            const request = await api.get<Resort>(`${API_BASE_URL}/resorts/by-id/${resortId}`);
             if (request.status !== 200) {
                 throw new Error(`HTTP error! status: ${request.status}`);
             }
@@ -544,15 +526,12 @@ export default function InteractiveSkiMap() {
                 const lat = request.data.Latitude;
                 const lon = request.data.Longitude;
 
-                const requestResorts = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                const requestResorts = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
                     params: {
                         lat: lat,
                         lon: lon,
                         radius: 50
                     },
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
                 });
                 if (requestResorts.status !== 200) {
                     throw new Error(`HTTP error! status: ${requestResorts.status}`);

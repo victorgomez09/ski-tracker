@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -22,6 +21,7 @@ import { LegendDetailPanel } from './legend-detail-panel';
 import { CircleHelp, MapPin, X, ArrowLeft, Download } from 'lucide-react-native';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
 import { OfflineMapsModal } from './offline-maps-panel';
+import api from 'interceptor/api';
 
 const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
@@ -134,9 +134,7 @@ export default function InteractiveSkiMapNative() {
         const loadSessionData = async () => {
             if (searchParams.sessionId) {
                 try {
-                    const res = await axios.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
+                    const res = await api.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`);
                     if (res.status === 200 && res.data) {
                         const session = res.data.data || res.data;
                         setSessionDetails(session);
@@ -181,14 +179,13 @@ export default function InteractiveSkiMapNative() {
         const loadInitial = async () => {
             if (Number(searchParams.zoom) < 10) {
                 try {
-                    const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
+                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
                         params: {
                             minLon: searchParams.minLon,
                             minLat: searchParams.minLat,
                             maxLon: searchParams.maxLon,
                             maxLat: searchParams.maxLat
                         },
-                        headers: { Authorization: `Bearer ${token}` }
                     });
                     if (request.status === 200) {
                         setResorts(request.data);
@@ -201,9 +198,8 @@ export default function InteractiveSkiMapNative() {
                     const lat = parseFloat((searchParams.lat as string) || '40.797891');
                     const lon = parseFloat((searchParams.lon as string) || '-3.971953');
 
-                    const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
                         params: { lat: lat, lon: lon, radius: 50 },
-                        headers: { Authorization: `Bearer ${token}` }
                     });
                     if (request.status === 200) {
                         setResorts(request.data);

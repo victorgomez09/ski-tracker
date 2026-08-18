@@ -4,7 +4,6 @@ import {
     Layer as NativeLayer,
     Map as NativeMap
 } from '@maplibre/maplibre-react-native';
-import axios from 'axios';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import * as SQLite from 'expo-sqlite';
@@ -21,6 +20,8 @@ import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
 import { clearTrack, getAllPhotos, getAllPoints, initDB } from 'tracking/database';
 import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
 import { ResortDetailPanel } from 'components/map/resort-detail-panel';
+import api from 'interceptor/api';
+import { User } from 'models/user.model';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
@@ -105,9 +106,8 @@ export default function InteractiveSkiMapNative() {
                 }
             }
 
-            const request = await axios.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
+            const request = await api.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
                 params: { lat: latitude, lon: longitude },
-                headers: { Authorization: `Bearer ${token}` }
             });
             if (request.status === 200) {
                 setResort(request.data);
@@ -124,7 +124,13 @@ export default function InteractiveSkiMapNative() {
             setIsTracking(false);
             await loadTrackPoints();
         } else {
-            await startTracking(resort.ID);
+            const userRequest = await api.get<User>('/users/me');
+
+            if (userRequest.status !== 200) {
+                alert("Failed to fetch user details. Please try again.");
+                return;
+            }
+            await startTracking(resort.ID, userRequest.data.time_tracking || 5000);
             setIsTracking(true);
         }
     };
@@ -147,14 +153,9 @@ export default function InteractiveSkiMapNative() {
             const resortIdToUse = resort.ID || points[0].resort_id || "sierra-nevada";
 
             // 1. Start session
-            const startResponse = await axios.post(`${API_BASE_URL}/ski-sessions`, {
+            const startResponse = await api.post(`${API_BASE_URL}/ski-sessions`, {
                 resortId: resortIdToUse,
                 isPublic: isPublic
-            }, {
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`
-                }
             });
 
             if (startResponse.status !== 201) {
@@ -184,23 +185,14 @@ export default function InteractiveSkiMapNative() {
 
             formData.append('points', JSON.stringify(payload));
 
-            const pointsResponse = await axios.post(`${API_BASE_URL}/ski-sessions/${sessionId}/points`, formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                    Authorization: `Bearer ${token}`
-                }
-            });
+            const pointsResponse = await api.post(`${API_BASE_URL}/ski-sessions/${sessionId}/points`, formData);
 
             if (pointsResponse.status !== 200) {
                 throw new Error("Failed to upload points");
             }
 
             // 3. Finish session
-            const finishResponse = await axios.post(`${API_BASE_URL}/ski-sessions/${sessionId}/finish`, {}, {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
-            });
+            const finishResponse = await api.post(`${API_BASE_URL}/ski-sessions/${sessionId}/finish`, {});
 
             if (finishResponse.status === 200 || finishResponse.status === 201) {
                 alert("Track uploaded successfully to the backend and processed!");

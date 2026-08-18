@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
 const AuthContext = createContext<{

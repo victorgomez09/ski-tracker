@@ -40,7 +40,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
 /**
  * Starts tracking the user's location in the background. This function requests the necessary permissions and initiates location updates with specified accuracy and intervals. It also configures a foreground service notification to inform the user that their ski session is being monitored.
  */
-export const startTracking = async (resortId: string) => {
+export const startTracking = async (resortId: string, trackingTime: number) => {
   await AsyncStorage.setItem('ACTIVE_RESORT_ID', resortId.toString());
   const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
   if (foregroundStatus !== 'granted') return;
@@ -50,7 +50,7 @@ export const startTracking = async (resortId: string) => {
 
   await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
     accuracy: Location.Accuracy.High,
-    timeInterval: 5000, // Get updates every 5 seconds even if movement is minimal
+    timeInterval: trackingTime, // Get updates based on the specified tracking time
     distanceInterval: 10, // Get updates every 10 meters
     showsBackgroundLocationIndicator: true, // Show indicator on iOS/Android
     foregroundService: {
