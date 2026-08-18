@@ -28,6 +28,7 @@ const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.jso
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
     const isInternalMoveRef = useRef(false);
+    const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
@@ -104,15 +105,18 @@ export default function InteractiveSkiMapNative() {
     const [viewState, setViewState] = useState({
         longitude: parseFloat((searchParams.lon as string) || '-3.971953'),
         latitude: parseFloat((searchParams.lat as string) || '40.797891'),
-        zoom: parseInt((searchParams.zoom as string) || '13'),
+        zoom: parseFloat((searchParams.zoom as string) || '13'),
         bearing: 0,
         pitch: 0
     });
     const { token } = useAuth();
 
     useEffect(() => {
-        if (isInternalMoveRef.current) {
-            isInternalMoveRef.current = false;
+        const lastInternal = lastInternalParamsRef.current;
+        if (lastInternal &&
+            searchParams.lat === lastInternal.lat &&
+            searchParams.lon === lastInternal.lon &&
+            searchParams.zoom === lastInternal.zoom) {
             return;
         }
 
@@ -124,7 +128,7 @@ export default function InteractiveSkiMapNative() {
                     ...prev,
                     latitude: lat,
                     longitude: lon,
-                    zoom: searchParams.zoom ? parseInt(searchParams.zoom as string) : prev.zoom
+                    zoom: searchParams.zoom ? parseFloat(searchParams.zoom as string) : prev.zoom
                 }));
             }
         }
@@ -570,11 +574,13 @@ export default function InteractiveSkiMapNative() {
 
         if (center && Array.isArray(center) && center.length >= 2) {
             const [lon, lat] = center;
+            const finalZoom = zoom !== undefined ? zoom : 13;
+
             setViewState(prev => ({
                 ...prev,
                 longitude: lon,
                 latitude: lat,
-                zoom: zoom !== undefined ? Math.round(zoom) : prev.zoom,
+                zoom: finalZoom,
             }));
 
             isInternalMoveRef.current = true;
@@ -600,10 +606,16 @@ export default function InteractiveSkiMapNative() {
                 maxLat = bounds.ne[1].toString();
             }
 
+            const paramLat = lat.toString();
+            const paramLon = lon.toString();
+            const paramZoom = finalZoom.toString();
+
+            lastInternalParamsRef.current = { lat: paramLat, lon: paramLon, zoom: paramZoom };
+
             router.setParams({
-                lat: lat.toString(),
-                lon: lon.toString(),
-                zoom: zoom ? Math.round(zoom).toString() : '13',
+                lat: paramLat,
+                lon: paramLon,
+                zoom: paramZoom,
                 minLon,
                 minLat,
                 maxLon,

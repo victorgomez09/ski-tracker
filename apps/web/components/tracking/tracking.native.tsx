@@ -2,15 +2,17 @@ import {
     Camera as NativeCamera,
     GeoJSONSource as NativeGeoJSONSource,
     Layer as NativeLayer,
-    Map as NativeMap
+    Map as NativeMap,
+    LngLatBounds
 } from '@maplibre/maplibre-react-native';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
-import { Activity, CameraIcon, Play, Square, Upload } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, CameraIcon, Play, Square, Upload, Download } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Platform, Text, TouchableOpacity, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { Camera } from 'components/tracking/camera';
@@ -22,12 +24,18 @@ import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-m
 import { ResortDetailPanel } from 'components/map/resort-detail-panel';
 import api from 'interceptor/api';
 import { User } from 'models/user.model';
+import { useOfflineMaps } from 'hooks/use-offline.hook';
+import { OfflineMapsModal } from 'components/map/offline-maps-panel';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
     const { token } = useAuth();
+
+    const isInternalMoveRef = useRef(false);
+    const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
+    const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
     const [resort, setResort] = useState<ResortDetail>({} as ResortDetail);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
@@ -44,10 +52,41 @@ export default function InteractiveSkiMapNative() {
     const [viewState, setViewState] = useState({
         longitude: parseFloat(searchParams.lng as string || '-3.971953'),
         latitude: parseFloat(searchParams.lat as string || '40.797891'),
-        zoom: parseInt(searchParams.zoom as string || '13'),
+        zoom: parseFloat(searchParams.zoom as string || '13'),
         bearing: 0,
         pitch: 0
     });
+    const [showOfflineModal, setShowOfflineModal] = useState(false);
+    const {
+        packs,
+        downloadingPack,
+        downloadingProgress,
+        downloadRegion,
+        deletePack,
+    } = useOfflineMaps(mapStyleUrl);
+
+    useEffect(() => {
+        const lastInternal = lastInternalParamsRef.current;
+        if (lastInternal &&
+            searchParams.lat === lastInternal.lat &&
+            searchParams.lng === lastInternal.lon &&
+            searchParams.zoom === lastInternal.zoom) {
+            return;
+        }
+
+        if (searchParams.lat && searchParams.lng) {
+            const lat = parseFloat(searchParams.lat as string);
+            const lng = parseFloat(searchParams.lng as string);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                setViewState(prev => ({
+                    ...prev,
+                    latitude: lat,
+                    longitude: lng,
+                    zoom: searchParams.zoom ? parseFloat(searchParams.zoom as string) : prev.zoom
+                }));
+            }
+        }
+    }, [searchParams.lat, searchParams.lng, searchParams.zoom]);
 
     // --- Database initialization and tracking status on mount ---
     useEffect(() => {
@@ -106,14 +145,32 @@ export default function InteractiveSkiMapNative() {
                 }
             }
 
+            if (!latitude || !longitude) {
+                // If still no location, check cache
+                const cached = await AsyncStorage.getItem('LAST_RESORT_DETAILS');
+                if (cached) {
+                    setResort(JSON.parse(cached));
+                }
+                return;
+            }
+
             const request = await api.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
                 params: { lat: latitude, lon: longitude },
             });
             if (request.status === 200) {
                 setResort(request.data);
+                await AsyncStorage.setItem('LAST_RESORT_DETAILS', JSON.stringify(request.data));
             }
         } catch (error) {
-            console.error("Error fetching resort details:", error);
+            console.error("Error fetching resort details, trying cache:", error);
+            const cached = await AsyncStorage.getItem('LAST_RESORT_DETAILS');
+            if (cached) {
+                try {
+                    setResort(JSON.parse(cached));
+                } catch (e) {
+                    console.error("Error parsing cached resort details:", e);
+                }
+            }
         }
     };
 
@@ -124,13 +181,23 @@ export default function InteractiveSkiMapNative() {
             setIsTracking(false);
             await loadTrackPoints();
         } else {
-            const userRequest = await api.get<User>('/users/me');
-
-            if (userRequest.status !== 200) {
-                alert("Failed to fetch user details. Please try again.");
-                return;
+            let trackingTime = 5000;
+            try {
+                const userRequest = await api.get<User>('/users/me');
+                if (userRequest.status === 200 && userRequest.data) {
+                    trackingTime = userRequest.data.time_tracking || 5000;
+                    await AsyncStorage.setItem('CACHED_TIME_TRACKING', trackingTime.toString());
+                }
+            } catch (e) {
+                console.warn("Could not fetch user settings for tracking time, loading from cache:", e);
+                const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
+                if (cachedTime) {
+                    trackingTime = parseInt(cachedTime);
+                }
             }
-            await startTracking(resort.ID, userRequest.data.time_tracking || 5000);
+
+            const resortIdToUse = resort.ID || "sierra-nevada";
+            await startTracking(resortIdToUse, trackingTime);
             setIsTracking(true);
         }
     };
@@ -418,17 +485,25 @@ export default function InteractiveSkiMapNative() {
 
         if (center && Array.isArray(center) && center.length >= 2) {
             const [lon, lat] = center;
+            const finalZoom = zoom !== undefined ? zoom : 13;
+
             setViewState(prev => ({
                 ...prev,
                 longitude: lon,
                 latitude: lat,
-                zoom: zoom !== undefined ? Math.round(zoom) : prev.zoom,
+                zoom: finalZoom,
             }));
 
+            const paramLat = lat.toString();
+            const paramLng = lon.toString();
+            const paramZoom = finalZoom.toString();
+
+            lastInternalParamsRef.current = { lat: paramLat, lon: paramLng, zoom: paramZoom };
+
             router.setParams({
-                lng: lon.toFixed(4),
-                lat: lat.toFixed(4),
-                zoom: zoom ? Math.round(zoom).toString() : '13'
+                lng: paramLng,
+                lat: paramLat,
+                zoom: paramZoom
             });
 
             if (!Object.keys(resort).length) {
@@ -436,6 +511,18 @@ export default function InteractiveSkiMapNative() {
             }
         }
     }, [resort]);
+
+    const handleDownloadCurrentView = (customName: string) => {
+        const delta = 0.08;
+        const bounds: LngLatBounds = [
+            viewState.longitude - delta,
+            viewState.latitude - delta,
+            viewState.longitude + delta,
+            viewState.latitude + delta,
+        ];
+
+        downloadRegion(customName, bounds, 10, 16);
+    };
 
     return (
         <View className="w-full h-full relative flex-1 bg-slate-950">
@@ -458,7 +545,29 @@ export default function InteractiveSkiMapNative() {
                         >
                             {isTracking ? <Square size={20} color="#ffffff" /> : <Play size={20} color="#ffffff" />}
                         </TouchableOpacity>
+
+                        <TouchableOpacity
+                            onPress={() => setShowOfflineModal(true)}
+                            className="absolute bottom-4 left-32 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
+                        >
+                            <Download size={18} color="#60a5fa" />
+                            {packs.length > 0 && (
+                                <View className="w-2 h-2 rounded-full bg-emerald-500" />
+                            )}
+                        </TouchableOpacity>
                     </View>
+
+                    {showOfflineModal && (
+                        <OfflineMapsModal
+                            onClose={() => setShowOfflineModal(false)}
+                            packs={packs}
+                            downloadingPack={downloadingPack}
+                            downloadProgress={downloadingProgress}
+                            onDownloadCurrentArea={handleDownloadCurrentView}
+                            onDeletePack={deletePack}
+                            currentResortName={resort?.Name}
+                        />
+                    )}
 
                     <View className="absolute bottom-10 right-4 z-40 flex flex-col items-end gap-3">
                         {!isTracking && hasTrackData && (
@@ -469,7 +578,7 @@ export default function InteractiveSkiMapNative() {
                                         <Text className="font-bold text-sm text-white">Session recorded</Text>
                                     </View>
                                     <Text className="text-[11px] text-slate-400">
-                                        {trackPoints.length} points recorded at {resort.Name}
+                                        {trackPoints.length} points recorded at {resort.Name || "Sierra Nevada"}
                                     </Text>
                                 </View>
 
@@ -485,22 +594,6 @@ export default function InteractiveSkiMapNative() {
                                 </TouchableOpacity>
                             </View>
                         )}
-
-                        {/* <View className="flex-row gap-2">
-                            <TouchableOpacity
-                                className={`absolute bottom-4 left-16 z-50 ${isTracking ? 'bg-red-800' : 'bg-slate-800'} border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2`}
-                                onPress={handleToggleTracking}
-                            >
-                                {isTracking ? <Square size={20} color="#ffffff" /> : <Play size={20} color="#ffffff" />}
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                className="w-12 h-12 rounded-full items-center justify-center shadow-lg bg-blue-600"
-                                onPress={() => setTakePictureMode(true)}
-                            >
-                                <CameraIcon size={20} color="#ffffff" />
-                            </TouchableOpacity>
-                        </View> */}
                     </View>
 
                     <NativeMap
@@ -518,16 +611,20 @@ export default function InteractiveSkiMapNative() {
 
                         {(viewState?.zoom || Number(searchParams.zoom)) >= 10 && (
                             <>
-                                <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress}>
-                                    <NativeLayer {...pisteLineStyle} />
-                                    <NativeLayer {...pisteLabelStyle} />
-                                    <NativeLayer {...pisteDirectionStyle} />
-                                </NativeGeoJSONSource>
+                                {resort && resort.pistes && (
+                                    <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress}>
+                                        <NativeLayer {...pisteLineStyle} />
+                                        <NativeLayer {...pisteLabelStyle} />
+                                        <NativeLayer {...pisteDirectionStyle} />
+                                    </NativeGeoJSONSource>
+                                )}
 
-                                <NativeGeoJSONSource id="lifts-source" data={liftsGeoJSON} onPress={handleNativeFeaturePress}>
-                                    <NativeLayer {...liftLineStyle} />
-                                    <NativeLayer {...liftLabelStyle} />
-                                </NativeGeoJSONSource>
+                                {resort && resort.lifts && (
+                                    <NativeGeoJSONSource id="lifts-source" data={liftsGeoJSON} onPress={handleNativeFeaturePress}>
+                                        <NativeLayer {...liftLineStyle} />
+                                        <NativeLayer {...liftLabelStyle} />
+                                    </NativeGeoJSONSource>
+                                )}
 
                                 {trackPoints.length > 0 && (
                                     <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
