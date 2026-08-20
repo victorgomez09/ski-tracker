@@ -199,5 +199,13 @@
   "community": "Comunidad",
   "profile": "Perfil",
   "map": "Mapa",
-  "tracking": "Seguimiento"
+  "tracking": "Seguimiento",
+  "checking_version": "Comprobando actualizaciones...",
+  "downloading_update": "Descargando actualización...",
+  "version": "Versión",
+  "force_update": "Actualización Obligatoria",
+  "new_version_available": "🎉 Nueva versión disponible",
+  "changelogs": "Registro de cambios",
+  "update": "Actualizar",
+  "later": "Más tarde"
 }

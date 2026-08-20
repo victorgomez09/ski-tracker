@@ -1,0 +1,18 @@
+{
+  "platform": "android",
+  "version": "0.0.1",
+  "build_number": 1,
+  "min_version": "0.0.1",
+  "changelog": {
+    "en": [
+      "Initial release of the app"
+    ],
+    "es": [
+      "Lanzamiento inicial de la aplicación"
+    ]
+  },
+  "force_update": false,
+  "ota_available": true,
+  "store_url": "",
+  "is_active": true
+}

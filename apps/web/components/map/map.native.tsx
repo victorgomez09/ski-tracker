@@ -278,9 +278,8 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
-    const pisteDirectionStyle: any = {
-        id: 'piste-arrows',
-        sourceID: 'pistes-source',
+const pisteDirectionStyle: any = {
+        id: 'piste-directions',
         type: 'symbol',
         minzoom: 14,
         layout: {
@@ -294,19 +293,18 @@ export default function InteractiveSkiMapNative() {
             'text-ignore-placement': false
         },
         paint: {
-            // 'text-color': [
-            //     'match', ['get', 'difficulty'],
-            //     'novice', '#00e676',
-            //     'easy', '#2979ff',
-            //     'intermediate', '#ff1744',
-            //     'advanced', '#212121',
-            //     '#9e9e9e'
-            // ],
-            'text-color': '#ffffff',
-            'text-halo-color': '#000000',
-            'text-halo-width': 0.5
+            'text-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00e676',
+                'easy', '#2979ff',
+                'intermediate', '#ff1744',
+                'advanced', '#212121',
+                '#9e9e9e'
+            ],
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5
         }
-    }
+    };
 
     const liftLineStyle: any = {
         id: 'lift-lines',

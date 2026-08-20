@@ -15,17 +15,17 @@ import {
     X
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "react-i18next";
+import { ActivityIndicator, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
+import { OfflineMapsModal } from "components/map/offline-maps-panel";
 import { WeatherForecastDetails } from "components/resorts/weather-forecast";
 import { API_BASE_URL } from "constants/constants";
 import { useAuth } from "context/auth.context";
 import api from "interceptor/api";
 import { Resort } from "models/ski-resort.model";
 import { WeatherForecast } from "models/weather.model";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { OfflineMapsModal } from "components/map/offline-maps-panel";
 
 // Cache state to survive tab navigation / component remounting
 let cachedResorts: Resort[] = [];
@@ -38,7 +38,7 @@ const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.jso
 
 let useOffline: any;
 if (Platform.OS === 'web') {
-    useOffline = require('../../hooks/useOfflineMaps').useOfflineMaps;
+    useOffline = require('../../utils/offline-maps.util').useOfflineMaps;
 } else {
     useOffline = require('../../hooks/use-offline.hook').useOfflineMaps;
 }
