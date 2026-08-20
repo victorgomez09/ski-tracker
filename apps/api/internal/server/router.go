@@ -53,6 +53,11 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		protected := apiV1.Group("")
 		protected.Use(middleware.Auth(deps.JWTManager))
 		{
+			// Manifest routes
+			versionManifestHandler := v1.NewVersionManifestHandler(deps.Services.VersionManifest, deps.Store)
+			protected.GET("/manifest", versionManifestHandler.ListAll)
+			protected.GET("/manifest/check-version", versionManifestHandler.CheckVersion)
+
 			// Resort routes
 			skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
 			protected.GET("/resorts/bbox", skiResortHandler.ListByBBox)

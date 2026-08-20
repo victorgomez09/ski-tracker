@@ -45,7 +45,8 @@
       "expo-router",
       "expo-secure-store",
       "expo-image",
-      "@maplibre/maplibre-react-native"
+      "@maplibre/maplibre-react-native",
+      "expo-localization"
     ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",

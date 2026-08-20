@@ -71,6 +71,9 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+func (s *Store) VersionManifest() store.VersionManifestStore {
+	return &versionManifestStore{db: s.db}
+}
 func (s *Store) SkiResort() store.SkiResortStore {
 	return &skiResortStore{db: s.db}
 }

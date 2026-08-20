@@ -1,8 +1,9 @@
-import 'i18n';
-import { AuthProvider } from 'context/auth.context';
 import { Slot } from 'expo-router';
-import { AxiosInterceptor } from 'interceptor/axios.interceptor';
+import 'i18n';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+import { AuthProvider } from 'context/auth.context';
+import { AxiosInterceptor } from 'interceptor/axios.interceptor';
 
 export default function RootLayout() {
     return (

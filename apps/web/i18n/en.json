@@ -196,5 +196,13 @@
   "community": "Community",
   "profile": "Profile",
   "map": "Map",
-  "tracking": "Tracking"
+  "tracking": "Tracking",
+  "checking_version": "Checking for updates...",
+  "downloading_update": "Downloading update...",
+  "version": "Version",
+  "force_update": "Force Update",
+  "new_version_available": "🎉 New version available",
+  "changelogs": "Changelogs",
+  "update": "Update",
+  "later": "Later"
 }

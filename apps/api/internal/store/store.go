@@ -17,6 +17,7 @@ type Store interface {
 	SkiSession() SkiSessionStore
 	SessionPoint() SessionPointStore
 	SkiRun() SkiRunStore
+	VersionManifest() VersionManifestStore
 }
 
 // Pagination request parameters.
@@ -54,6 +55,12 @@ type SkiResortBBoxFilter struct {
 	MaxLatitude  *float64
 	MinLongitude *float64
 	MaxLongitude *float64
+}
+
+type VersionManifestStore interface {
+	ListAll(ctx context.Context) ([]models.VersionManifest, error)
+	GetLatestVersion(ctx context.Context, platform string) (*models.VersionManifest, error)
+	Create(ctx context.Context, versionManifest *models.VersionManifest) (*models.VersionManifest, error)
 }
 
 type SkiResortStore interface {
