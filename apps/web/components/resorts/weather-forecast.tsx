@@ -165,7 +165,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
             {activeTab === 'hourly' && data.hourly && (
                 <View className="bg-slate-800 border border-slate-700 p-4 rounded-md">
                     <Text className="text-[10px] text-slate-400 font-semibold uppercase mb-3">Upcoming hours</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
+                    <ScrollView className="flex flex-col gap-2 w-full h-72" showsVerticalScrollIndicator={true}>
                         {data.hourly.time.slice(0, 12).map((timeStr, index) => {
                             const hourFormatted = new Date(timeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                             const temp = data.hourly.temperature_2m[index];
@@ -178,9 +178,11 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             const visibility = data.hourly.visibility ? data.hourly.visibility[index] : null;
 
                             return (
-                                <View key={index} className="bg-slate-700/60 rounded-md p-3 items-center w-36 mr-3 space-y-2 border border-slate-600">
-                                    <Text className="text-xs font-semibold text-slate-300">{hourFormatted}</Text>
-                                    <Text className="text-base font-extrabold text-white my-1">{temp}{hourlyUnits.temperature_2m}</Text>
+                                <View key={index} className="flex flex-row items-center justify-between rounded-md p-3 gap-2 border border-slate-600 bg-slate-700/60 w-full space-y-2">
+                                    <View className="flex-row items-center gap-3">
+                                        <Text className="text-xs font-semibold text-slate-300">{hourFormatted}</Text>
+                                        <Text className="text-base font-extrabold text-white my-1">{temp}{hourlyUnits.temperature_2m}</Text>
+                                    </View>
 
                                     {prob > 0 && (
                                         <View className="bg-blue-900/60 px-2 py-0.5 rounded flex-row items-center gap-1">
@@ -203,7 +205,14 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                                         </View>
                                     )}
 
-                                    <View className="pt-2 border-t border-slate-600/80 w-full items-center">
+                                    {snowDepth > 0 && (
+                                        <View className="bg-sky-900/80 px-2 py-0.5 rounded flex-row items-center gap-1">
+                                            <Snowflake size={10} color="#38bdf8" />
+                                            <Text className="text-[9px] text-sky-200">Snow Depth: {snowDepth}{hourlyUnits.snow_depth}</Text>
+                                        </View>
+                                    )}
+
+                                    <View className="flex flex-row gap-1 w-full items-center">
                                         <View className="flex-row items-center gap-1">
                                             <Wind size={10} color="#38bdf8" />
                                             <Text className="text-[9px] text-slate-300">{windSpeed} {hourlyUnits.wind_speed_10m}</Text>
