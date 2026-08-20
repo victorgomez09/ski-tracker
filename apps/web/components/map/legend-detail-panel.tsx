@@ -20,7 +20,7 @@ export const LegendDetailPanel: React.FC<LegendDetailPanelProps> = ({ onClose })
     ];
 
     return (
-        <View className="absolute inset-0 flex items-center justify-center bg-black/60 z-50 p-3">
+        <View className="absolute inset-0 bg-black/60 z-50 p-3">
             <View className={`bg-slate-900 border border-slate-700 shadow-md p-4 rounded-xl ${isWeb ? 'w-11/12 h-11/12' : 'w-full h-full'} flex`}>
                 <View className="flex-row justify-between items-center mb-3">
                     <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -34,7 +34,7 @@ export const LegendDetailPanel: React.FC<LegendDetailPanelProps> = ({ onClose })
                     </TouchableOpacity>
                 </View>
 
-                <ScrollView className="space-y-4">
+                <ScrollView className="flex flex-col gap-4">
                     <View className="bg-slate-800 p-3.5 rounded-md border border-slate-700 space-y-2">
                         <Text className="text-xs font-bold text-slate-300 mb-2">{t('difficulty_levels')}</Text>
                         {getDifficultyMeta.map((meta) => (
@@ -45,12 +45,12 @@ export const LegendDetailPanel: React.FC<LegendDetailPanelProps> = ({ onClose })
                         ))}
                     </View>
 
-                    <View className="bg-slate-800 p-3.5 rounded-md border border-slate-700 space-y-2">
+                    <View className="bg-slate-800 p-3.5 rounded-md border border-slate-700 mt-4">
                         <Text className="text-xs font-bold text-slate-300 mb-2">
                             {t('slope_grading')}
                         </Text>
 
-                        <View className="flex-row flex-wrap gap-2">
+                        <View className="flex-row flex-wrap items-center justify-center gap-2">
                             {getDifficultyMeta.filter(meta => meta.label !== t('other')).map((meta) => (
                                 <View key={meta.label} className="items-center mr-3 mb-2">
                                     <View className={`w-14 h-3 ${meta.bg} rounded-sm mb-1`} />

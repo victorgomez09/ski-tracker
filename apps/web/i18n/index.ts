@@ -36,7 +36,7 @@ const initI18n = async () => {
       resources,
       lng: language,
       fallbackLng: 'en',
-      compatibilityJSON: 'v3', // Required for React Native compatibility
+      compatibilityJSON: 'v4', // Required for React Native compatibility
       interpolation: {
         escapeValue: false, // React already safes from xss
       },

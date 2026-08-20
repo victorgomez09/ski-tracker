@@ -434,7 +434,7 @@ export default function ResortsView() {
                     </View>
 
                     {/* Footer Action Bar */}
-                    <View className={`grid ${!isWeb ? 'grid-cols-3' : 'grid-cols-1'} gap-2 w-full`}>
+                    <View className={`grid ${!isWeb ? 'grid-cols-3' : 'grid-cols-1'} w-full`}>
                         <TouchableOpacity
                             className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
                             onPress={() => {

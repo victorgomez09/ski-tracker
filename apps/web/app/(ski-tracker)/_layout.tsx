@@ -1,9 +1,10 @@
 import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import BottomTabs from 'components/navigation/bottom-tabs';
-import { useAuth } from 'context/auth.context';
 import { View, ActivityIndicator } from 'react-native';
 import { useTranslation } from 'react-i18next';
+
+import BottomTabs from 'components/navigation/bottom-tabs';
+import { useAuth } from 'context/auth.context';
 
 export default function RootLayout() {
   const { token, isLoading } = useAuth();

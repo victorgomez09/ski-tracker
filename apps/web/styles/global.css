@@ -4,10 +4,6 @@
 
 @import 'nativewind/theme';
 
-@plugin "daisyui" {
-    themes: light --default, dark --prefersdark, winter, forest, dracula, cyberpunk, synthwave, valentine, night, retro, halloween, garden, business, acid, lemonade, coffee, cupcake;
-}
-
 .recharts-wrapper *:focus,
 .recharts-surface:focus,
 svg:focus {

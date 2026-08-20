@@ -1,33 +1,35 @@
-import { router } from 'expo-router';
-import { useLocalSearchParams } from 'expo-router/build/hooks';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
-import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import {
-    Map as NativeMap,
+    LngLatBounds,
     Camera as NativeCamera,
     GeoJSONSource as NativeGeoJSONSource,
     Layer as NativeLayer,
-    Marker as NativeMarker,
-    LngLatBounds
+    Map as NativeMap,
+    Marker as NativeMarker
 } from '@maplibre/maplibre-react-native';
+import { router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router/build/hooks';
+import { useOfflineMaps } from 'hooks/use-offline.hook';
+import { ArrowLeft, CircleHelp, Download, MapPin, X } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import { useNetworkState } from 'expo-network'
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
-import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
-import { MapDetailPanel } from './map-detail-panel';
-import { ResortDetailPanel } from './resort-detail-panel';
-import { LegendDetailPanel } from './legend-detail-panel';
-import { CircleHelp, MapPin, X, ArrowLeft, Download } from 'lucide-react-native';
-import { useOfflineMaps } from 'hooks/use-offline.hook';
-import { OfflineMapsModal } from './offline-maps-panel';
 import api from 'interceptor/api';
-import { useTranslation } from 'react-i18next';
+import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
+import { LegendDetailPanel } from './legend-detail-panel';
+import { MapDetailPanel } from './map-detail-panel';
+import { OfflineMapsModal } from './offline-maps-panel';
+import { ResortDetailPanel } from './resort-detail-panel';
 
 const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
 export default function InteractiveSkiMapNative() {
     const { t } = useTranslation();
+    const networkState = useNetworkState();
     const searchParams = useLocalSearchParams();
     const isInternalMoveRef = useRef(false);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
@@ -183,6 +185,7 @@ export default function InteractiveSkiMapNative() {
 
     useEffect(() => {
         const loadInitial = async () => {
+            console.log(`Current network type: ${networkState}`);
             if (Number(searchParams.zoom) < 10) {
                 try {
                     const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {

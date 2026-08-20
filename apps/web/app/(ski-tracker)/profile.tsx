@@ -1,11 +1,11 @@
+import { Checkbox } from 'expo-checkbox';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Check, Pencil, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
 import { ActivityIndicator, Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from 'react-native-safe-area-context';
-import RNPickerSelect from 'react-native-picker-select';
-import { useTranslation } from "react-i18next";
 
 import { API_BASE_URL } from "constants/constants";
 import { useAuth } from "context/auth.context";
@@ -323,48 +323,44 @@ export default function ProfileView() {
                                                 message: t('time_tracking_number') as string,
                                             },
                                         }}
-                                        render={({ field: { onChange, value } }) => (
-                                            <RNPickerSelect
-                                                onValueChange={onChange}
-                                                items={[
-                                                    { label: t('each_5_seconds'), value: 5000 },
-                                                    { label: t('each_3_seconds'), value: 3000 },
-                                                    { label: t('each_1_second'), value: 1000 },
-                                                ]}
-                                                value={value}
-                                                style={{
-                                                    inputIOS: {
-                                                        backgroundColor: '#314158',
-                                                        borderColor: errors.time_tracking ? '#f87171' : '#475569',
-                                                        color: '#ffffff',
-                                                        paddingVertical: 10,
-                                                        paddingHorizontal: 10,
-                                                        borderRadius: 6,
-                                                        fontSize: 14,
-                                                    },
-                                                    inputAndroid: {
-                                                        backgroundColor: '#314158',
-                                                        borderColor: errors.time_tracking ? '#f87171' : '#475569',
-                                                        color: '#ffffff',
-                                                        paddingVertical: 10,
-                                                        paddingHorizontal: 10,
-                                                        borderRadius: 6,
-                                                        fontSize: 14,
-                                                    },
-                                                    inputWeb: {
-                                                        backgroundColor: '#314158',
-                                                        borderColor: errors.time_tracking ? '#f87171' : '#475569',
-                                                        color: '#ffffff',
-                                                        paddingVertical: 10,
-                                                        paddingHorizontal: 10,
-                                                        borderRadius: 6,
-                                                        fontSize: 14,
-                                                    },
-                                                }}
-                                            />
+                                        render={({ field: { value } }) => (
+                                            <View className="flex flex-col gap-3">
+                                                <View className="flex-row items-center gap-2">
+                                                    <Checkbox
+                                                        className={`bg-slate-700 border text-white p-2.5 rounded-md text-sm ${errors.time_tracking ? 'border-rose-500' : 'border-slate-600'
+                                                            }`}
+                                                        value={value === 1000}
+                                                        onValueChange={() => setValue('time_tracking', 1000)}
+                                                        color={value === 1000 ? '#3b82f6' : undefined}
+                                                    />
+                                                    <Text className="text-[10px] font-bold text-slate-400">{t('each_1_second')}</Text>
+                                                </View>
+
+                                                <View className="flex-row items-center gap-2">
+                                                    <Checkbox
+                                                        className={`bg-slate-700 border text-white p-2.5 rounded-md text-sm ${errors.time_tracking ? 'border-rose-500' : 'border-slate-600'
+                                                            }`}
+                                                        value={value === 3000}
+                                                        onValueChange={() => setValue('time_tracking', 3000)}
+                                                        color={value === 3000 ? '#3b82f6' : undefined}
+                                                    />
+                                                    <Text className="text-[10px] font-bold text-slate-400">{t('each_3_seconds')}</Text>
+                                                </View>
+
+                                                <View className="flex-row items-center gap-2">
+                                                    <Checkbox
+                                                        className={`bg-slate-700 border text-white p-2.5 rounded-md text-sm ${errors.time_tracking ? 'border-rose-500' : 'border-slate-600'
+                                                            }`}
+                                                        value={value === 5000}
+                                                        onValueChange={() => setValue('time_tracking', 5000)}
+                                                        color={value === 5000 ? '#3b82f6' : undefined}
+                                                    />
+                                                    <Text className="text-[10px] font-bold text-slate-400">{t('each_5_seconds')}</Text>
+                                                </View>
+                                            </View>
                                         )}
                                     />
-                                    <Text className="text-slate-400 text-[10px] mt-1">{t('time_tracking_desc')}</Text>
+                                    <Text className="text-slate-400 text-[10px] mt-1 italic">{t('time_tracking_desc')}</Text>
                                     {errors.time_tracking && (
                                         <Text className="text-rose-400 text-[10px] mt-1">{errors.time_tracking.message}</Text>
                                     )}

@@ -48,7 +48,6 @@ export default function InteractiveSkiMapNative() {
     const [isLoading, setIsLoading] = useState(false);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
     const [isPublic, setIsPublic] = useState(true);
-    const [nativeMapStyle, setNativeMapStyle] = useState<any | null>(null);
     const [viewState, setViewState] = useState({
         longitude: parseFloat(searchParams.lng as string || '-3.971953'),
         latitude: parseFloat(searchParams.lat as string || '40.797891'),
@@ -107,7 +106,7 @@ export default function InteractiveSkiMapNative() {
 
     const setupDatabaseAndCheckStatus = async () => {
         try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+            const db = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
             await initDB(db);
 
             if (Platform.OS !== 'web') {
@@ -122,7 +121,7 @@ export default function InteractiveSkiMapNative() {
 
     const loadTrackPoints = async () => {
         try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+            const db = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
             const points = await getAllPoints(db);
             setTrackPoints(points);
             setHasTrackData(points.length > 0);
@@ -197,8 +196,21 @@ export default function InteractiveSkiMapNative() {
             }
 
             const resortIdToUse = resort.ID || "sierra-nevada";
-            await startTracking(resortIdToUse, trackingTime);
-            setIsTracking(true);
+            try {
+                const started = await startTracking(resortIdToUse, trackingTime);
+                if (!started) {
+                    alert(t('tracking_start_permission_denied'));
+                    return;
+                }
+                setIsTracking(true);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                if (message.startsWith('FOREGROUND_SERVICE_MISSING')) {
+                    alert(t('tracking_start_foreground_service_required'));
+                } else {
+                    alert(t('tracking_start_failed'));
+                }
+            }
         }
     };
 
@@ -206,7 +218,7 @@ export default function InteractiveSkiMapNative() {
     const handleUploadTrack = async () => {
         setIsLoading(true);
         try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+            const db = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
             const points = await getAllPoints(db);
             const photos = await getAllPhotos(db);
 
@@ -538,9 +550,9 @@ export default function InteractiveSkiMapNative() {
                         <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
                     )}
 
-                    <View className="grid grid-cols-2 gap-2 absolute bottom-4 left-4 z-50">
+                    <View className="flex flex-row gap-1 absolute z-50 bottom-4 right-4">
                         <TouchableOpacity
-                            className={`absolute bottom-4 left-16 z-50 ${isTracking ? 'bg-red-800' : 'bg-slate-800'} border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2`}
+                            className={`${isTracking ? 'bg-red-800' : 'bg-slate-800'} border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2`}
                             onPress={handleToggleTracking}
                         >
                             {isTracking ? <Square size={20} color="#ffffff" /> : <Play size={20} color="#ffffff" />}
@@ -548,7 +560,7 @@ export default function InteractiveSkiMapNative() {
 
                         <TouchableOpacity
                             onPress={() => setShowOfflineModal(true)}
-                            className="absolute bottom-4 left-32 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
+                            className="bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
                         >
                             <Download size={18} color="#60a5fa" />
                             {packs.length > 0 && (
@@ -569,7 +581,7 @@ export default function InteractiveSkiMapNative() {
                         />
                     )}
 
-                    <View className="absolute bottom-10 right-4 z-40 flex flex-col items-end gap-3">
+                    <View className="absolute bottom-4 left-4 z-40 flex flex-col items-end gap-3">
                         {!isTracking && hasTrackData && (
                             <View className="bg-slate-900/95 border border-slate-800 p-4 rounded-md shadow-md w-72 flex flex-col gap-3">
                                 <View className="flex flex-col gap-0.5">
