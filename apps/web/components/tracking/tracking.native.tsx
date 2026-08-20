@@ -17,7 +17,6 @@ import { Platform, Text, TouchableOpacity, View } from 'react-native';
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
 import { API_BASE_URL } from 'constants/constants';
-import { useAuth } from 'context/auth.context';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
 import api from 'interceptor/api';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
@@ -30,10 +29,8 @@ const LOCATION_TASK_NAME = 'ski-background-location-task';
 
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
-    const { token } = useAuth();
     const { t } = useTranslation();
 
-    const isInternalMoveRef = useRef(false);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
     const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
@@ -48,7 +45,6 @@ export default function InteractiveSkiMapNative() {
     const [isLoading, setIsLoading] = useState(false);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
     const [isPublic, setIsPublic] = useState(true);
-    const [nativeMapStyle, setNativeMapStyle] = useState<any | null>(null);
     const [viewState, setViewState] = useState({
         longitude: parseFloat(searchParams.lng as string || '-3.971953'),
         latitude: parseFloat(searchParams.lat as string || '40.797891'),
