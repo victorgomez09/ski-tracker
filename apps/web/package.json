@@ -6,6 +6,7 @@
     "ios": "expo run:ios",
     "start": "expo start",
     "prebuild": "expo prebuild",
+    "export:ota": "expo export --output-dir dist-ota && node -e \"const fs=require('fs'); const app=require('./app.json'); fs.writeFileSync('dist-ota/expoConfig.json', JSON.stringify(app.expo, null, 2));\"",
     "lint": "eslint \"**/*.{js,jsx,ts,tsx}\" && prettier -c \"**/*.{js,jsx,ts,tsx,json}\"",
     "format": "eslint \"**/*.{js,jsx,ts,tsx}\" --fix && prettier \"**/*.{js,jsx,ts,tsx,json}\" --write",
     "web": "export BROWSER=none && expo start --web"

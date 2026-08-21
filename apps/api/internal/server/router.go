@@ -14,13 +14,14 @@ import (
 
 // RouterDeps holds dependencies required by the router.
 type RouterDeps struct {
-	Services    *service.Container
-	JWTManager  *auth.JWTManager
-	Store       store.Store
-	AppURL      string
-	SetupSecret string
-	Logger      *slog.Logger
-	Cache       *persistence.InMemoryStore
+	Services     *service.Container
+	JWTManager   *auth.JWTManager
+	Store        store.Store
+	AppURL       string
+	SetupSecret  string
+	Logger       *slog.Logger
+	Cache        *persistence.InMemoryStore
+	APIPublicURL string
 }
 
 // NewRouter creates and configures the Gin engine with all routes.
@@ -50,6 +51,11 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		apiV1.POST("/auth/login", userHandler.Login)
 		apiV1.POST("/auth/register", userHandler.Create)
 
+		// Expo Updates protocol (must be public: expo-updates does not send a JWT)
+		otaHandler := v1.NewOTAHandler(deps.Services.OTA, deps.APIPublicURL)
+		apiV1.GET("/ota/manifest", otaHandler.Manifest)
+		apiV1.GET("/ota/assets", otaHandler.Assets)
+
 		protected := apiV1.Group("")
 		protected.Use(middleware.Auth(deps.JWTManager))
 		{
@@ -57,6 +63,7 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			versionManifestHandler := v1.NewVersionManifestHandler(deps.Services.VersionManifest, deps.Store)
 			protected.GET("/manifest", versionManifestHandler.ListAll)
 			protected.GET("/manifest/check-version", versionManifestHandler.CheckVersion)
+			protected.POST("/ota/publish", otaHandler.Publish)
 
 			// Resort routes
 			skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)

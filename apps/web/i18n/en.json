@@ -207,5 +207,6 @@
   "new_version_available": "🎉 New version available",
   "changelogs": "Changelogs",
   "update": "Update",
-  "later": "Later"
+  "later": "Later",
+  "ota_available_badge": "Update available"
 }

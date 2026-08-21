@@ -48,12 +48,11 @@ export const useVersionCheck = (apiBaseUrl: string) => {
                 storeUrl: data.store_url,
             };
 
-            // If OTA update is available and not forced, handle it
-            if (versionData.otaAvailable && !versionData.forceUpdate && !__DEV__) {
-                await handleOtaUpdate();
+            // JS OTA is handled by expo-updates + useOtaUpdates. This hook only covers store/native builds.
+            if (versionData.otaAvailable) {
+                return;
             }
 
-            // Show modal if a store update is required or if there are changes to inform
             if (versionData.forceUpdate || versionData.latestVersion !== currentVersion) {
                 setUpdateInfo(versionData);
                 setModalVisible(true);
@@ -71,18 +70,36 @@ export const useVersionCheck = (apiBaseUrl: string) => {
             const update = await Updates.checkForUpdateAsync();
             if (update.isAvailable) {
                 await Updates.fetchUpdateAsync();
-                await Updates.reloadAsync(); // Restart the app with the new JS bundle
+                await Updates.reloadAsync();
+            } else {
+                console.warn('No OTA update available.');
             }
         } catch (e) {
-            console.log('Error in OTA update:', e);
+            console.error('Error checking OTA update:', e);
         } finally {
             setDownloadingOta(false);
         }
     };
 
-    const openStore = () => {
-        if (updateInfo?.storeUrl) {
-            Linking.openURL(updateInfo.storeUrl);
+    const applyUpdate = async () => {
+        console.log("updateInfo", updateInfo)
+        if (!updateInfo) return;
+
+        // A) OTA UPDATE: If OTA update is available and not in development mode, apply it
+        if (updateInfo.otaAvailable && !__DEV__) {
+            await handleOtaUpdate();
+            return;
+        }
+
+        // B) Not OTA update, open the store URL if available
+        if (updateInfo.storeUrl) {
+            console.log("opening store url")
+            const canOpen = await Linking.canOpenURL(updateInfo.storeUrl);
+            if (canOpen) {
+                await Linking.openURL(updateInfo.storeUrl);
+            } else {
+                console.error('Cannot open URL:', updateInfo.storeUrl);
+            }
         }
     };
 
@@ -96,6 +113,6 @@ export const useVersionCheck = (apiBaseUrl: string) => {
         updateInfo,
         modalVisible,
         dismissModal: () => setModalVisible(false),
-        openStore,
+        applyUpdate,
     };
 };

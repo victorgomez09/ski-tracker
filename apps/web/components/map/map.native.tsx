@@ -4,7 +4,8 @@ import {
     GeoJSONSource as NativeGeoJSONSource,
     Layer as NativeLayer,
     Map as NativeMap,
-    Marker as NativeMarker
+    Marker as NativeMarker,
+    type CameraRef,
 } from '@maplibre/maplibre-react-native';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
@@ -31,8 +32,10 @@ export default function InteractiveSkiMapNative() {
     const { t } = useTranslation();
     const networkState = useNetworkState();
     const searchParams = useLocalSearchParams();
-    const isInternalMoveRef = useRef(false);
+    const cameraRef = useRef<CameraRef>(null);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
+    const syncParamsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const latestBoundsRef = useRef<{ minLon: string; minLat: string; maxLon: string; maxLat: string } | null>(null);
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
@@ -115,28 +118,68 @@ export default function InteractiveSkiMapNative() {
     });
     const { token } = useAuth();
 
+    const firstViewStateRef = useRef(viewState);
+    const viewStateRef = useRef(viewState);
+    viewStateRef.current = viewState;
+    const skipNextUrlCameraRef = useRef(true);
+
+    const applyExternalCameraMove = useCallback((longitude: number, latitude: number, zoom: number, duration = 0) => {
+        setViewState(prev => {
+            if (
+                Math.abs(prev.longitude - longitude) < 1e-6 &&
+                Math.abs(prev.latitude - latitude) < 1e-6 &&
+                Math.abs(prev.zoom - zoom) < 0.05
+            ) {
+                return prev;
+            }
+            return { ...prev, longitude, latitude, zoom };
+        });
+        try {
+            cameraRef.current?.easeTo({
+                center: [longitude, latitude],
+                zoom,
+                duration,
+            });
+        } catch {
+            // Camera is not mounted yet; initialViewState covers the first frame.
+        }
+    }, []);
+
     useEffect(() => {
+        const latParam = Array.isArray(searchParams.lat) ? searchParams.lat[0] : searchParams.lat;
+        const lonParam = Array.isArray(searchParams.lon) ? searchParams.lon[0] : searchParams.lon;
+        const zoomParam = Array.isArray(searchParams.zoom) ? searchParams.zoom[0] : searchParams.zoom;
+
+        if (!latParam || !lonParam) return;
+
+        const lat = parseFloat(latParam);
+        const lon = parseFloat(lonParam);
+        const zoom = zoomParam ? parseFloat(zoomParam) : viewStateRef.current.zoom;
+        if (isNaN(lat) || isNaN(lon) || isNaN(zoom)) return;
+
+        const rounded = {
+            lat: lat.toFixed(5),
+            lon: lon.toFixed(5),
+            zoom: zoom.toFixed(2),
+        };
+
         const lastInternal = lastInternalParamsRef.current;
         if (lastInternal &&
-            searchParams.lat === lastInternal.lat &&
-            searchParams.lon === lastInternal.lon &&
-            searchParams.zoom === lastInternal.zoom) {
+            Math.abs(parseFloat(lastInternal.lat) - lat) < 1e-5 &&
+            Math.abs(parseFloat(lastInternal.lon) - lon) < 1e-5 &&
+            Math.abs(parseFloat(lastInternal.zoom) - zoom) < 0.05) {
             return;
         }
 
-        if (searchParams.lat && searchParams.lon) {
-            const lat = parseFloat(searchParams.lat as string);
-            const lon = parseFloat(searchParams.lon as string);
-            if (!isNaN(lat) && !isNaN(lon)) {
-                setViewState(prev => ({
-                    ...prev,
-                    latitude: lat,
-                    longitude: lon,
-                    zoom: searchParams.zoom ? parseFloat(searchParams.zoom as string) : prev.zoom
-                }));
-            }
+        lastInternalParamsRef.current = rounded;
+
+        if (skipNextUrlCameraRef.current) {
+            skipNextUrlCameraRef.current = false;
+            return;
         }
-    }, [searchParams.lat, searchParams.lon, searchParams.zoom]);
+
+        applyExternalCameraMove(lon, lat, zoom, 0);
+    }, [searchParams.lat, searchParams.lon, searchParams.zoom, applyExternalCameraMove]);
 
     useEffect(() => {
         const loadSessionData = async () => {
@@ -160,12 +203,7 @@ export default function InteractiveSkiMapNative() {
                             setTrackPoints(parsedPoints);
 
                             if (parsedPoints.length > 0) {
-                                setViewState(prev => ({
-                                    ...prev,
-                                    longitude: parsedPoints[0].lon,
-                                    latitude: parsedPoints[0].lat,
-                                    zoom: 14
-                                }));
+                                applyExternalCameraMove(parsedPoints[0].lon, parsedPoints[0].lat, 14, 400);
                             }
                         }
                         if (session.runs && Array.isArray(session.runs)) {
@@ -181,19 +219,20 @@ export default function InteractiveSkiMapNative() {
             }
         };
         loadSessionData();
-    }, [searchParams.sessionId, token]);
+    }, [searchParams.sessionId, token, applyExternalCameraMove]);
 
     useEffect(() => {
         const loadInitial = async () => {
-            console.log(`Current network type: ${networkState}`);
-            if (Number(searchParams.zoom) < 10) {
+            console.log(`Current network type: ${JSON.stringify(networkState)}`);
+            if (viewState.zoom < 10) {
                 try {
+                    const bounds = latestBoundsRef.current;
                     const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
                         params: {
-                            minLon: searchParams.minLon,
-                            minLat: searchParams.minLat,
-                            maxLon: searchParams.maxLon,
-                            maxLat: searchParams.maxLat
+                            minLon: bounds?.minLon ?? (viewState.longitude - 0.4).toString(),
+                            minLat: bounds?.minLat ?? (viewState.latitude - 0.4).toString(),
+                            maxLon: bounds?.maxLon ?? (viewState.longitude + 0.4).toString(),
+                            maxLat: bounds?.maxLat ?? (viewState.latitude + 0.4).toString(),
                         },
                     });
                     if (request.status === 200) {
@@ -204,11 +243,8 @@ export default function InteractiveSkiMapNative() {
                 }
             } else {
                 try {
-                    const lat = parseFloat((searchParams.lat as string) || '40.797891');
-                    const lon = parseFloat((searchParams.lon as string) || '-3.971953');
-
                     const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
-                        params: { lat: lat, lon: lon, radius: 50 },
+                        params: { lat: viewState.latitude, lon: viewState.longitude, radius: 50 },
                     });
                     if (request.status === 200) {
                         setResorts(request.data);
@@ -219,8 +255,9 @@ export default function InteractiveSkiMapNative() {
             }
         };
 
-        loadInitial();
-    }, [searchParams.lat, searchParams.lon, searchParams.zoom, searchParams.minLon, searchParams.minLat, searchParams.maxLon, searchParams.maxLat, token]);
+        const timeout = setTimeout(loadInitial, 350);
+        return () => clearTimeout(timeout);
+    }, [viewState.latitude, viewState.longitude, viewState.zoom, token, networkState]);
 
     const pisteLineStyle: any = {
         id: 'piste-lines',
@@ -577,54 +614,76 @@ const pisteDirectionStyle: any = {
 
         if (center && Array.isArray(center) && center.length >= 2) {
             const [lon, lat] = center;
-            const finalZoom = zoom !== undefined ? zoom : 13;
+            const finalZoom = zoom !== undefined ? Number(zoom) : viewStateRef.current.zoom;
 
-            setViewState(prev => ({
-                ...prev,
-                longitude: lon,
-                latitude: lat,
-                zoom: finalZoom,
-            }));
+            setViewState(prev => {
+                if (
+                    Math.abs(prev.longitude - lon) < 1e-6 &&
+                    Math.abs(prev.latitude - lat) < 1e-6 &&
+                    Math.abs(prev.zoom - finalZoom) < 0.05
+                ) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    longitude: lon,
+                    latitude: lat,
+                    zoom: finalZoom,
+                };
+            });
 
-            isInternalMoveRef.current = true;
-            let minLon = (lon - 0.1).toString();
-            let minLat = (lat - 0.1).toString();
-            let maxLon = (lon + 0.1).toString();
-            let maxLat = (lat + 0.1).toString();
+            let minLon = (lon - 0.1).toFixed(5);
+            let minLat = (lat - 0.1).toFixed(5);
+            let maxLon = (lon + 0.1).toFixed(5);
+            let maxLat = (lat + 0.1).toFixed(5);
 
             if (Array.isArray(bounds) && bounds.length === 2 && Array.isArray(bounds[0]) && Array.isArray(bounds[1])) {
-                minLon = bounds[0][0].toString();
-                minLat = bounds[0][1].toString();
-                maxLon = bounds[1][0].toString();
-                maxLat = bounds[1][1].toString();
+                minLon = Number(bounds[0][0]).toFixed(5);
+                minLat = Number(bounds[0][1]).toFixed(5);
+                maxLon = Number(bounds[1][0]).toFixed(5);
+                maxLat = Number(bounds[1][1]).toFixed(5);
             } else if (Array.isArray(bounds) && bounds.length === 4) {
-                minLon = bounds[0].toString();
-                minLat = bounds[1].toString();
-                maxLon = bounds[2].toString();
-                maxLat = bounds[3].toString();
+                minLon = Number(bounds[0]).toFixed(5);
+                minLat = Number(bounds[1]).toFixed(5);
+                maxLon = Number(bounds[2]).toFixed(5);
+                maxLat = Number(bounds[3]).toFixed(5);
             } else if (bounds && typeof bounds === 'object' && 'ne' in bounds && 'sw' in bounds) {
-                minLon = bounds.sw[0].toString();
-                minLat = bounds.sw[1].toString();
-                maxLon = bounds.ne[0].toString();
-                maxLat = bounds.ne[1].toString();
+                minLon = Number(bounds.sw[0]).toFixed(5);
+                minLat = Number(bounds.sw[1]).toFixed(5);
+                maxLon = Number(bounds.ne[0]).toFixed(5);
+                maxLat = Number(bounds.ne[1]).toFixed(5);
             }
 
-            const paramLat = lat.toString();
-            const paramLon = lon.toString();
-            const paramZoom = finalZoom.toString();
+            latestBoundsRef.current = { minLon, minLat, maxLon, maxLat };
 
+            const paramLat = lat.toFixed(5);
+            const paramLon = lon.toFixed(5);
+            const paramZoom = finalZoom.toFixed(2);
             lastInternalParamsRef.current = { lat: paramLat, lon: paramLon, zoom: paramZoom };
 
-            router.setParams({
-                lat: paramLat,
-                lon: paramLon,
-                zoom: paramZoom,
-                minLon,
-                minLat,
-                maxLon,
-                maxLat,
-            });
+            if (syncParamsTimeoutRef.current) {
+                clearTimeout(syncParamsTimeoutRef.current);
+            }
+            syncParamsTimeoutRef.current = setTimeout(() => {
+                router.setParams({
+                    lat: paramLat,
+                    lon: paramLon,
+                    zoom: paramZoom,
+                    minLon,
+                    minLat,
+                    maxLon,
+                    maxLat,
+                });
+            }, 400);
         }
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (syncParamsTimeoutRef.current) {
+                clearTimeout(syncParamsTimeoutRef.current);
+            }
+        };
     }, []);
 
     const renderSvgChart = (dataPoints: number[], strokeColor: string, fillColor: string) => {
@@ -836,9 +895,12 @@ const pisteDirectionStyle: any = {
                 logo={false}
             >
                 <NativeCamera
-                    zoom={viewState.zoom}
-                    center={[viewState.longitude, viewState.latitude]}
+                    ref={cameraRef}
                     maxZoom={16}
+                    initialViewState={{
+                        zoom: firstViewStateRef.current.zoom,
+                        center: [firstViewStateRef.current.longitude, firstViewStateRef.current.latitude],
+                    }}
                 />
                 {resorts.map((resort) => (
                     <NativeMarker

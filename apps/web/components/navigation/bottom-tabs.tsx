@@ -1,12 +1,29 @@
 import { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
+import { AlertTriangle } from "lucide-react-native";
 import { View, Text, TouchableOpacity, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useOta } from "context/ota.context";
+import { useTranslation } from "react-i18next";
+
 export default function BottomTabs({ state, descriptors, navigation }: BottomTabBarProps) {
     const isWeb = Platform.OS === 'web';
+    const { t } = useTranslation();
+    const { hasOptionalUpdate, openOptionalModal } = useOta();
 
     return (
         <SafeAreaView edges={['bottom']} className="bg-slate-900 border-t border-slate-800 shadow-lg z-40">
+            {hasOptionalUpdate && (
+                <TouchableOpacity
+                    onPress={openOptionalModal}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('ota_available_badge')}
+                    className="absolute -top-12 right-4 z-50 flex-row items-center gap-2 rounded-full bg-amber-500 px-3 py-2 shadow-lg"
+                >
+                    <AlertTriangle size={16} color="#0f172a" />
+                    <View className="h-2 w-2 rounded-full bg-red-600" />
+                </TouchableOpacity>
+            )}
             <View className="flex-row items-center justify-around h-16 px-2 bg-slate-900">
                 {state.routes.map((route, index) => {
                     const isFocused = state.index === index;

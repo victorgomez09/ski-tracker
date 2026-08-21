@@ -85,7 +85,7 @@ func (s *VersionManifestService) CheckVersion(ctx context.Context, clientVersion
 	// It's a forced update if the version is below the minimum or if the force_update flag is active
 	forceUpdate := isBelowMin || (isOutdated && latest.ForceUpdate)
 
-	// OTA is only available if there is an update, it is NOT a forced update, and the DB allows it
+	// OTA JS updates are allowed when the native runtime is still compatible (not below min).
 	otaAvailable := isOutdated && !isBelowMin && latest.OtaAvailable
 
 	changelog := latest.Changelog[lang]

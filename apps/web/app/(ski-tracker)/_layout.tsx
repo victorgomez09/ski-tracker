@@ -12,22 +12,13 @@ import { UpdateModal } from 'components/updates/update-modal';
 export default function RootLayout() {
   const { token, isLoading } = useAuth();
   const { t } = useTranslation();
-  const { loading, downloadingOta, updateInfo, modalVisible, dismissModal, openStore } = useVersionCheck(API_BASE_URL);
+  const { downloadingOta, updateInfo, modalVisible, dismissModal, applyUpdate } = useVersionCheck(API_BASE_URL);
 
   if (downloadingOta) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ marginTop: 10 }}>{t("downloading_update")}</Text>
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ marginTop: 10 }}>{t("checking_version")}</Text>
+      <View className="flex-1 justify-center items-center bg-slate-900">
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text className="mt-3 text-slate-300">{t("downloading_update")}</Text>
       </View>
     );
   }
@@ -42,6 +33,18 @@ export default function RootLayout() {
 
   if (!token) {
     return <Redirect href="/login" />;
+  }
+
+  if (updateInfo?.forceUpdate) {
+    return (
+      <UpdateModal
+        forceUpdate
+        latestVersion={updateInfo.latestVersion}
+        changelog={updateInfo.changelog}
+        onUpdate={applyUpdate}
+        onDismiss={() => {}}
+      />
+    );
   }
 
   return (
@@ -84,13 +87,12 @@ export default function RootLayout() {
         />
       </Tabs>
 
-      {updateInfo && (
+      {(updateInfo && modalVisible) && (
         <UpdateModal
-          visible={modalVisible}
           forceUpdate={updateInfo.forceUpdate}
           latestVersion={updateInfo.latestVersion}
           changelog={updateInfo.changelog}
-          onUpdate={openStore}
+          onUpdate={applyUpdate}
           onDismiss={dismissModal}
         />
       )}

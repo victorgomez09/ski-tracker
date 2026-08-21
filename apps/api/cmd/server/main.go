@@ -101,18 +101,19 @@ func main() {
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.TokenExpiry, cfg.Auth.RefreshExpiry)
 
 	// // Services
-	services := service.NewContainer(store, jwtManager, logger, minioClient, cfg.Database.URL, cfg.Auth.SetupSecret)
+	services := service.NewContainer(store, jwtManager, logger, minioClient, cfg.Database.URL, cfg.Auth.SetupSecret, cfg.Server.OTAUpdatesDir, cfg.Server.APIPublicURL)
 
 	// Router
 	cache := persistence.NewInMemoryStore(1 * time.Hour)
 	router := server.NewRouter(&server.RouterDeps{
-		Services:    services,
-		JWTManager:  jwtManager,
-		Store:       store,
-		AppURL:      cfg.Server.AppURL,
-		SetupSecret: cfg.Auth.SetupSecret,
-		Logger:      logger,
-		Cache:       cache,
+		Services:     services,
+		JWTManager:   jwtManager,
+		Store:        store,
+		AppURL:       cfg.Server.AppURL,
+		SetupSecret:  cfg.Auth.SetupSecret,
+		Logger:       logger,
+		Cache:        cache,
+		APIPublicURL: cfg.Server.APIPublicURL,
 	})
 
 	// HTTP server

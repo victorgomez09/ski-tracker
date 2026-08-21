@@ -17,6 +17,7 @@ type Container struct {
 	SkiSession      *SkiSessionService
 	Weather         *WeatherService
 	VersionManifest *VersionManifestService
+	OTA             *OTAService
 }
 
 // NewContainer creates all services with shared dependencies.
@@ -27,6 +28,8 @@ func NewContainer(
 	minioClient *minio.Client,
 	dbURL string,
 	setupSecret string,
+	otaUpdatesDir string,
+	apiPublicURL string,
 ) *Container {
 	return &Container{
 		SkiResort:       NewSkiResortService(s, logger),
@@ -36,5 +39,6 @@ func NewContainer(
 		SkiSession:      NewSkiSessionService(s, jwtManager, logger, minioClient),
 		Weather:         NewWeatherService(logger),
 		VersionManifest: NewVersionManifestService(s, logger),
+		OTA:             NewOTAService(otaUpdatesDir, apiPublicURL, logger),
 	}
 }

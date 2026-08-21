@@ -2,7 +2,16 @@
   "expo": {
     "name": "ski-tracker",
     "slug": "ski-tracker",
-    "version": "1.0.0",
+    "version": "0.0.1",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "http://localhost:8082/api/v1/ota/manifest",
+      "enabled": true,
+      "checkAutomatically": "NEVER",
+      "fallbackToCacheTimeout": 0
+    },
     "web": {
       "favicon": "./assets/favicon.png"
     },
@@ -48,7 +57,8 @@
       "expo-secure-store",
       "expo-image",
       "@maplibre/maplibre-react-native",
-      "expo-localization"
+      "expo-localization",
+      "expo-updates"
     ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",

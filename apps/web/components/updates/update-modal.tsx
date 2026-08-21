@@ -1,10 +1,9 @@
 import { X } from 'lucide-react-native';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
 interface Props {
-    visible: boolean;
     forceUpdate: boolean;
     latestVersion: string;
     changelog: string[];
@@ -13,7 +12,6 @@ interface Props {
 }
 
 export const UpdateModal: React.FC<Props> = ({
-    visible,
     forceUpdate,
     latestVersion,
     changelog,
@@ -23,18 +21,20 @@ export const UpdateModal: React.FC<Props> = ({
     const { t } = useTranslation();
 
     return (
-        <Modal visible={visible} transparent animationType="fade">
-            <View className="bg-slate-900 border border-slate-700 shadow-md p-4 rounded-xl w-full h-full flex">
+        <View className="absolute inset-0 flex items-center justify-center bg-black/60 z-50 p-3">
+            <View className="bg-slate-900 border border-slate-700 shadow-md p-4 rounded-xl w-full h-10/12 flex">
                 <View className="flex-row justify-between items-center mb-3">
                     <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">
                         {forceUpdate ? t('force_update') : t('new_version_available')}
                     </Text>
-                    <TouchableOpacity
-                        onPress={onDismiss}
-                        className="p-1 rounded-full bg-slate-800"
-                    >
-                        <X size={18} color="#94a3b8" />
-                    </TouchableOpacity>
+                    {!forceUpdate && (
+                        <TouchableOpacity
+                            onPress={onDismiss}
+                            className="p-1 rounded-full bg-slate-800"
+                        >
+                            <X size={18} color="#94a3b8" />
+                        </TouchableOpacity>
+                    )}
                 </View>
                 <Text className="text-xs font-bold text-slate-300 mb-3">{t("version")} {latestVersion}</Text>
 
@@ -70,6 +70,6 @@ export const UpdateModal: React.FC<Props> = ({
                     </TouchableOpacity>
                 )}
             </View>
-        </Modal>
+        </View>
     );
 };
