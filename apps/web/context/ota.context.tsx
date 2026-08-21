@@ -26,5 +26,6 @@ export const useOta = () => {
     if (!ctx) {
         throw new Error('useOta must be used within OtaProvider');
     }
+
     return ctx;
 };

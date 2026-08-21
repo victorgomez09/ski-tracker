@@ -12,16 +12,16 @@ import { UpdateModal } from 'components/updates/update-modal';
 export default function RootLayout() {
   const { token, isLoading } = useAuth();
   const { t } = useTranslation();
-  const { downloadingOta, updateInfo, modalVisible, dismissModal, applyUpdate } = useVersionCheck(API_BASE_URL);
+  // const { downloadingOta, updateInfo, modalVisible, dismissModal, applyUpdate } = useVersionCheck(API_BASE_URL);
 
-  if (downloadingOta) {
-    return (
-      <View className="flex-1 justify-center items-center bg-slate-900">
-        <ActivityIndicator size="large" color="#3b82f6" />
-        <Text className="mt-3 text-slate-300">{t("downloading_update")}</Text>
-      </View>
-    );
-  }
+  // if (downloadingOta) {
+  //   return (
+  //     <View className="flex-1 justify-center items-center bg-slate-900">
+  //       <ActivityIndicator size="large" color="#3b82f6" />
+  //       <Text className="mt-3 text-slate-300">{t("downloading_update")}</Text>
+  //     </View>
+  //   );
+  // }
 
   if (isLoading) {
     return (
@@ -35,17 +35,17 @@ export default function RootLayout() {
     return <Redirect href="/login" />;
   }
 
-  if (updateInfo?.forceUpdate) {
-    return (
-      <UpdateModal
-        forceUpdate
-        latestVersion={updateInfo.latestVersion}
-        changelog={updateInfo.changelog}
-        onUpdate={applyUpdate}
-        onDismiss={() => {}}
-      />
-    );
-  }
+  // if (updateInfo?.forceUpdate) {
+  //   return (
+  //     <UpdateModal
+  //       forceUpdate
+  //       latestVersion={updateInfo.latestVersion}
+  //       changelog={updateInfo.changelog}
+  //       onUpdate={applyUpdate}
+  //       onDismiss={() => {}}
+  //     />
+  //   );
+  // }
 
   return (
     <>
@@ -87,7 +87,7 @@ export default function RootLayout() {
         />
       </Tabs>
 
-      {(updateInfo && modalVisible) && (
+      {/* {(updateInfo && modalVisible) && (
         <UpdateModal
           forceUpdate={updateInfo.forceUpdate}
           latestVersion={updateInfo.latestVersion}
@@ -95,7 +95,7 @@ export default function RootLayout() {
           onUpdate={applyUpdate}
           onDismiss={dismissModal}
         />
-      )}
+      )} */}
     </>
   );
 }

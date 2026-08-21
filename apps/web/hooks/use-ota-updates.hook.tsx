@@ -72,7 +72,6 @@ export const useOtaUpdates = () => {
             setUpdateInfo(info);
 
             if (forceUpdate) {
-                setPhase('mandatory');
                 setPhase('downloading');
                 const fetched = await Updates.fetchUpdateAsync();
                 if (fetched.isNew) {
