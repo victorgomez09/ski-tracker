@@ -39,6 +39,6 @@ func NewContainer(
 		SkiSession:      NewSkiSessionService(s, jwtManager, logger, minioClient),
 		Weather:         NewWeatherService(logger),
 		VersionManifest: NewVersionManifestService(s, logger),
-		OTA:             NewOTAService(otaUpdatesDir, apiPublicURL, logger),
+		OTA:             NewOTAService(minioClient, otaUpdatesDir, apiPublicURL, logger),
 	}
 }

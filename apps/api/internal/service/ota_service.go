@@ -3,6 +3,7 @@ package service
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base64"
@@ -17,12 +18,14 @@ import (
 	"net/textproto"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/minio/minio-go/v7"
 	"github.com/victorgomez09/ski-tracker/internal/apierr"
 )
 
@@ -70,21 +73,23 @@ type expoDirective struct {
 }
 
 type OTAService struct {
-	updatesDir string
-	publicURL  string
-	logger     *slog.Logger
+	minioClient *minio.Client
+	bucketName  string
+	publicURL   string
+	logger      *slog.Logger
 }
 
-func NewOTAService(updatesDir, publicURL string, logger *slog.Logger) *OTAService {
-	_ = os.MkdirAll(updatesDir, 0o755)
+func NewOTAService(minioClient *minio.Client, bucketName, publicURL string, logger *slog.Logger) *OTAService {
 	return &OTAService{
-		updatesDir: updatesDir,
-		publicURL:  publicURL,
-		logger:     logger,
+		minioClient: minioClient,
+		bucketName:  bucketName,
+		publicURL:   publicURL,
+		logger:      logger,
 	}
 }
 
 type ManifestRequest struct {
+	Context         context.Context
 	ProtocolVersion int
 	Platform        string
 	RuntimeVersion  string
@@ -95,6 +100,11 @@ type ManifestRequest struct {
 }
 
 func (s *OTAService) WriteManifestResponse(w http.ResponseWriter, req ManifestRequest) error {
+	ctx := req.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	if req.Platform != "ios" && req.Platform != "android" {
 		return apierr.ErrBadRequest.WithDetail("Unsupported platform. Expected ios or android.")
 	}
@@ -102,31 +112,32 @@ func (s *OTAService) WriteManifestResponse(w http.ResponseWriter, req ManifestRe
 		return apierr.ErrBadRequest.WithDetail("No runtimeVersion provided.")
 	}
 
-	bundlePath, err := s.latestBundlePath(req.RuntimeVersion)
+	bundlePrefix, err := s.latestBundlePrefix(ctx, req.RuntimeVersion)
 	if err != nil {
 		return err
 	}
 
-	if isRollback(bundlePath) {
+	isRollback, rollbackTime, err := s.checkRollback(ctx, bundlePrefix)
+	if err != nil {
+		return err
+	}
+
+	if isRollback {
 		if req.ProtocolVersion < 1 {
 			return apierr.ErrNotAcceptable.WithDetail("Rollbacks require protocol version 1.")
 		}
 		if req.CurrentUpdateID != "" && req.CurrentUpdateID == req.EmbeddedID {
 			return s.writeDirective(w, expoDirective{Type: "noUpdateAvailable"}, req.ProtocolVersion)
 		}
-		stat, err := os.Stat(filepath.Join(bundlePath, "rollback"))
-		if err != nil {
-			return err
-		}
 		return s.writeDirective(w, expoDirective{
 			Type: "rollBackToEmbedded",
 			Parameters: map[string]any{
-				"commitTime": stat.ModTime().UTC().Format(time.RFC3339Nano),
+				"commitTime": rollbackTime.Format(time.RFC3339Nano),
 			},
 		}, req.ProtocolVersion)
 	}
 
-	manifest, createdAt, updateID, err := s.buildManifest(bundlePath, req)
+	manifest, createdAt, updateID, err := s.buildManifest(ctx, bundlePrefix, req)
 	if err != nil {
 		return err
 	}
@@ -158,7 +169,11 @@ func (s *OTAService) WriteManifestResponse(w http.ResponseWriter, req ManifestRe
 	return nil
 }
 
-func (s *OTAService) ServeAsset(w http.ResponseWriter, runtimeVersion, platform, assetRel string) error {
+func (s *OTAService) ServeAsset(ctx context.Context, w http.ResponseWriter, runtimeVersion, platform, assetRel string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	if platform != "ios" && platform != "android" {
 		return apierr.ErrBadRequest.WithDetail("Unsupported platform. Expected ios or android.")
 	}
@@ -166,31 +181,35 @@ func (s *OTAService) ServeAsset(w http.ResponseWriter, runtimeVersion, platform,
 		return apierr.ErrBadRequest.WithDetail("runtimeVersion and asset are required.")
 	}
 
-	bundlePath, err := s.latestBundlePath(runtimeVersion)
+	bundlePrefix, err := s.latestBundlePrefix(ctx, runtimeVersion)
 	if err != nil {
 		return err
 	}
 
-	cleanRel := filepath.Clean(assetRel)
-	if filepath.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, "..") {
+	cleanRel := path.Clean(strings.ReplaceAll(assetRel, "\\", "/"))
+	if path.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, "..") {
 		return apierr.ErrBadRequest.WithDetail("Invalid asset path.")
 	}
 
-	fullPath := filepath.Join(bundlePath, cleanRel)
-	if !strings.HasPrefix(fullPath, filepath.Clean(bundlePath)+string(os.PathSeparator)) && fullPath != filepath.Clean(bundlePath) {
-		return apierr.ErrBadRequest.WithDetail("Invalid asset path.")
-	}
+	objectKey := path.Join(bundlePrefix, cleanRel)
 
-	data, err := os.ReadFile(fullPath)
+	obj, err := s.minioClient.GetObject(ctx, s.bucketName, objectKey, minio.GetObjectOptions{})
 	if err != nil {
-		if os.IsNotExist(err) {
+		return err
+	}
+	defer obj.Close()
+
+	stat, err := obj.Stat()
+	if err != nil {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == "NoSuchKey" {
 			return apierr.ErrNotFound.WithDetail("Asset does not exist.")
 		}
 		return err
 	}
 
 	contentType := assetContentType(cleanRel, false)
-	metadata, err := readExportMetadata(bundlePath)
+	metadata, err := s.readExportMetadata(ctx, bundlePrefix)
 	if err == nil {
 		platformMeta, ok := metadata.FileMetadata[platform]
 		if ok && platformMeta.Bundle == cleanRel {
@@ -206,13 +225,15 @@ func (s *OTAService) ServeAsset(w http.ResponseWriter, runtimeVersion, platform,
 	}
 
 	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size, 10))
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	_, _ = io.Copy(w, obj)
 	return nil
 }
 
 type PublishOTAInput struct {
+	Context        context.Context
 	ZipPath        string
 	RuntimeVersion string
 	ForceUpdate    bool
@@ -221,25 +242,59 @@ type PublishOTAInput struct {
 }
 
 func (s *OTAService) Publish(in PublishOTAInput) (string, error) {
+	ctx := in.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	if in.RuntimeVersion == "" {
 		return "", apierr.ErrBadRequest.WithDetail("runtime_version is required.")
 	}
 
-	dest := filepath.Join(s.updatesDir, sanitizeSegment(in.RuntimeVersion), strconv.FormatInt(time.Now().UnixMilli(), 10))
-	if err := os.MkdirAll(dest, 0o755); err != nil {
+	// 1. Crear directorio temporal local para descomprimir el ZIP
+	tempDir, err := os.MkdirTemp("", "ota-upload-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tempDir)
+
+	if err := unzipTo(in.ZipPath, tempDir); err != nil {
 		return "", err
 	}
 
-	if err := unzipTo(in.ZipPath, dest); err != nil {
-		_ = os.RemoveAll(dest)
-		return "", err
-	}
-
-	if _, err := os.Stat(filepath.Join(dest, "metadata.json")); err != nil {
-		_ = os.RemoveAll(dest)
+	if _, err := os.Stat(filepath.Join(tempDir, "metadata.json")); err != nil {
 		return "", apierr.ErrBadRequest.WithDetail("The zip must contain metadata.json from `expo export`.")
 	}
 
+	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	destPrefix := fmt.Sprintf("updates/%s/%s", sanitizeSegment(in.RuntimeVersion), timestamp)
+
+	// 2. Subir todos los archivos descomprimidos a MinIO
+	err = filepath.Walk(tempDir, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+
+		relPath, err := filepath.Rel(tempDir, filePath)
+		if err != nil {
+			return err
+		}
+		relPath = strings.ReplaceAll(relPath, "\\", "/")
+
+		objectKey := path.Join(destPrefix, relPath)
+		contentType := assetContentType(relPath, false)
+
+		_, err = s.minioClient.FPutObject(ctx, s.bucketName, objectKey, filePath, minio.PutObjectOptions{
+			ContentType: contentType,
+		})
+		return err
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to upload assets to MinIO: %w", err)
+	}
+
+	// 3. Crear y subir info.json a MinIO
 	info := OTAInfo{
 		ForceUpdate: in.ForceUpdate,
 		Version:     in.Version,
@@ -247,20 +302,23 @@ func (s *OTAService) Publish(in PublishOTAInput) (string, error) {
 	}
 	infoJSON, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
-		_ = os.RemoveAll(dest)
-		return "", err
-	}
-	if err := os.WriteFile(filepath.Join(dest, "info.json"), infoJSON, 0o644); err != nil {
-		_ = os.RemoveAll(dest)
 		return "", err
 	}
 
-	s.logger.Info("published ota update", "path", dest, "runtimeVersion", in.RuntimeVersion, "forceUpdate", in.ForceUpdate)
-	return dest, nil
+	infoObjectKey := path.Join(destPrefix, "info.json")
+	_, err = s.minioClient.PutObject(ctx, s.bucketName, infoObjectKey, bytes.NewReader(infoJSON), int64(len(infoJSON)), minio.PutObjectOptions{
+		ContentType: "application/json",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to upload info.json: %w", err)
+	}
+
+	s.logger.Info("published ota update to MinIO", "prefix", destPrefix, "runtimeVersion", in.RuntimeVersion, "forceUpdate", in.ForceUpdate)
+	return destPrefix, nil
 }
 
-func (s *OTAService) buildManifest(bundlePath string, req ManifestRequest) (*expoManifest, string, string, error) {
-	metadataBytes, err := os.ReadFile(filepath.Join(bundlePath, "metadata.json"))
+func (s *OTAService) buildManifest(ctx context.Context, bundlePrefix string, req ManifestRequest) (*expoManifest, string, string, error) {
+	metadataBytes, modTime, err := s.getObjectBytes(ctx, path.Join(bundlePrefix, "metadata.json"))
 	if err != nil {
 		return nil, "", "", apierr.ErrNotFound.WithDetail("Update metadata.json not found.")
 	}
@@ -275,11 +333,7 @@ func (s *OTAService) buildManifest(bundlePath string, req ManifestRequest) (*exp
 		return nil, "", "", apierr.ErrNotFound.WithDetail("No update for this platform.")
 	}
 
-	stat, err := os.Stat(filepath.Join(bundlePath, "metadata.json"))
-	if err != nil {
-		return nil, "", "", err
-	}
-	createdAt := stat.ModTime().UTC().Format(time.RFC3339Nano)
+	createdAt := modTime.UTC().Format(time.RFC3339Nano)
 	updateID := hashToUUID(sha256Hex(metadataBytes))
 
 	baseURL := strings.TrimRight(req.BaseURL, "/")
@@ -287,23 +341,23 @@ func (s *OTAService) buildManifest(bundlePath string, req ManifestRequest) (*exp
 		baseURL = strings.TrimRight(s.publicURL, "/")
 	}
 
-	launchAsset, err := s.assetDescriptor(bundlePath, platformMeta.Bundle, req, true, "")
+	launchAsset, err := s.assetDescriptor(ctx, bundlePrefix, platformMeta.Bundle, req, true, "")
 	if err != nil {
 		return nil, "", "", err
 	}
 
 	assets := make([]expoAsset, 0, len(platformMeta.Assets))
 	for _, a := range platformMeta.Assets {
-		desc, err := s.assetDescriptor(bundlePath, a.Path, req, false, a.Ext)
+		desc, err := s.assetDescriptor(ctx, bundlePrefix, a.Path, req, false, a.Ext)
 		if err != nil {
 			return nil, "", "", err
 		}
 		assets = append(assets, desc)
 	}
 
-	info := readOTAInfo(bundlePath)
+	info := s.readOTAInfo(ctx, bundlePrefix)
 	var expoConfig any
-	if raw, err := os.ReadFile(filepath.Join(bundlePath, "expoConfig.json")); err == nil {
+	if raw, _, err := s.getObjectBytes(ctx, path.Join(bundlePrefix, "expoConfig.json")); err == nil {
 		_ = json.Unmarshal(raw, &expoConfig)
 	}
 
@@ -327,8 +381,8 @@ func (s *OTAService) buildManifest(bundlePath string, req ManifestRequest) (*exp
 	return manifest, createdAt, updateID, nil
 }
 
-func (s *OTAService) assetDescriptor(bundlePath, relPath string, req ManifestRequest, isLaunch bool, ext string) (expoAsset, error) {
-	data, err := os.ReadFile(filepath.Join(bundlePath, relPath))
+func (s *OTAService) assetDescriptor(ctx context.Context, bundlePrefix, relPath string, req ManifestRequest, isLaunch bool, ext string) (expoAsset, error) {
+	data, _, err := s.getObjectBytes(ctx, path.Join(bundlePrefix, relPath))
 	if err != nil {
 		return expoAsset{}, fmt.Errorf("read asset %s: %w", relPath, err)
 	}
@@ -356,30 +410,97 @@ func (s *OTAService) assetDescriptor(bundlePath, relPath string, req ManifestReq
 	}, nil
 }
 
-func (s *OTAService) latestBundlePath(runtimeVersion string) (string, error) {
-	dir := filepath.Join(s.updatesDir, sanitizeSegment(runtimeVersion))
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", apierr.ErrNotFound.WithDetail("Unsupported runtime version.")
-		}
-		return "", err
+func (s *OTAService) latestBundlePrefix(ctx context.Context, runtimeVersion string) (string, error) {
+	prefix := fmt.Sprintf("updates/%s/", sanitizeSegment(runtimeVersion))
+
+	opts := minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: false,
 	}
 
 	var dirs []string
-	for _, e := range entries {
-		if e.IsDir() {
-			dirs = append(dirs, e.Name())
+	for object := range s.minioClient.ListObjects(ctx, s.bucketName, opts) {
+		if object.Err != nil {
+			return "", object.Err
+		}
+		// Extraer el nombre de la subcarpeta (timestamp)
+		trimmed := strings.TrimPrefix(object.Key, prefix)
+		trimmed = strings.TrimSuffix(trimmed, "/")
+		if trimmed != "" {
+			dirs = append(dirs, trimmed)
 		}
 	}
+
 	if len(dirs) == 0 {
 		return "", apierr.ErrNotFound.WithDetail("No updates published for this runtime version.")
 	}
+
 	sort.Slice(dirs, func(i, j int) bool {
 		return dirs[i] > dirs[j]
 	})
-	return filepath.Join(dir, dirs[0]), nil
+
+	return path.Join("updates", sanitizeSegment(runtimeVersion), dirs[0]), nil
 }
+
+// Helpers para MinIO
+
+func (s *OTAService) getObjectBytes(ctx context.Context, objectKey string) ([]byte, time.Time, error) {
+	obj, err := s.minioClient.GetObject(ctx, s.bucketName, objectKey, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	defer obj.Close()
+
+	stat, err := obj.Stat()
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	return data, stat.LastModified, nil
+}
+
+func (s *OTAService) checkRollback(ctx context.Context, bundlePrefix string) (bool, time.Time, error) {
+	stat, err := s.minioClient.StatObject(ctx, s.bucketName, path.Join(bundlePrefix, "rollback"), minio.StatObjectOptions{})
+	if err != nil {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == "NoSuchKey" {
+			return false, time.Time{}, nil
+		}
+		return false, time.Time{}, err
+	}
+	return true, stat.LastModified, nil
+}
+
+func (s *OTAService) readExportMetadata(ctx context.Context, bundlePrefix string) (*expoExportMetadata, error) {
+	raw, _, err := s.getObjectBytes(ctx, path.Join(bundlePrefix, "metadata.json"))
+	if err != nil {
+		return nil, err
+	}
+	var metadata expoExportMetadata
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return nil, err
+	}
+	return &metadata, nil
+}
+
+func (s *OTAService) readOTAInfo(ctx context.Context, bundlePrefix string) OTAInfo {
+	raw, _, err := s.getObjectBytes(ctx, path.Join(bundlePrefix, "info.json"))
+	if err != nil {
+		return OTAInfo{}
+	}
+	var info OTAInfo
+	if err := json.Unmarshal(raw, &info); err != nil {
+		return OTAInfo{}
+	}
+	return info
+}
+
+// Funciones auxiliares sin cambios
 
 func (s *OTAService) writeDirective(w http.ResponseWriter, directive expoDirective, protocolVersion int) error {
 	if protocolVersion < 1 {
@@ -428,35 +549,6 @@ func (s *OTAService) writeCommonHeaders(w http.ResponseWriter, protocolVersion i
 	w.Header().Set("expo-protocol-version", strconv.Itoa(protocolVersion))
 	w.Header().Set("expo-sfv-version", "0")
 	w.Header().Set("Cache-Control", "private, max-age=0")
-}
-
-func isRollback(bundlePath string) bool {
-	_, err := os.Stat(filepath.Join(bundlePath, "rollback"))
-	return err == nil
-}
-
-func readExportMetadata(bundlePath string) (*expoExportMetadata, error) {
-	raw, err := os.ReadFile(filepath.Join(bundlePath, "metadata.json"))
-	if err != nil {
-		return nil, err
-	}
-	var metadata expoExportMetadata
-	if err := json.Unmarshal(raw, &metadata); err != nil {
-		return nil, err
-	}
-	return &metadata, nil
-}
-
-func readOTAInfo(bundlePath string) OTAInfo {
-	raw, err := os.ReadFile(filepath.Join(bundlePath, "info.json"))
-	if err != nil {
-		return OTAInfo{}
-	}
-	var info OTAInfo
-	if err := json.Unmarshal(raw, &info); err != nil {
-		return OTAInfo{}
-	}
-	return info
 }
 
 func unzipTo(zipPath, dest string) error {

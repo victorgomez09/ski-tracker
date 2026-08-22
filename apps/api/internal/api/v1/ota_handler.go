@@ -51,6 +51,7 @@ func (h *OTAHandler) Manifest(c *gin.Context) {
 
 func (h *OTAHandler) Assets(c *gin.Context) {
 	err := h.svc.ServeAsset(
+		c.Request.Context(),
 		c.Writer,
 		c.Query("runtimeVersion"),
 		strings.ToLower(c.Query("platform")),

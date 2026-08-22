@@ -1,8 +1,6 @@
 import { Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import '../../styles/global.css';
-
 let MapComponent: React.ComponentType<any>;
 if (Platform.OS === 'web') {
   MapComponent = require('../../components/map/map.web').default;
