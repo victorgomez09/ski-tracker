@@ -220,7 +220,7 @@ export default function InteractiveSkiMapNative() {
             const photos = await getAllPhotos(db);
 
             if (points.length === 0) {
-                alert("No tracking data to upload.");
+                alert(t('no_tracking_data'));
                 setIsLoading(false);
                 return;
             }
@@ -271,14 +271,14 @@ export default function InteractiveSkiMapNative() {
             const finishResponse = await api.post(`${API_BASE_URL}/ski-sessions/${sessionId}/finish`, {});
 
             if (finishResponse.status === 200 || finishResponse.status === 201) {
-                alert("Track uploaded successfully to the backend and processed!");
+                alert(t('track_uploaded_success'));
                 await clearTrack(db);
                 setTrackPoints([]);
                 setHasTrackData(false);
             }
         } catch (error) {
             console.error("Error uploading track:", error);
-            alert("Error uploading track.");
+            alert(t('error_uploading_track'));
         } finally {
             setIsLoading(false);
         }

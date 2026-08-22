@@ -35,6 +35,11 @@ type OTAInfo struct {
 	Changelog   map[string][]string `json:"changelog"`
 }
 
+type AssetHashes struct {
+	SHA256 string `json:"sha256"`
+	MD5    string `json:"md5"`
+}
+
 type expoExportMetadata struct {
 	FileMetadata map[string]expoPlatformMetadata `json:"fileMetadata"`
 }
@@ -269,7 +274,8 @@ func (s *OTAService) Publish(in PublishOTAInput) (string, error) {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	destPrefix := fmt.Sprintf("updates/%s/%s", sanitizeSegment(in.RuntimeVersion), timestamp)
 
-	// 2. Subir todos los archivos descomprimidos a MinIO
+	// 2. Subir todos los archivos descomprimidos a MinIO y calcular hashes
+	hashes := make(map[string]AssetHashes)
 	err = filepath.Walk(tempDir, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
@@ -280,6 +286,16 @@ func (s *OTAService) Publish(in PublishOTAInput) (string, error) {
 			return err
 		}
 		relPath = strings.ReplaceAll(relPath, "\\", "/")
+
+		// Calcular hashes en memoria antes de subir
+		if data, readErr := os.ReadFile(filePath); readErr == nil {
+			sum256 := sha256.Sum256(data)
+			sumMD5 := md5.Sum(data)
+			hashes[relPath] = AssetHashes{
+				SHA256: base64.RawURLEncoding.EncodeToString(sum256[:]),
+				MD5:    hex.EncodeToString(sumMD5[:]),
+			}
+		}
 
 		objectKey := path.Join(destPrefix, relPath)
 		contentType := assetContentType(relPath, false)
@@ -292,6 +308,14 @@ func (s *OTAService) Publish(in PublishOTAInput) (string, error) {
 
 	if err != nil {
 		return "", fmt.Errorf("failed to upload assets to MinIO: %w", err)
+	}
+
+	// 2.5 Subir hashes.json a MinIO
+	if hashesJSON, err := json.Marshal(hashes); err == nil {
+		hashesObjectKey := path.Join(destPrefix, "hashes.json")
+		_, _ = s.minioClient.PutObject(ctx, s.bucketName, hashesObjectKey, bytes.NewReader(hashesJSON), int64(len(hashesJSON)), minio.PutObjectOptions{
+			ContentType: "application/json",
+		})
 	}
 
 	// 3. Crear y subir info.json a MinIO
@@ -341,14 +365,16 @@ func (s *OTAService) buildManifest(ctx context.Context, bundlePrefix string, req
 		baseURL = strings.TrimRight(s.publicURL, "/")
 	}
 
-	launchAsset, err := s.assetDescriptor(ctx, bundlePrefix, platformMeta.Bundle, req, true, "")
+	hashes := s.readOTAHashes(ctx, bundlePrefix)
+
+	launchAsset, err := s.assetDescriptor(ctx, bundlePrefix, platformMeta.Bundle, req, true, "", hashes)
 	if err != nil {
 		return nil, "", "", err
 	}
 
 	assets := make([]expoAsset, 0, len(platformMeta.Assets))
 	for _, a := range platformMeta.Assets {
-		desc, err := s.assetDescriptor(ctx, bundlePrefix, a.Path, req, false, a.Ext)
+		desc, err := s.assetDescriptor(ctx, bundlePrefix, a.Path, req, false, a.Ext, hashes)
 		if err != nil {
 			return nil, "", "", err
 		}
@@ -381,14 +407,23 @@ func (s *OTAService) buildManifest(ctx context.Context, bundlePrefix string, req
 	return manifest, createdAt, updateID, nil
 }
 
-func (s *OTAService) assetDescriptor(ctx context.Context, bundlePrefix, relPath string, req ManifestRequest, isLaunch bool, ext string) (expoAsset, error) {
-	data, _, err := s.getObjectBytes(ctx, path.Join(bundlePrefix, relPath))
-	if err != nil {
-		return expoAsset{}, fmt.Errorf("read asset %s: %w", relPath, err)
-	}
+func (s *OTAService) assetDescriptor(ctx context.Context, bundlePrefix, relPath string, req ManifestRequest, isLaunch bool, ext string, hashes map[string]AssetHashes) (expoAsset, error) {
+	var hashSHA256, hashMD5 string
 
-	sum256 := sha256.Sum256(data)
-	sumMD5 := md5.Sum(data)
+	if h, ok := hashes[relPath]; ok {
+		hashSHA256 = h.SHA256
+		hashMD5 = h.MD5
+	} else {
+		// Fallback si hashes.json no existe o falta el archivo
+		data, _, err := s.getObjectBytes(ctx, path.Join(bundlePrefix, relPath))
+		if err != nil {
+			return expoAsset{}, fmt.Errorf("read asset %s: %w", relPath, err)
+		}
+		sum256 := sha256.Sum256(data)
+		sumMD5 := md5.Sum(data)
+		hashSHA256 = base64.RawURLEncoding.EncodeToString(sum256[:])
+		hashMD5 = hex.EncodeToString(sumMD5[:])
+	}
 
 	fileExt := ext
 	if isLaunch {
@@ -401,8 +436,8 @@ func (s *OTAService) assetDescriptor(ctx context.Context, bundlePrefix, relPath 
 	}
 
 	return expoAsset{
-		Hash:          base64.RawURLEncoding.EncodeToString(sum256[:]),
-		Key:           hex.EncodeToString(sumMD5[:]),
+		Hash:          hashSHA256,
+		Key:           hashMD5,
 		ContentType:   assetContentType(fileExt, isLaunch),
 		FileExtension: "." + strings.TrimPrefix(fileExt, "."),
 		URL: fmt.Sprintf("%s/api/v1/ota/assets?asset=%s&runtimeVersion=%s&platform=%s",
@@ -498,6 +533,18 @@ func (s *OTAService) readOTAInfo(ctx context.Context, bundlePrefix string) OTAIn
 		return OTAInfo{}
 	}
 	return info
+}
+
+func (s *OTAService) readOTAHashes(ctx context.Context, bundlePrefix string) map[string]AssetHashes {
+	raw, _, err := s.getObjectBytes(ctx, path.Join(bundlePrefix, "hashes.json"))
+	if err != nil {
+		return nil
+	}
+	var hashes map[string]AssetHashes
+	if err := json.Unmarshal(raw, &hashes); err != nil {
+		return nil
+	}
+	return hashes
 }
 
 // Funciones auxiliares sin cambios

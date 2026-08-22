@@ -1,3 +1,5 @@
+import '../styles/global.css';
+
 import { Slot } from 'expo-router';
 import 'i18n';
 import { useTranslation } from 'react-i18next';
