@@ -1,11 +1,12 @@
-import axios from 'axios';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
 import { Area, AreaChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CircleQuestionMark } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
+import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
@@ -15,9 +16,10 @@ import { ResortDetailPanel } from './resort-detail-panel';
 import { AltitudeTooltip } from './altitude-tooltip';
 import { SpeedTooltip } from './speed-tooltip';
 import { LegendDetailPanel } from './legend-detail-panel';
-import { CircleQuestionMark } from 'lucide-react';
+import api from 'interceptor/api';
 
 export default function InteractiveSkiMap() {
+    const { t } = useTranslation();
     const searchParams = useLocalSearchParams();
     const mapRef = useRef<MapRef>(null);
     const isInternalMoveRef = useRef(false);
@@ -120,9 +122,7 @@ export default function InteractiveSkiMap() {
         const loadSessionData = async () => {
             if (searchParams.sessionId) {
                 try {
-                    const res = await axios.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
+                    const res = await api.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`);
                     if (res.status === 200 && res.data) {
                         const session = res.data.data || res.data; // Handle either wrap or raw
                         setSessionDetails(session);
@@ -168,16 +168,13 @@ export default function InteractiveSkiMap() {
         const loadInitial = async () => {
             if (Number(searchParams.zoom) < 10) {
                 try {
-                    const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
+                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
                         params: {
                             minLon: searchParams.minLon,
                             minLat: searchParams.minLat,
                             maxLon: searchParams.maxLon,
                             maxLat: searchParams.maxLat
                         },
-                        headers: {
-                            Authorization: `Bearer ${token}`
-                        }
                     });
                     if (request.status !== 200) {
                         throw new Error(`HTTP error! status: ${request.status}`);
@@ -191,15 +188,12 @@ export default function InteractiveSkiMap() {
                     const lat = parseFloat(searchParams.lat as string || '40.797891');
                     const lon = parseFloat(searchParams.lon as string || '-3.971953');
 
-                    const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
                         params: {
                             lat: lat,
                             lon: lon,
                             radius: 50
                         },
-                        headers: {
-                            Authorization: `Bearer ${token}`
-                        }
                     });
                     if (request.status !== 200) {
                         throw new Error(`HTTP error! status: ${request.status}`);
@@ -472,16 +466,13 @@ export default function InteractiveSkiMap() {
             const sw = bounds.getSouthWest();
             const ne = bounds.getNorthEast();
 
-            const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
+            const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
                 params: {
                     minLon: sw.lng,
                     minLat: sw.lat,
                     maxLon: ne.lng,
                     maxLat: ne.lat
                 },
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
             });
             if (request.status !== 200) {
                 throw new Error(`HTTP error! status: ${request.status}`);
@@ -502,15 +493,12 @@ export default function InteractiveSkiMap() {
                 const lat = center.lat;
                 const lon = center.lng;
 
-                const request = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
                     params: {
                         lat: lat,
                         lon: lon,
                         radius: 50
                     },
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
                 });
                 if (request.status !== 200) {
                     throw new Error(`HTTP error! status: ${request.status}`);
@@ -527,11 +515,7 @@ export default function InteractiveSkiMap() {
 
     const fetchResortWithDetails = async (resortId: string) => {
         try {
-            const request = await axios.get<Resort>(`${API_BASE_URL}/resorts/by-id/${resortId}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
-            });
+            const request = await api.get<Resort>(`${API_BASE_URL}/resorts/by-id/${resortId}`);
             if (request.status !== 200) {
                 throw new Error(`HTTP error! status: ${request.status}`);
             }
@@ -543,15 +527,12 @@ export default function InteractiveSkiMap() {
                 const lat = request.data.Latitude;
                 const lon = request.data.Longitude;
 
-                const requestResorts = await axios.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                const requestResorts = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
                     params: {
                         lat: lat,
                         lon: lon,
                         radius: 50
                     },
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
                 });
                 if (requestResorts.status !== 200) {
                     throw new Error(`HTTP error! status: ${requestResorts.status}`);
@@ -680,7 +661,7 @@ export default function InteractiveSkiMap() {
     }, []);
 
     return (
-        <div className="w-full h-[calc(100vh-4rem)] lg:h-screen relative lg:pl-64">
+        <div className="flex-1 w-full h-full relative">
             {/* Legend panel */}
             {selectedLegend && (
                 <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
@@ -710,7 +691,7 @@ export default function InteractiveSkiMap() {
                 onZoomEnd={fetchResortsWithDetails}
                 interactiveLayerIds={['piste-lines', 'lift-lines']}
                 style={{ width: '100%', height: '100%' }}
-                mapStyle="https://tiles.openfreemap.org/styles/liberty"
+                mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
                 mapLib={maplibregl}
                 maplibreLogo={false}
                 attributionControl={false}
@@ -808,17 +789,17 @@ export default function InteractiveSkiMap() {
             </Map>
 
             {searchParams.sessionId && trackPoints.length > 0 && (
-                <div className="absolute top-4 left-4 z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow-2xl rounded-2xl p-4 w-96 max-h-[85vh] overflow-y-auto flex flex-col gap-3">
-                    <div className="flex justify-between items-center border-b border-base-300 pb-2">
+                <div className="absolute top-16 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 text-white md:w-80 max-h-[75vh] shadow-2xl space-y-3">
+                    <div className="flex flex-row justify-between items-center pb-2 border-b border-slate-800 w-full">
                         <div>
-                            <h3 className="font-bold text-sm text-base-content">Session Analyser</h3>
+                            <h3 className="font-bold text-sm">{t('session_analyser')}</h3>
                             <p className="text-[10px] opacity-70">
-                                {sessionDetails ? `Date: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
+                                {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
                             </p>
                         </div>
                         <button
                             type="button"
-                            className="btn btn-xs btn-circle btn-ghost font-bold"
+                            className="btn btn-xs btn-circle btn-ghost font-bold text-white"
                             onClick={() => {
                                 setTrackPoints([]);
                                 setMatchedPisteIds([]);
@@ -835,22 +816,22 @@ export default function InteractiveSkiMap() {
                         <div className="space-y-3">
                             <button
                                 type="button"
-                                className="btn btn-xs btn-secondary"
+                                className="bg-blue-600 p-2 rounded-md flex-row items-center justify-center shadow-md cursor-pointer text-sm"
                                 onClick={() => setSelectedRun(null)}
                             >
-                                ← Back to list
+                                {t('back_to_runs')}
                             </button>
-                            <div className="p-2 bg-base-200 rounded-lg">
-                                <h4 className="font-bold text-xs">Run #{selectedRun.index} Details</h4>
+                            <div className="p-2 bg-slate-700/60 rounded-md">
+                                <h4 className="font-bold text-xs">{t('run_details', { index: selectedRun.index })}</h4>
                                 <div className="grid grid-cols-2 gap-2 mt-1 text-[11px] opacity-80">
-                                    <div>Drop: {selectedRun.verticalDrop.toFixed(1)} m</div>
-                                    <div>Max Speed: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
+                                    <div>{t('drop')}: {selectedRun.verticalDrop.toFixed(1)} m</div>
+                                    <div>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <div className="text-[11px] font-semibold opacity-70 uppercase">Elevation Profile (m)</div>
-                                <div className="h-32 bg-base-200/50 rounded-lg p-1">
+                                <div className="text-[11px] font-semibold opacity-70 uppercase">{t('elevation_profile')}</div>
+                                <div className="h-32 bg-slate-700/60 rounded-md p-1">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <AreaChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, alt: p.altitude }))}>
                                             <XAxis dataKey="name" hide />
@@ -861,8 +842,8 @@ export default function InteractiveSkiMap() {
                                     </ResponsiveContainer>
                                 </div>
 
-                                <div className="text-[11px] font-semibold opacity-70 uppercase">Speed Profile (km/h)</div>
-                                <div className="h-32 bg-base-200/50 rounded-lg p-1">
+                                <div className="text-[11px] font-semibold opacity-70 uppercase">{t('speed_profile')}</div>
+                                <div className="h-32 bg-slate-700/60 rounded-md p-1">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <LineChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, speed: p.speed * 3.6 }))}>
                                             <XAxis dataKey="name" hide />
@@ -879,36 +860,36 @@ export default function InteractiveSkiMap() {
                             <div className="tabs tabs-boxed tabs-sm w-full grid grid-cols-3">
                                 <button
                                     type="button"
-                                    className={`tab ${activeTab === 'runs' ? 'tab-active' : ''}`}
+                                    className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
                                     onClick={() => setActiveTab('runs')}
                                 >
-                                    Runs
+                                    {t('runs')}
                                 </button>
                                 <button
                                     type="button"
-                                    className={`tab ${activeTab === 'elevation' ? 'tab-active' : ''}`}
+                                    className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
                                     onClick={() => setActiveTab('elevation')}
                                 >
-                                    Elevation
+                                    {t('elevation')}
                                 </button>
                                 <button
                                     type="button"
-                                    className={`tab ${activeTab === 'speed' ? 'tab-active' : ''}`}
+                                    className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
                                     onClick={() => setActiveTab('speed')}
                                 >
-                                    Speed
+                                    {t('speed')}
                                 </button>
                             </div>
 
                             {activeTab === 'runs' && (
                                 <div className="space-y-2">
-                                    <div className="text-xs font-semibold opacity-75">Detected Descents ({detectedRuns.length})</div>
+                                    <div className="text-xs font-semibold opacity-75">{t('descent_runs')} ({detectedRuns.length})</div>
                                     <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                                         {detectedRuns.map((run) => (
                                             <button
                                                 key={run.id}
                                                 type="button"
-                                                className="w-full text-left p-2.5 rounded-xl bg-base-200 hover:bg-base-300 transition flex justify-between items-center border border-base-300 cursor-pointer"
+                                                className="flex items-center justify-between bg-slate-800 border border-slate-700 p-4 rounded-md space-y-4 w-full"
                                                 onMouseEnter={() => setHoveredRun(run)}
                                                 onMouseLeave={() => setHoveredRun(null)}
                                                 onClick={() => {
@@ -924,12 +905,12 @@ export default function InteractiveSkiMap() {
                                                 }}
                                             >
                                                 <div>
-                                                    <div className="font-bold text-xs">Run #{run.index}</div>
+                                                    <div className="font-bold text-xs">{t('run_title', { index: run.index })}</div>
                                                     <div className="text-[10px] opacity-70 mt-0.5">
-                                                        Drop: {run.verticalDrop.toFixed(0)}m | Max Speed: {run.maxSpeed.toFixed(1)} km/h
+                                                        {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
                                                     </div>
                                                 </div>
-                                                <span className="text-[11px] text-primary font-medium">Charts →</span>
+                                                <span className="text-[11px] text-white font-medium">{t('charts')} →</span>
                                             </button>
                                         ))}
                                     </div>
@@ -938,8 +919,8 @@ export default function InteractiveSkiMap() {
 
                             {activeTab === 'elevation' && (
                                 <div className="space-y-2">
-                                    <div className="text-xs font-semibold opacity-75">Full Session Elevation (m)</div>
-                                    <div className="h-44 bg-base-200/50 rounded-xl p-1">
+                                    <div className="text-xs font-semibold opacity-75">{t('elevation_profile')}</div>
+                                    <div className="h-44 bg-slate-700/60 rounded-md p-1">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <AreaChart data={trackPoints.map((p, idx) => ({ name: idx, alt: p.altitude }))}>
                                                 <XAxis dataKey="name" hide />
@@ -954,8 +935,8 @@ export default function InteractiveSkiMap() {
 
                             {activeTab === 'speed' && (
                                 <div className="space-y-2">
-                                    <div className="text-xs font-semibold opacity-75">Full Session Speed Profile (km/h)</div>
-                                    <div className="h-44 bg-base-200/50 rounded-xl p-1">
+                                    <div className="text-xs font-semibold opacity-75">{t('speed_profile')}</div>
+                                    <div className="h-44 bg-slate-700/60 rounded-md p-1">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <LineChart data={trackPoints.map((p, idx) => ({ name: idx, speed: p.speed * 3.6 }))}>
                                                 <XAxis dataKey="name" hide />

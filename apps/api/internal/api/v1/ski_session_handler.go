@@ -38,6 +38,17 @@ func NewSkiSessionHandler(svc *service.SkiSessionService, s store.Store) *SkiSes
 	return &SkiSessionHandler{svc: svc, store: s}
 }
 
+func (h *SkiSessionHandler) List(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessions, err := h.svc.List(ctx)
+	if err != nil {
+		httputil.RespondError(c, fmt.Errorf("failed to list ski sessions: %w", err))
+		return
+	}
+
+	httputil.RespondOK(c, gin.H{"sessions": sessions})
+}
+
 func (h *SkiSessionHandler) ListByResort(c *gin.Context) {
 	resortID := c.Query("resort_id")
 	userID := middleware.GetUserID(c)

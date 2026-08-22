@@ -17,4 +17,4 @@ config.server.enhanceMiddleware = (middleware) => {
   };
 };
 
-module.exports = withNativewind(config);
+module.exports = withNativewind(config, { input: './styles/global.css' });

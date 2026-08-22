@@ -10,12 +10,14 @@ import (
 
 // Container holds all services with their dependencies.
 type Container struct {
-	SkiResort  *SkiResortService
-	SkiPiste   *SkiPisteService
-	SkiLift    *SkiLiftService
-	User       *UserService
-	SkiSession *SkiSessionService
-	Weather    *WeatherService
+	SkiResort       *SkiResortService
+	SkiPiste        *SkiPisteService
+	SkiLift         *SkiLiftService
+	User            *UserService
+	SkiSession      *SkiSessionService
+	Weather         *WeatherService
+	VersionManifest *VersionManifestService
+	OTA             *OTAService
 }
 
 // NewContainer creates all services with shared dependencies.
@@ -26,13 +28,17 @@ func NewContainer(
 	minioClient *minio.Client,
 	dbURL string,
 	setupSecret string,
+	otaUpdatesDir string,
+	apiPublicURL string,
 ) *Container {
 	return &Container{
-		SkiResort:  NewSkiResortService(s, logger),
-		SkiPiste:   NewSkiPisteService(s, logger),
-		SkiLift:    NewSkiLiftService(s, logger),
-		User:       NewUserService(s, jwtManager, logger),
-		SkiSession: NewSkiSessionService(s, jwtManager, logger, minioClient),
-		Weather:    NewWeatherService(logger),
+		SkiResort:       NewSkiResortService(s, logger),
+		SkiPiste:        NewSkiPisteService(s, logger),
+		SkiLift:         NewSkiLiftService(s, logger),
+		User:            NewUserService(s, jwtManager, logger),
+		SkiSession:      NewSkiSessionService(s, jwtManager, logger, minioClient),
+		Weather:         NewWeatherService(logger),
+		VersionManifest: NewVersionManifestService(s, logger),
+		OTA:             NewOTAService(minioClient, otaUpdatesDir, apiPublicURL, logger),
 	}
 }

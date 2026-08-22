@@ -26,10 +26,12 @@ export const initDB = async (db: SQLite.SQLiteDatabase) => {
       resort_id TEXT,
       timestamp INTEGER
     );
+  `);
 
+  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS photos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      file_uri TEXT NOT NULL, -- Ej: "file:///data/user/0/com.app/files/sessions/session_123/photo_12.jpg"
+      file_uri TEXT NOT NULL -- Ej: "file:///data/user/0/com.app/files/sessions/session_123/photo_12.jpg"
     );
   `);
 };

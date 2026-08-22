@@ -1,10 +1,24 @@
 import { Lift, Piste } from 'models/ski-resort.model';
-import React, { useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Platform, processColor } from 'react-native';
+import { X } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
+
+let LineChart: any = null;
+if (Platform.OS !== 'web') {
+    LineChart = require('react-native-charts-wrapper').LineChart;
+}
 
 interface MapDetailPanelProps {
     data: Piste | Lift;
     onClose: () => void;
+}
+
+interface ChartDatum {
+    distance: number;
+    elevation: number;
+    slopePct: number;
+    slopeDeg: number;
 }
 
 const pctToDegrees = (pct: number) => {
@@ -15,74 +29,353 @@ const getDifficultyMeta = (difficulty: string) => {
     const diff = difficulty?.toLowerCase() || '';
     switch (diff) {
         case 'novice':
-            return { label: 'Novice', bg: 'bg-[#00a859]', text: 'text-white', hex: '#00a859' };
+            return { labelKey: 'novice', bg: 'bg-[#00a859]', hex: '#00a859' };
         case 'easy':
-            return { label: 'Easy', bg: 'bg-[#0072bc]', text: 'text-white', hex: '#0072bc' };
+            return { labelKey: 'easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
         case 'intermediate':
-            return { label: 'Advanced', bg: 'bg-[#f0141e]', text: 'text-white', hex: '#f0141e' };
+            return { labelKey: 'intermediate', bg: 'bg-[#f0141e]', hex: '#f0141e' };
         case 'advanced':
         case 'expert':
-            return { label: 'Expert', bg: 'bg-black', text: 'text-white', hex: '#000000' };
+            return { labelKey: 'expert', bg: 'bg-black', hex: '#000000' };
         default:
-            return { label: 'Easy', bg: 'bg-[#0072bc]', text: 'text-white', hex: '#0072bc' };
+            return { labelKey: 'easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
     }
 };
 
+const getSlopeColor = (slopePct: number) => {
+    const absSlope = Math.abs(slopePct);
+    if (absSlope < 15) return '#00a859';
+    if (absSlope < 25) return '#0072bc';
+    if (absSlope < 40) return '#f0141e';
+    return '#000000';
+};
+
+// --- WEB CHART ---
+const WebChart: React.FC<{
+    data: ChartDatum[];
+    height: number;
+    selectedIndex: number | null;
+    onSelectIndex: (index: number) => void;
+}> = ({ data, height, selectedIndex, onSelectIndex }) => {
+    const [containerWidth, setContainerWidth] = useState<number>(0);
+
+    if (!data || data.length === 0) return null;
+
+    const minElev = Math.min(...data.map(d => d.elevation));
+    const maxElev = Math.max(...data.map(d => d.elevation));
+    const maxDist = Math.max(...data.map(d => d.distance)) || 1;
+    const elevRange = maxElev - minElev || 1;
+
+    const padding = { top: 10, bottom: 25, left: 40, right: 15 };
+    const svgWidth = containerWidth > 0 ? containerWidth : 500;
+    const svgHeight = height;
+
+    const chartW = svgWidth - padding.left - padding.right;
+    const chartH = svgHeight - padding.top - padding.bottom;
+    const bottomY = padding.top + chartH;
+
+    const points = data.map((d) => {
+        const x = padding.left + (d.distance / maxDist) * chartW;
+        const y = padding.top + chartH - ((d.elevation - minElev) / elevRange) * chartH;
+        return { x, y, ...d };
+    });
+
+    return (
+        <View 
+            style={{ height }} 
+            className="w-full"
+            onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                if (w > 0 && Math.abs(w - containerWidth) > 1) {
+                    setContainerWidth(w);
+                }
+            }}
+        >
+            {containerWidth > 0 && (
+                <svg 
+                    width="100%" 
+                    height="100%" 
+                    viewBox={`0 0 ${svgWidth} ${svgHeight}`} 
+                    style={{ overflow: 'visible' }}
+                >
+                    {[0, 0.5, 1].map((ratio, i) => {
+                        const y = padding.top + chartH * ratio;
+                        const val = Math.round(maxElev - ratio * elevRange);
+                        return (
+                            <g key={i}>
+                                <line x1={padding.left} y1={y} x2={svgWidth - padding.right} y2={y} stroke="#334155" strokeDasharray="3,3" strokeWidth="1" />
+                                <text x={padding.left - 5} y={y + 3} fill="#94a3b8" fontSize="10" textAnchor="end">{val}m</text>
+                            </g>
+                        );
+                    })}
+
+                    {points.map((p, idx) => {
+                        if (idx === points.length - 1) return null;
+                        const nextP = points[idx + 1];
+                        const color = getSlopeColor(nextP.slopePct);
+                        const segmentD = `M ${p.x} ${p.y} L ${nextP.x} ${nextP.y} L ${nextP.x} ${bottomY} L ${p.x} ${bottomY} Z`;
+
+                        return (
+                            <g key={`segment-${idx}`}>
+                                <path
+                                    d={segmentD}
+                                    fill={color}
+                                    fillOpacity="0.25"
+                                />
+                                <line
+                                    x1={p.x}
+                                    y1={p.y}
+                                    x2={nextP.x}
+                                    y2={nextP.y}
+                                    stroke={color}
+                                    strokeWidth="2.5"
+                                />
+                            </g>
+                        );
+                    })}
+
+                    {points.map((p, idx) => (
+                        <circle
+                            key={idx}
+                            cx={p.x}
+                            cy={p.y}
+                            r={selectedIndex === idx ? 6 : 4}
+                            fill="#ffffff"
+                            stroke={getSlopeColor(p.slopePct)}
+                            strokeWidth="2"
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => onSelectIndex(idx)}
+                            onMouseEnter={() => onSelectIndex(idx)}
+                        />
+                    ))}
+
+                    {selectedIndex !== null && points[selectedIndex] && (
+                        <line
+                            x1={points[selectedIndex].x}
+                            y1={padding.top}
+                            x2={points[selectedIndex].x}
+                            y2={bottomY}
+                            stroke="#f59e0b"
+                            strokeDasharray="2,2"
+                            strokeWidth="1.5"
+                        />
+                    )}
+                </svg>
+            )}
+        </View>
+    );
+};
+
+// --- NATIVE CHART ---
+const NativeChart: React.FC<{
+    data: ChartDatum[];
+    height: number;
+    onSelectIndex: (index: number) => void;
+}> = ({ data, height, onSelectIndex }) => {
+    if (!LineChart || !data || data.length === 0) return null;
+
+    const chartValues = data.map(d => ({ x: d.distance, y: d.elevation }));
+    const circleColors = data.map(d => processColor(getSlopeColor(d.slopePct)));
+
+    const segmentDataSets = [];
+
+    for (let i = 0; i < data.length - 1; i++) {
+        const p1 = data[i];
+        const p2 = data[i + 1];
+        const segmentColor = processColor(getSlopeColor(p2.slopePct));
+
+        segmentDataSets.push({
+            values: [
+                { x: p1.distance, y: p1.elevation },
+                { x: p2.distance, y: p2.elevation },
+            ],
+            label: `segment_${i}`,
+            config: {
+                color: segmentColor,
+                lineWidth: 2.5,
+                drawCircles: false,
+                drawValues: false,
+                drawFilled: true,
+                fillColor: segmentColor,
+                fillAlpha: 60,
+            },
+        });
+    }
+
+    segmentDataSets.push({
+        values: chartValues,
+        label: 'points_overlay',
+        config: {
+            color: processColor('transparent'),
+            lineWidth: 0,
+            drawCircles: true,
+            circleRadius: 4,
+            circleColors: circleColors,
+            circleHoleColor: processColor('#ffffff'),
+            drawCircleHole: true,
+            drawValues: false,
+            drawFilled: false,
+        },
+    });
+
+    return (
+        <View style={{ height }}>
+            <LineChart
+                style={{ flex: 1 }}
+                data={{
+                    dataSets: segmentDataSets,
+                }}
+                xAxis={{
+                    position: 'BOTTOM',
+                    textColor: processColor('#94a3b8'),
+                    textSize: 9,
+                    gridColor: processColor('#334155'),
+                    gridDashedLine: { lineLength: 3, spaceLength: 3 },
+                    valueFormatter: "###0.0'km'",
+                    granularityEnabled: true,
+                    granularity: 1,
+                }}
+                yAxis={{
+                    left: {
+                        textColor: processColor('#94a3b8'),
+                        textSize: 9,
+                        gridColor: processColor('#334155'),
+                        gridDashedLine: { lineLength: 3, spaceLength: 3 },
+                        valueFormatter: "###0'm'",
+                        spaceBottom: 15,
+                        spaceTop: 15,
+                    },
+                    right: { enabled: false },
+                }}
+                legend={{ enabled: false }}
+                chartDescription={{ text: '' }}
+                touchEnabled={true}
+                dragEnabled={true}
+                scaleEnabled={false}
+                pinchZoom={false}
+                onSelect={(event: any) => {
+                    const entry = event.nativeEvent;
+                    if (entry && typeof entry.x === 'number') {
+                        const index = data.findIndex(d => Math.abs(d.distance - entry.x) < 0.05);
+                        if (index !== -1) onSelectIndex(index);
+                    }
+                }}
+            />
+        </View>
+    );
+};
+
+// --- ELEVATION CHART WRAPPER ---
+export const ElevationChart: React.FC<{
+    data: ChartDatum[];
+    height?: number;
+}> = ({ data, height = 160 }) => {
+    const { t } = useTranslation();
+    const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (!data || data.length === 0) {
+            setSelectedIndex(null);
+            return;
+        }
+        setSelectedIndex(prev => (prev === null || prev >= data.length ? Math.floor(data.length / 2) : prev));
+    }, [data]);
+
+    if (!data || data.length === 0) return null;
+
+    const minElev = Math.min(...data.map(d => d.elevation));
+    const maxElev = Math.max(...data.map(d => d.elevation));
+    const selectedDatum = selectedIndex !== null ? data[selectedIndex] : null;
+
+    return (
+        <View className="bg-slate-800 p-2 rounded-md border border-slate-700">
+            {selectedDatum && (
+                <View className="flex-row justify-between items-center px-2 py-1.5 mb-2 rounded bg-slate-900/90 border border-slate-700">
+                    <Text className="text-[10px] font-semibold text-slate-100">
+                        {t('alt', { elevation: selectedDatum.elevation })}
+                    </Text>
+                    <Text className="text-[10px] text-slate-300">
+                        {t('dist', { distance: selectedDatum.distance.toFixed(1) })}
+                    </Text>
+                    <Text className="text-[10px] text-slate-400">
+                        {t('slope', { slopeDeg: selectedDatum.slopeDeg, slopePct: selectedDatum.slopePct })}
+                    </Text>
+                </View>
+            )}
+
+            {Platform.OS === 'web' ? (
+                <WebChart
+                    data={data}
+                    height={height}
+                    selectedIndex={selectedIndex}
+                    onSelectIndex={setSelectedIndex}
+                />
+            ) : (
+                <NativeChart
+                    data={data}
+                    height={height}
+                    onSelectIndex={setSelectedIndex}
+                />
+            )}
+
+            <View className="flex-row justify-between mt-2 px-1">
+                <Text className="text-[10px] text-slate-400">{t('min_label', { minElev })}</Text>
+                <Text className="text-[10px] text-slate-400">{t('max_label', { maxElev })}</Text>
+            </View>
+
+            <View className="flex-row justify-around items-center mt-3 pt-2 border-t border-slate-700/60 flex-wrap gap-1">
+                <View className="flex-row items-center gap-1.5">
+                    <View className="w-3 h-3 rounded bg-[#00a859]/40 border border-[#00a859]" />
+                    <Text className="text-[9px] text-slate-300">{t('novice_slope_desc')}</Text>
+                </View>
+                <View className="flex-row items-center gap-1.5">
+                    <View className="w-3 h-3 rounded bg-[#0072bc]/40 border border-[#0072bc]" />
+                    <Text className="text-[9px] text-slate-300">{t('easy_slope_desc')}</Text>
+                </View>
+                <View className="flex-row items-center gap-1.5">
+                    <View className="w-3 h-3 rounded bg-[#f0141e]/40 border border-[#f0141e]" />
+                    <Text className="text-[9px] text-slate-300">{t('intermediate_slope_desc')}</Text>
+                </View>
+                <View className="flex-row items-center gap-1.5">
+                    <View className="w-3 h-3 rounded bg-black border border-white" />
+                    <Text className="text-[9px] text-slate-300">{t('expert_slope_desc')}</Text>
+                </View>
+            </View>
+        </View>
+    );
+};
+
 export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose }) => {
+    const isWeb = Platform.OS === 'web';
+    const { t } = useTranslation();
     const tags = data?.Tags || {};
     const elevationProfile = tags.elevationProfile || {};
     const heights = elevationProfile.heights || [];
     const resolution = elevationProfile.resolution || 25;
-    const type = data.GeometryGeoJSON.type || "LineString";
+    const type = data.GeometryGeoJSON?.type || 'LineString';
 
-    const ref = tags.ref || "•";
-    const difficulty: string = (data as Piste).Difficulty || tags.difficulty || "easy";
+    const ref = tags.ref || '•';
+    const difficulty: string = (data as Piste).Difficulty || tags.difficulty || 'easy';
     const name: string = data.Name || tags.name || `${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} ${(data as Piste).PisteType} area`;
 
     const diffMeta = getDifficultyMeta(difficulty);
 
     const chartData = useMemo(() => {
         if (heights.length === 0) return [];
-
         return heights.map((height: number, index: number) => {
             const distanceMeters = index * resolution;
             const distanceKm = (distanceMeters / 1000).toFixed(2);
-
-            let slopePct = 0;
-            if (index > 0) {
-                const prevHeight = heights[index - 1];
-                const elevationDiff = Math.abs(height - prevHeight);
-                slopePct = (elevationDiff / resolution) * 100;
-            }
-
-            let color = '#00a859';
-            if (slopePct >= 10 && slopePct < 20) color = '#0072bc';
-            else if (slopePct >= 20 && slopePct < 35) color = '#f0141e';
-            else if (slopePct >= 35) color = '#111827';
-
+            const prevHeight = index > 0 ? heights[index - 1] : height;
+            const slopePct = index > 0 ? Math.round((((height - prevHeight) / resolution) * 100) * 10) / 10 : 0;
+            const slopeDeg = pctToDegrees(Math.abs(slopePct));
             return {
                 distance: parseFloat(distanceKm),
                 elevation: Math.round(height),
-                slope: Math.round(slopePct),
-                color: color,
+                slopePct,
+                slopeDeg,
             };
         });
     }, [heights, resolution]);
-
-    const gradientStops = useMemo(() => {
-        if (chartData.length < 2) return [];
-
-        return chartData.map((point: any, index: number) => {
-            const offsetPct = (index / (chartData.length - 1)) * 100;
-            return (
-                <stop
-                    key={index}
-                    offset={`${offsetPct}%`}
-                    stopColor={point.color}
-                />
-            );
-        });
-    }, [chartData]);
 
     const totalDistance = heights.length > 1 ? Math.round((heights.length - 1) * resolution) : 0;
 
@@ -114,195 +407,111 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
     const maxSlopeDeg = pctToDegrees(maxSlopePct);
 
     const places = tags.places || [];
-    const region = places[0]?.localized?.en?.region || "Madrid";
-    const country = places[0]?.localized?.en?.country || "Spain";
-
+    const region = places[0]?.localized?.en?.region || 'Madrid';
+    const country = places[0]?.localized?.en?.country || 'Spain';
     const skiAreas = tags.skiAreas || [];
-    const skiArea = skiAreas[0]?.properties?.name;
+    const skiArea = skiAreas[0]?.properties?.name || t('ski_resort');
 
     const parseLiftType = (liftType: string) => {
-        switch (liftType.toLowerCase()) {
-            case 'chair_lift':
-                return 'Chair Lift';
-            case 'drag_lift':
-                return 'Drag Lift';
-            case 'gondola':
-                return 'Gondola';
-            case 'cable_car':
-                return 'Cable Car';
-            case 'funicular':
-                return 'Funicular';
-            case 'magic_carpet':
-                return 'Magic Carpet';
-            default:
-                return liftType;
+        switch (liftType?.toLowerCase()) {
+            case 'chair_lift': return t('chair_lift');
+            case 'drag_lift': return t('drag_lift');
+            case 'gondola': return t('gondola');
+            case 'cable_car': return t('cable_car');
+            case 'funicular': return t('funicular');
+            case 'magic_carpet': return t('magic_carpet');
+            default: return liftType || t('lift');
         }
-    }
+    };
 
     if (!data) return null;
 
     return (
-        <div className="card absolute top-4 left-4 right-4 lg:bottom-auto lg:top-4 lg:left-72 lg:right-auto z-50 bg-base-100/95 backdrop-blur-md border border-base-300 shadow p-4 w-auto lg:w-96 max-h-[65vh] lg:max-h-[85vh] overflow-y-auto flex flex-col gap-3">
-            <div className="flex justify-between items-start mb-2">
-                <div className="text-xs text-gray-500 font-medium tracking-wide">
-                    {country} <span className="mx-1">›</span> {region} <span className="mx-1">›</span>
-                    <div className="text-gray-600 hover:underline cursor-pointer mt-0.5">{skiArea}</div>
-                </div>
-                <button
-                    onClick={onClose}
-                    className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-50 transition-colors"
-                >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
+        <View className="absolute inset-0 flex items-center justify-center bg-black/60 z-50 p-3">
+            <View className={`bg-slate-900 border border-slate-700 shadow-md p-4 rounded-xl ${isWeb ? 'w-11/12 h-11/12' : 'w-full h-full'} flex`}>
+                <ScrollView className="space-y-4" showsVerticalScrollIndicator={false}>
+                    <View className="flex-row justify-between items-start">
+                        <Text className="text-xs text-slate-400 font-medium flex-1 pr-2">
+                            {country} › {region} › {skiArea}
+                        </Text>
+                        <TouchableOpacity onPress={onClose} className="p-1.5 rounded-full bg-slate-800">
+                            <X size={18} color="#94a3b8" />
+                        </TouchableOpacity>
+                    </View>
 
-            <div className="flex items-center gap-3 mb-3">
-                {!(data as Lift).LiftType ? (
-                    <div className={`w-8 h-8 rounded-full ${diffMeta.bg} ${diffMeta.text} flex items-center justify-center font-bold text-sm shadow-sm`}>
-                        {ref}
-                    </div>
-
-                ) : (
-                    <div className={`w-8 h-8 rounded-full bg-gray-200 text-gray-700 flex items-center justify-center font-bold text-sm shadow-sm`}>
-                        🚠
-                    </div>
-                )}
-                <h2 className="text-2xl font-bold tracking-tight text-gray-900">{name}</h2>
-            </div>
-
-            {(!(data as Lift).LiftType && type === "LineString") && (
-                <>
-                    <div className="text-sm text-gray-500 capitalize mb-4 font-medium">
-                        {diffMeta.label} downhill ski run
-                    </div>
-
-
-                    <div className="grid grid-cols-3 gap-2 border-t border-b border-gray-100 py-3 mb-3 text-xs font-semibold text-gray-700">
-                        <div>
-                            <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Distance</span>
-                            <span className="text-sm font-bold text-gray-900">{totalDistance}m</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Ascent</span>
-                            <span className="text-sm font-bold text-gray-900">{ascent}m</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Descent</span>
-                            <span className="text-sm font-bold text-gray-900">{descent}m</span>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mb-5 text-xs text-gray-700">
-                        <div>
-                            <span className="text-gray-400 block mb-0.5">Average Slope</span>
-                            <span className="text-sm font-semibold text-gray-900">{avgSlopeDeg}° ({avgSlopePct}%)</span>
-                        </div>
-                        <div>
-                            <span className="text-gray-400 block mb-0.5">Max Slope</span>
-                            <span className="text-sm font-semibold text-gray-900">{maxSlopeDeg}° ({maxSlopePct}%)</span>
-                        </div>
-                    </div>
-
-                    <div className="h-55 lg:h-44 w-full mb-3 shrink-0">
-                        {chartData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%" style={{ outline: 'none' }}>
-                                <AreaChart data={chartData} margin={{ top: 15, right: 15, left: -10, bottom: 5 }} style={{ outline: 'none' }}>
-                                    <defs>
-                                        <linearGradient id="slopeColorGradient" x1="0" y1="0" x2="1" y2="0">
-                                            {gradientStops}
-                                        </linearGradient>
-                                        <linearGradient id="verticalOpacity" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0, 0, 0, 0.05)" vertical={false} />
-                                    <XAxis
-                                        dataKey="distance"
-                                        tickFormatter={(val) => `${val} km`}
-                                        fontSize={9}
-                                        tickLine={false}
-                                        axisLine={{ stroke: 'rgba(0, 0, 0, 0.08)' }}
-                                        tick={{ fill: '#6b7280', fontWeight: '500' }}
-                                    />
-                                    <YAxis
-                                        domain={['dataMin - 20', 'dataMax + 20']}
-                                        tickFormatter={(val) => `${val}m`}
-                                        fontSize={9}
-                                        tickLine={false}
-                                        axisLine={{ stroke: 'rgba(0, 0, 0, 0.08)' }}
-                                        tick={{ fill: '#6b7280', fontWeight: '500' }}
-                                        width={50}
-                                    />
-
-                                    <Tooltip
-                                        content={({ active, payload, label }) => {
-                                            if (active && payload && payload.length) {
-                                                const data = payload[0].payload;
-                                                const slopeDeg = pctToDegrees(data.slope);
-                                                return (
-                                                    <div className="bg-base-100/95 backdrop-blur-md p-3 border border-base-200 rounded-xl shadow-lg text-xs font-sans">
-                                                        <p className="text-base-content/50 font-medium mb-1.5">Distance: <span className="text-base-content font-bold">{label} km</span></p>
-                                                        <div className="space-y-1">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-primary"></span>
-                                                                <span className="text-base-content/65">Height:</span>
-                                                                <span className="text-base-content font-semibold">{data.elevation}m</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="w-2 h-2 rounded-full bg-secondary"></span>
-                                                                <span className="text-base-content/65">Slope:</span>
-                                                                <span className="text-base-content font-semibold">{data.slope}% ({slopeDeg}°)</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            }
-                                            return null;
-                                        }}
-                                    />
-
-                                    <Area
-                                        type="monotone"
-                                        dataKey="elevation"
-                                        stroke="url(#slopeColorGradient)"
-                                        strokeWidth={3}
-                                        fillOpacity={1}
-                                        fill="url(#verticalOpacity)"
-                                    />
-                                </AreaChart>
-                            </ResponsiveContainer>
+                    <View className="flex-row items-center gap-3">
+                        {!(data as Lift).LiftType ? (
+                            <View className={`w-9 h-9 rounded-full ${diffMeta.bg} items-center justify-center shadow-md`}>
+                                <Text className="text-white font-bold text-sm">{ref}</Text>
+                            </View>
                         ) : (
-                            <div className="w-full h-full flex items-center justify-center border border-dashed border-gray-200 rounded-lg text-xs text-gray-400">
-                                No elevation profile data available
-                            </div>
+                            <View className="w-9 h-9 rounded-full bg-slate-700 items-center justify-center shadow-md">
+                                <Text className="text-lg">🚠</Text>
+                            </View>
                         )}
-                    </div>
-                </>
-            )}
+                        <Text className="text-xl font-bold text-white flex-1">{name}</Text>
+                    </View>
 
-            {((data as Lift).LiftType && type === "LineString") && (
-                <div className="grid grid-cols-3 gap-2 border-t border-b border-gray-100 py-3 mb-3 text-xs font-semibold text-gray-700">
-                    <div>
-                        <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Type:</span>
-                        <span className="text-sm font-bold text-gray-900">{parseLiftType((data as Lift).LiftType)}</span>
-                    </div>
-                    <div>
-                        <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Capacity:</span>
-                        <span className="text-sm font-bold text-gray-900">{(data as Lift).Capacity} pers.</span>
-                    </div>
-                    <div>
-                        <span className="text-gray-400 block font-normal uppercase tracking-wider mb-0.5">Hourly Capacity:</span>
-                        <span className="text-sm font-bold text-gray-900">{(data as Lift).CapacityHourly} pers.</span>
-                    </div>
-                </div>
-            )}
+                    {(!(data as Lift).LiftType && type === 'LineString') && (
+                        <>
+                            <Text className="text-xs text-slate-400 capitalize font-medium">
+                                {t('downhill_ski_run', { difficulty: t(diffMeta.labelKey) })}
+                            </Text>
 
-            <div className="text-[10px] text-gray-400 flex items-center justify-between border-t border-gray-100 pt-3">
-                <span>Source: <a href="https://openstreetmap.org" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">OpenStreetMap</a></span>
-            </div>
-        </div>
+                            <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
+                                <View className="items-center">
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('distance')}</Text>
+                                    <Text className="text-sm font-bold text-white mt-0.5">{totalDistance}m</Text>
+                                </View>
+                                <View className="items-center">
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('ascent')}</Text>
+                                    <Text className="text-sm font-bold text-white mt-0.5">{ascent}m</Text>
+                                </View>
+                                <View className="items-center">
+                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('descent')}</Text>
+                                    <Text className="text-sm font-bold text-white mt-0.5">{descent}m</Text>
+                                </View>
+                                <View className="items-center">
+                                    <Text className="text-xs text-slate-400">{t('average_slope')}</Text>
+                                    <Text className="text-sm font-bold text-slate-200">{avgSlopeDeg}° ({avgSlopePct}%)</Text>
+                                </View>
+                                <View className="items-center">
+                                    <Text className="text-xs text-slate-400">{t('max_slope')}</Text>
+                                    <Text className="text-sm font-bold text-slate-200">{maxSlopeDeg}° ({maxSlopePct}%)</Text>
+                                </View>
+                            </View>
+
+                            <View className="mt-2">
+                                <Text className="text-xs font-bold text-slate-400 uppercase mb-2">{t('elevation_profile_title')}</Text>
+                                {chartData.length > 0 ? (
+                                    <ElevationChart data={chartData} />
+                                ) : (
+                                    <View className="p-4 border border-dashed border-slate-700 rounded-md items-center">
+                                        <Text className="text-xs text-slate-500">{t('no_elevation_data')}</Text>
+                                    </View>
+                                )}
+                            </View>
+                        </>
+                    )}
+
+                    {((data as Lift).LiftType && type === 'LineString') && (
+                        <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
+                            <View className="items-center">
+                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('type')}</Text>
+                                <Text className="text-sm font-bold text-white mt-0.5">{parseLiftType((data as Lift).LiftType)}</Text>
+                            </View>
+                            <View className="items-center">
+                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('capacity')}</Text>
+                                <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).Capacity ? t('persons_count', { count: (data as Lift).Capacity }) : '-'}</Text>
+                            </View>
+                            <View className="items-center">
+                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('hourly_label')}</Text>
+                                <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).CapacityHourly ? t('persons_count', { count: (data as Lift).CapacityHourly }) : '-'}</Text>
+                            </View>
+                        </View>
+                    )}
+                </ScrollView>
+            </View>
+        </View>
     );
 };

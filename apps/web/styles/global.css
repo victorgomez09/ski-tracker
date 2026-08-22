@@ -1,12 +1,5 @@
-@import 'tailwindcss/theme.css' layer(theme);
-@import 'tailwindcss/preflight.css' layer(base);
-@import 'tailwindcss/utilities.css';
-
-@import 'nativewind/theme';
-
-@plugin "daisyui" {
-    themes: light --default, dark --prefersdark, winter, forest, dracula, cyberpunk, synthwave, valentine, night, retro, halloween, garden, business, acid, lemonade, coffee, cupcake;
-}
+@import "tailwindcss";
+@import "nativewind/theme";
 
 .recharts-wrapper *:focus,
 .recharts-surface:focus,

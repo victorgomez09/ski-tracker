@@ -1,0 +1,971 @@
+import {
+    LngLatBounds,
+    Camera as NativeCamera,
+    GeoJSONSource as NativeGeoJSONSource,
+    Layer as NativeLayer,
+    Map as NativeMap,
+    Marker as NativeMarker,
+    type CameraRef,
+} from '@maplibre/maplibre-react-native';
+import { router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router/build/hooks';
+import { useOfflineMaps } from 'hooks/use-offline.hook';
+import { ArrowLeft, CircleHelp, Download, MapPin, X } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import { useNetworkState } from 'expo-network'
+
+import { API_BASE_URL } from 'constants/constants';
+import { useAuth } from 'context/auth.context';
+import api from 'interceptor/api';
+import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
+import { LegendDetailPanel } from './legend-detail-panel';
+import { MapDetailPanel } from './map-detail-panel';
+import { OfflineMapsModal } from './offline-maps-panel';
+import { ResortDetailPanel } from './resort-detail-panel';
+
+const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
+
+export default function InteractiveSkiMapNative() {
+    const { t } = useTranslation();
+    const networkState = useNetworkState();
+    const searchParams = useLocalSearchParams();
+    const cameraRef = useRef<CameraRef>(null);
+    const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
+    const syncParamsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const latestBoundsRef = useRef<{ minLon: string; minLat: string; maxLon: string; maxLat: string } | null>(null);
+    const [resorts, setResorts] = useState<ResortDetail[]>([]);
+    const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
+    const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
+    const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
+    const [selectedResort, setSelectedResort] = useState<Resort | ResortDetail | null>(null);
+    const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
+    const [trackPoints, setTrackPoints] = useState<any[]>([]);
+    const [matchedPisteIds, setMatchedPisteIds] = useState<string[]>([]);
+    const [activeTab, setActiveTab] = useState<'runs' | 'elevation' | 'speed'>('runs');
+    const [selectedRun, setSelectedRun] = useState<any | null>(null);
+    const [hoveredRun, setHoveredRun] = useState<any | null>(null);
+    const [sessionDetails, setSessionDetails] = useState<any | null>(null);
+    const [showOfflineModal, setShowOfflineModal] = useState(false);
+    const {
+        packs,
+        downloadingPack,
+        downloadingProgress,
+        downloadRegion,
+        deletePack,
+    } = useOfflineMaps(mapStyleUrl);
+
+    const detectedRuns = useMemo(() => {
+        if (trackPoints.length === 0) return [];
+        let currentType = 'unknown';
+        let currentPoints: any[] = [];
+        const result: { type: string; points: any[] }[] = [];
+
+        for (let i = 0; i < trackPoints.length; i++) {
+            const p = trackPoints[i];
+            let pType = currentType;
+            if (i > 0) {
+                const prev = trackPoints[i - 1];
+                const altDiff = p.altitude - prev.altitude;
+                if (altDiff > 0.8) {
+                    pType = 'lift';
+                } else if (altDiff < -0.8 && p.speed > 1.0) {
+                    pType = 'run';
+                }
+            }
+            if (currentType === 'unknown') currentType = pType;
+
+            if (currentType === pType) {
+                currentPoints.push(p);
+            } else {
+                if (currentPoints.length > 0) {
+                    result.push({ type: currentType, points: currentPoints });
+                }
+                currentType = pType;
+                currentPoints = [p];
+            }
+        }
+        if (currentPoints.length > 0) {
+            result.push({ type: currentType, points: currentPoints });
+        }
+
+        return result
+            .filter(r => r.type === 'run' && r.points.length > 5)
+            .map((r, idx) => {
+                const startAlt = r.points[0].altitude;
+                const endAlt = r.points[r.points.length - 1].altitude;
+                const drop = Math.max(0, startAlt - endAlt);
+                const maxSpd = Math.max(...r.points.map(p => p.speed)) * 3.6;
+                return {
+                    id: `run-${idx}`,
+                    index: idx + 1,
+                    points: r.points,
+                    verticalDrop: drop,
+                    maxSpeed: maxSpd,
+                    pointsCount: r.points.length,
+                };
+            });
+    }, [trackPoints]);
+
+    const [viewState, setViewState] = useState({
+        longitude: parseFloat((searchParams.lon as string) || '-3.971953'),
+        latitude: parseFloat((searchParams.lat as string) || '40.797891'),
+        zoom: parseFloat((searchParams.zoom as string) || '13'),
+        bearing: 0,
+        pitch: 0
+    });
+    const { token } = useAuth();
+
+    const firstViewStateRef = useRef(viewState);
+    const viewStateRef = useRef(viewState);
+    viewStateRef.current = viewState;
+    const skipNextUrlCameraRef = useRef(true);
+
+    const applyExternalCameraMove = useCallback((longitude: number, latitude: number, zoom: number, duration = 0) => {
+        setViewState(prev => {
+            if (
+                Math.abs(prev.longitude - longitude) < 1e-6 &&
+                Math.abs(prev.latitude - latitude) < 1e-6 &&
+                Math.abs(prev.zoom - zoom) < 0.05
+            ) {
+                return prev;
+            }
+            return { ...prev, longitude, latitude, zoom };
+        });
+        try {
+            cameraRef.current?.easeTo({
+                center: [longitude, latitude],
+                zoom,
+                duration,
+            });
+        } catch {
+            // Camera is not mounted yet; initialViewState covers the first frame.
+        }
+    }, []);
+
+    useEffect(() => {
+        const latParam = Array.isArray(searchParams.lat) ? searchParams.lat[0] : searchParams.lat;
+        const lonParam = Array.isArray(searchParams.lon) ? searchParams.lon[0] : searchParams.lon;
+        const zoomParam = Array.isArray(searchParams.zoom) ? searchParams.zoom[0] : searchParams.zoom;
+
+        if (!latParam || !lonParam) return;
+
+        const lat = parseFloat(latParam);
+        const lon = parseFloat(lonParam);
+        const zoom = zoomParam ? parseFloat(zoomParam) : viewStateRef.current.zoom;
+        if (isNaN(lat) || isNaN(lon) || isNaN(zoom)) return;
+
+        const rounded = {
+            lat: lat.toFixed(5),
+            lon: lon.toFixed(5),
+            zoom: zoom.toFixed(2),
+        };
+
+        const lastInternal = lastInternalParamsRef.current;
+        if (lastInternal &&
+            Math.abs(parseFloat(lastInternal.lat) - lat) < 1e-5 &&
+            Math.abs(parseFloat(lastInternal.lon) - lon) < 1e-5 &&
+            Math.abs(parseFloat(lastInternal.zoom) - zoom) < 0.05) {
+            return;
+        }
+
+        lastInternalParamsRef.current = rounded;
+
+        if (skipNextUrlCameraRef.current) {
+            skipNextUrlCameraRef.current = false;
+            return;
+        }
+
+        applyExternalCameraMove(lon, lat, zoom, 0);
+    }, [searchParams.lat, searchParams.lon, searchParams.zoom, applyExternalCameraMove]);
+
+    useEffect(() => {
+        const loadSessionData = async () => {
+            if (searchParams.sessionId) {
+                try {
+                    const res = await api.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`);
+                    if (res.status === 200 && res.data) {
+                        const session = res.data.data || res.data;
+                        setSessionDetails(session);
+                        if (session.points && Array.isArray(session.points) && session.points.length > 0) {
+                            const parsedPoints = session.points.map((p: any) => {
+                                const match = p.geom?.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/i);
+                                return {
+                                    lat: match ? parseFloat(match[2]) : p.lat,
+                                    lon: match ? parseFloat(match[1]) : p.lon,
+                                    altitude: p.altitude,
+                                    speed: p.speed,
+                                    timestamp: p.timestamp
+                                };
+                            });
+                            setTrackPoints(parsedPoints);
+
+                            if (parsedPoints.length > 0) {
+                                applyExternalCameraMove(parsedPoints[0].lon, parsedPoints[0].lat, 14, 400);
+                            }
+                        }
+                        if (session.runs && Array.isArray(session.runs)) {
+                            const ids = session.runs
+                                .map((r: any) => r.matched_piste_id)
+                                .filter(Boolean);
+                            setMatchedPisteIds(ids);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error loading session track on map:", error);
+                }
+            }
+        };
+        loadSessionData();
+    }, [searchParams.sessionId, token, applyExternalCameraMove]);
+
+    useEffect(() => {
+        const loadInitial = async () => {
+            console.log(`Current network type: ${JSON.stringify(networkState)}`);
+            if (viewState.zoom < 10) {
+                try {
+                    const bounds = latestBoundsRef.current;
+                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
+                        params: {
+                            minLon: bounds?.minLon ?? (viewState.longitude - 0.4).toString(),
+                            minLat: bounds?.minLat ?? (viewState.latitude - 0.4).toString(),
+                            maxLon: bounds?.maxLon ?? (viewState.longitude + 0.4).toString(),
+                            maxLat: bounds?.maxLat ?? (viewState.latitude + 0.4).toString(),
+                        },
+                    });
+                    if (request.status === 200) {
+                        setResorts(request.data);
+                    }
+                } catch (error) {
+                    console.error("Error fetching resorts:", error);
+                }
+            } else {
+                try {
+                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                        params: { lat: viewState.latitude, lon: viewState.longitude, radius: 50 },
+                    });
+                    if (request.status === 200) {
+                        setResorts(request.data);
+                    }
+                } catch (error) {
+                    console.error("Error fetching resorts:", error);
+                }
+            }
+        };
+
+        const timeout = setTimeout(loadInitial, 350);
+        return () => clearTimeout(timeout);
+    }, [viewState.latitude, viewState.longitude, viewState.zoom, token, networkState]);
+
+    const pisteLineStyle: any = {
+        id: 'piste-lines',
+        sourceID: 'pistes-source',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00e676',
+                'easy', '#2979ff',
+                'intermediate', '#ff1744',
+                'advanced', '#212121',
+                '#9e9e9e'
+            ],
+            'line-dasharray': [1, 0],
+            'line-width': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 9,
+                ['==', ['get', 'id'], hoveredFeatureId || ''], 8,
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
+                ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7,
+                5
+            ]
+        }
+    };
+
+    const pisteLabelStyle: any = {
+        id: 'piste-labels',
+        sourceID: 'pistes-source',
+        type: 'symbol',
+        layout: {
+            'symbol-placement': 'line-center',
+            'symbol-spacing': 220,
+            'text-field': ['get', 'name'],
+            'text-size': 9.5,
+            'text-offset': [0, -0],
+            'text-allow-overlap': false,
+            'text-ignore-placement': false,
+            'text-optional': true,
+            'text-rotation-alignment': 'map',
+            'text-max-angle': 30
+        },
+        paint: {
+            'line-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00e676',
+                'easy', '#2979ff',
+                'intermediate', '#ff1744',
+                'advanced', '#212121',
+                '#9e9e9e'
+            ],
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1
+        }
+    };
+
+const pisteDirectionStyle: any = {
+        id: 'piste-directions',
+        type: 'symbol',
+        minzoom: 14,
+        layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 150,
+            'text-field': '>',
+            'text-size': 12,
+            'text-rotation-alignment': 'map',
+            'text-keep-upright': false,
+            'text-allow-overlap': false,
+            'text-ignore-placement': false
+        },
+        paint: {
+            'text-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00e676',
+                'easy', '#2979ff',
+                'intermediate', '#ff1744',
+                'advanced', '#212121',
+                '#9e9e9e'
+            ],
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5
+        }
+    };
+
+    const liftLineStyle: any = {
+        id: 'lift-lines',
+        sourceID: 'lifts-source',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#d500f9',
+                ['==', ['get', 'id'], hoveredFeatureId || ''], '#d500f9',
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], '#d500f9',
+                '#aa00ff'
+            ],
+            'line-width': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 6,
+                ['==', ['get', 'id'], hoveredFeatureId || ''], 5,
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 5,
+                3.5
+            ],
+            'line-dasharray': [2, 1]
+        }
+    };
+
+    const liftLabelStyle: any = {
+        id: 'lift-labels',
+        sourceID: 'lifts-source',
+        type: 'symbol',
+        layout: {
+            'symbol-placement': 'line-center',
+            'symbol-spacing': 220,
+            'text-field': ['get', 'name'],
+            'text-size': 9.5,
+            'text-offset': [0, -0],
+            'text-allow-overlap': false,
+            'text-ignore-placement': false,
+            'text-optional': true,
+            'text-rotation-alignment': 'map',
+            'text-max-angle': 30
+        },
+        paint: {
+            'text-color': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#ffffff',
+                '#d500f9'
+            ],
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1
+        }
+    };
+
+    const trackLineStyle: any = {
+        id: 'track-line',
+        sourceID: 'track-source',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': '#ff9100',
+            'line-width': 5
+        }
+    };
+
+    const trackDirectionStyle: any = {
+        id: 'track-arrows',
+        sourceID: 'track-direction-source',
+        type: 'symbol',
+        layout: {
+            'symbol-placement': 'point',
+            'text-field': '>>',
+            'text-size': 11,
+            'text-font': ['Open Sans Bold'],
+            'text-rotation-alignment': 'map',
+            'text-rotate': ['get', 'rotation'],
+            'text-anchor': 'center',
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
+            'text-offset': [0, -0.25]
+        },
+        paint: {
+            'text-color': '#ff9100',
+            'text-halo-color': '#000000',
+            'text-halo-width': 1.2,
+            'text-opacity': 0.95
+        }
+    };
+
+    const highlightedRunLineStyle: any = {
+        id: 'highlighted-run-line',
+        sourceID: 'highlighted-run-source',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': '#00e5ff',
+            'line-width': 8
+        }
+    };
+
+    const highlightedRunCaseStyle: any = {
+        id: 'highlighted-run-case',
+        sourceID: 'highlighted-run-source',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': '#000000',
+            'line-width': 12
+        }
+    };
+
+    const getFeatureFromEvent = useCallback((e: any): Piste | Lift | undefined => {
+        const features = e?.features ?? e?.nativeEvent?.features ?? [];
+        if (!Array.isArray(features) || features.length === 0) return undefined;
+
+        const feature = features[0];
+        if (!feature?.properties?.id) return undefined;
+
+        const featureId = feature.properties.id;
+        for (const resort of resorts) {
+            const found = resort.pistes?.find(p => p.ID === featureId) || resort.lifts?.find(l => l.ID === featureId);
+            if (found) return found;
+        }
+
+        return undefined;
+    }, [resorts]);
+
+    const normalizeGeoJSONLine = (geometry: any) => {
+        if (!geometry) return null;
+        if ((geometry.type === 'LineString' || geometry.type === 'MultiLineString') && Array.isArray(geometry.coordinates) && geometry.coordinates.length > 1) {
+            return geometry;
+        }
+        if (Array.isArray(geometry) && geometry.length > 1 && Array.isArray(geometry[0]) && typeof geometry[0][0] === 'number') {
+            return { type: 'LineString', coordinates: geometry };
+        }
+        if (geometry.coordinates && Array.isArray(geometry.coordinates) && geometry.coordinates.length > 1) {
+            return {
+                type: geometry.type === 'MultiLineString' ? 'MultiLineString' : 'LineString',
+                coordinates: geometry.coordinates
+            };
+        }
+        return null;
+    };
+
+    const pistesGeoJSON = useMemo(() => {
+        const features = resorts.flatMap(resort =>
+            (resort.pistes || []).flatMap(piste => {
+                const geometry = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
+                if (!geometry) return [];
+                return [{
+                    type: 'Feature' as const,
+                    properties: {
+                        id: piste.ID,
+                        resortId: resort.ID,
+                        name: piste.Name || 'Piste',
+                        difficulty: piste.Difficulty?.toLowerCase() || 'novice',
+                        pisteType: piste.PisteType?.toLowerCase() || 'downhill',
+                        grooming: piste.Grooming?.toLowerCase() || 'classic'
+                    },
+                    geometry
+                }];
+            })
+        );
+        return { type: 'FeatureCollection' as const, features: features as any };
+    }, [resorts]);
+
+    const liftsGeoJSON = useMemo(() => {
+        const features = resorts.flatMap(resort =>
+            (resort.lifts || []).flatMap(lift => {
+                const geometry = normalizeGeoJSONLine(lift.GeometryGeoJSON) || normalizeGeoJSONLine(lift.Waypoints);
+                if (!geometry) return [];
+                return [{
+                    type: 'Feature' as const,
+                    properties: {
+                        id: lift.ID,
+                        resortId: resort.ID,
+                        name: lift.Name || 'Lift',
+                        liftType: lift.LiftType?.toLowerCase() || 'chair_lift'
+                    },
+                    geometry
+                }];
+            })
+        );
+        return { type: 'FeatureCollection' as const, features: features as any };
+    }, [resorts]);
+
+    const trackGeoJSON = useMemo(() => {
+        if (trackPoints.length === 0) return { type: 'FeatureCollection' as const, features: [] };
+        const coordinates = trackPoints.map(p => [p.lon, p.lat]);
+        return {
+            type: 'FeatureCollection' as const,
+            features: [{
+                type: 'Feature' as const,
+                properties: {},
+                geometry: {
+                    type: 'LineString' as const,
+                    coordinates
+                }
+            }]
+        };
+    }, [trackPoints]);
+
+    const trackDirectionGeoJSON = useMemo(() => {
+        if (trackPoints.length < 2) return { type: 'FeatureCollection' as const, features: [] };
+
+        const coordinates = trackPoints.map(p => [p.lon, p.lat]);
+        const start = coordinates[0];
+        const end = coordinates[coordinates.length - 1];
+        const dx = end[0] - start[0];
+        const dy = end[1] - start[1];
+        const rotation = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+        const midpoint: [number, number] = [
+            (start[0] + end[0]) / 2,
+            (start[1] + end[1]) / 2,
+        ];
+
+        return {
+            type: 'FeatureCollection' as const,
+            features: [{
+                type: 'Feature' as const,
+                properties: { rotation },
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: midpoint,
+                }
+            }],
+        };
+    }, [trackPoints]);
+
+    const activeHighlightedRun = hoveredRun || selectedRun;
+
+    const highlightedRunGeoJSON = useMemo(() => {
+        if (!activeHighlightedRun || !activeHighlightedRun.points || activeHighlightedRun.points.length === 0) {
+            return { type: 'FeatureCollection' as const, features: [] };
+        }
+        const coordinates = activeHighlightedRun.points.map((p: any) => [p.lon, p.lat]);
+        return {
+            type: 'FeatureCollection' as const,
+            features: [{
+                type: 'Feature' as const,
+                properties: {},
+                geometry: {
+                    type: 'LineString' as const,
+                    coordinates
+                }
+            }]
+        };
+    }, [activeHighlightedRun]);
+
+    // --- Handlers ---
+    const handleNativeFeaturePress = useCallback((e: any) => {
+        const found = getFeatureFromEvent(e);
+        if (found) setSelectedFeature(found);
+    }, [getFeatureFromEvent]);
+
+    const handleNativeMapPress = useCallback((e: any) => {
+        const found = getFeatureFromEvent(e);
+        if (found) {
+            setSelectedFeature(found);
+            return;
+        }
+        setSelectedFeature(null);
+    }, [getFeatureFromEvent]);
+
+    const handleNativeRegionDidChange = useCallback((e: any) => {
+        const ne = e?.nativeEvent || e;
+        if (!ne) return;
+
+        const zoom = ne.zoom ?? ne.properties?.zoom;
+        const center = ne.center ?? ne.geometry?.coordinates;
+        const bounds = ne.bounds;
+
+        if (center && Array.isArray(center) && center.length >= 2) {
+            const [lon, lat] = center;
+            const finalZoom = zoom !== undefined ? Number(zoom) : viewStateRef.current.zoom;
+
+            setViewState(prev => {
+                if (
+                    Math.abs(prev.longitude - lon) < 1e-6 &&
+                    Math.abs(prev.latitude - lat) < 1e-6 &&
+                    Math.abs(prev.zoom - finalZoom) < 0.05
+                ) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    longitude: lon,
+                    latitude: lat,
+                    zoom: finalZoom,
+                };
+            });
+
+            let minLon = (lon - 0.1).toFixed(5);
+            let minLat = (lat - 0.1).toFixed(5);
+            let maxLon = (lon + 0.1).toFixed(5);
+            let maxLat = (lat + 0.1).toFixed(5);
+
+            if (Array.isArray(bounds) && bounds.length === 2 && Array.isArray(bounds[0]) && Array.isArray(bounds[1])) {
+                minLon = Number(bounds[0][0]).toFixed(5);
+                minLat = Number(bounds[0][1]).toFixed(5);
+                maxLon = Number(bounds[1][0]).toFixed(5);
+                maxLat = Number(bounds[1][1]).toFixed(5);
+            } else if (Array.isArray(bounds) && bounds.length === 4) {
+                minLon = Number(bounds[0]).toFixed(5);
+                minLat = Number(bounds[1]).toFixed(5);
+                maxLon = Number(bounds[2]).toFixed(5);
+                maxLat = Number(bounds[3]).toFixed(5);
+            } else if (bounds && typeof bounds === 'object' && 'ne' in bounds && 'sw' in bounds) {
+                minLon = Number(bounds.sw[0]).toFixed(5);
+                minLat = Number(bounds.sw[1]).toFixed(5);
+                maxLon = Number(bounds.ne[0]).toFixed(5);
+                maxLat = Number(bounds.ne[1]).toFixed(5);
+            }
+
+            latestBoundsRef.current = { minLon, minLat, maxLon, maxLat };
+
+            const paramLat = lat.toFixed(5);
+            const paramLon = lon.toFixed(5);
+            const paramZoom = finalZoom.toFixed(2);
+            lastInternalParamsRef.current = { lat: paramLat, lon: paramLon, zoom: paramZoom };
+
+            if (syncParamsTimeoutRef.current) {
+                clearTimeout(syncParamsTimeoutRef.current);
+            }
+            syncParamsTimeoutRef.current = setTimeout(() => {
+                router.setParams({
+                    lat: paramLat,
+                    lon: paramLon,
+                    zoom: paramZoom,
+                    minLon,
+                    minLat,
+                    maxLon,
+                    maxLat,
+                });
+            }, 400);
+        }
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (syncParamsTimeoutRef.current) {
+                clearTimeout(syncParamsTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    const renderSvgChart = (dataPoints: number[], strokeColor: string, fillColor: string) => {
+        if (!dataPoints || dataPoints.length < 2) return null;
+        const maxVal = Math.max(...dataPoints, 1);
+        const minVal = Math.min(...dataPoints, 0);
+        const range = maxVal - minVal || 1;
+
+        const width = 300;
+        const height = 100;
+
+        const points = dataPoints.map((val, idx) => {
+            const x = (idx / (dataPoints.length - 1)) * width;
+            const y = height - ((val - minVal) / range) * (height - 10) - 5;
+            return `${x},${y}`;
+        });
+
+        const pathD = `M ${points.join(' L ')}`;
+        const areaD = `M 0,${height} L ${points.join(' L ')} L ${width},${height} Z`;
+
+        return (
+            <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+                <Defs>
+                    <LinearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                        <Stop offset="0" stopColor={fillColor} stopOpacity="0.4" />
+                        <Stop offset="1" stopColor={fillColor} stopOpacity="0.0" />
+                    </LinearGradient>
+                </Defs>
+                <Path d={areaD} fill="url(#chartGrad)" />
+                <Path d={pathD} fill="none" stroke={strokeColor} strokeWidth="2" />
+            </Svg>
+        );
+    };
+
+    const handleDownloadCurrentView = (customName: string) => {
+        const delta = 0.08;
+        const bounds: LngLatBounds = [
+            viewState.longitude - delta,
+            viewState.latitude - delta,
+            viewState.longitude + delta,
+            viewState.latitude + delta,
+        ];
+
+        downloadRegion(customName, bounds, 10, 16);
+    };
+
+    return (
+        <View className="flex-1 w-full h-full bg-slate-950 relative">
+            <TouchableOpacity
+                onPress={() => setSelectedLegend(true)}
+                className="absolute bottom-4 left-4 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
+            >
+                <CircleHelp size={18} color="#60a5fa" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                onPress={() => setShowOfflineModal(true)}
+                className="absolute bottom-4 left-16 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
+            >
+                <Download size={18} color="#60a5fa" />
+                {packs.length > 0 && (
+                    <View className="w-2 h-2 rounded-full bg-emerald-500" />
+                )}
+            </TouchableOpacity>
+
+            {selectedLegend && (
+                <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
+            )}
+
+            {showOfflineModal && (
+                <OfflineMapsModal
+                    onClose={() => setShowOfflineModal(false)}
+                    packs={packs}
+                    downloadingPack={downloadingPack}
+                    downloadProgress={downloadingProgress}
+                    onDownloadCurrentArea={handleDownloadCurrentView}
+                    onDeletePack={deletePack}
+                    currentResortName={selectedResort?.Name}
+                />
+            )}
+
+            {selectedFeature && (
+                <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
+            )}
+
+            {selectedResort && (
+                <ResortDetailPanel resort={selectedResort} onClose={() => setSelectedResort(null)} />
+            )}
+
+            {searchParams.sessionId && trackPoints.length > 0 && (
+                <View className="absolute top-4 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 md:w-80 max-h-[75vh] shadow-2xl space-y-3">
+                    <View className="flex-row justify-between items-center pb-2 border-b border-slate-800">
+                        <View>
+                            <Text className="font-extrabold text-sm text-white">{t('session_analyser')}</Text>
+                            <Text className="text-[10px] text-slate-400">
+                                {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
+                            </Text>
+                        </View>
+                        <TouchableOpacity
+                            className="p-1.5 bg-slate-800 rounded-full"
+                            onPress={() => {
+                                setTrackPoints([]);
+                                setMatchedPisteIds([]);
+                                setSelectedRun(null);
+                                setSessionDetails(null);
+                                router.setParams({ sessionId: '' });
+                            }}
+                        >
+                            <X size={16} color="#94a3b8" />
+                        </TouchableOpacity>
+                    </View>
+
+                    {selectedRun ? (
+                        <ScrollView className="space-y-3">
+                            <TouchableOpacity
+                                className="flex-row items-center gap-1 bg-slate-800 px-3 py-1.5 rounded-md self-start mb-2"
+                                onPress={() => setSelectedRun(null)}
+                            >
+                                <ArrowLeft size={14} color="#60a5fa" />
+                                <Text className="text-xs font-bold text-blue-400">{t('back_to_runs')}</Text>
+                            </TouchableOpacity>
+
+                            <View className="bg-slate-800/80 p-3 rounded-md border border-slate-700">
+                                <Text className="font-bold text-xs text-white">{t('run_details', { index: selectedRun.index })}</Text>
+                                <View className="flex-row justify-between mt-2">
+                                    <Text className="text-xs text-slate-300">{t('drop')}: {selectedRun.verticalDrop.toFixed(0)}m</Text>
+                                    <Text className="text-xs text-slate-300">{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</Text>
+                                </View>
+                            </View>
+
+                            <View className="space-y-2 mt-3">
+                                <Text className="text-[10px] font-bold text-slate-400 uppercase">{t('elevation_profile')}</Text>
+                                <View className="bg-slate-800/40 rounded-md p-2 border border-slate-700">
+                                    {renderSvgChart(selectedRun.points.map((p: any) => p.altitude), '#3b82f6', '#3b82f6')}
+                                </View>
+
+                                <Text className="text-[10px] font-bold text-slate-400 uppercase mt-3">{t('speed_profile')}</Text>
+                                <View className="bg-slate-800/40 rounded-md p-2 border border-slate-700">
+                                    {renderSvgChart(selectedRun.points.map((p: any) => p.speed * 3.6), '#ef4444', '#ef4444')}
+                                </View>
+                            </View>
+                        </ScrollView>
+                    ) : (
+                        <View className="space-y-3">
+                            <View className="flex-row bg-slate-800 p-1 rounded-md mb-2">
+                                <TouchableOpacity
+                                    className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
+                                    onPress={() => setActiveTab('runs')}
+                                >
+                                    <Text className={`text-xs font-bold ${activeTab === 'runs' ? 'text-white' : 'text-slate-400'}`}>{t('runs')}</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
+                                    onPress={() => setActiveTab('elevation')}
+                                >
+                                    <Text className={`text-xs font-bold ${activeTab === 'elevation' ? 'text-white' : 'text-slate-400'}`}>{t('elevation')}</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
+                                    onPress={() => setActiveTab('speed')}
+                                >
+                                    <Text className={`text-xs font-bold ${activeTab === 'speed' ? 'text-white' : 'text-slate-400'}`}>{t('speed')}</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {activeTab === 'runs' && (
+                                <ScrollView className="max-h-64 space-y-2">
+                                    <Text className="text-xs font-bold text-slate-400 mb-2">{t('descent_runs')} ({detectedRuns.length})</Text>
+                                    {detectedRuns.map((run) => (
+                                        <TouchableOpacity
+                                            key={run.id}
+                                            className="bg-slate-800 p-3 rounded-md border border-slate-700 my-1 flex-row justify-between items-center"
+                                            onPress={() => setSelectedRun(run)}
+                                        >
+                                            <View>
+                                                <Text className="font-bold text-xs text-white">{t('run_title', { index: run.index })}</Text>
+                                                <Text className="text-[10px] text-slate-400 mt-0.5">
+                                                    {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
+                                                </Text>
+                                            </View>
+                                            <Text className="text-xs font-bold text-blue-400">{t('charts')} →</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            )}
+
+                            {activeTab === 'elevation' && (
+                                <View className="bg-slate-800/40 p-2 rounded-md border border-slate-700">
+                                    {renderSvgChart(trackPoints.map(p => p.altitude), '#3b82f6', '#3b82f6')}
+                                </View>
+                            )}
+
+                            {activeTab === 'speed' && (
+                                <View className="bg-slate-800/40 p-2 rounded-md border border-slate-700">
+                                    {renderSvgChart(trackPoints.map(p => p.speed * 3.6), '#ef4444', '#ef4444')}
+                                </View>
+                            )}
+                        </View>
+                    )}
+                </View>
+            )}
+
+            <NativeMap
+                style={{ flex: 1, width: '100%', height: '100%' }}
+                mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+                onRegionDidChange={handleNativeRegionDidChange}
+                onPress={handleNativeMapPress}
+                attribution={false}
+                logo={false}
+            >
+                <NativeCamera
+                    ref={cameraRef}
+                    maxZoom={16}
+                    initialViewState={{
+                        zoom: firstViewStateRef.current.zoom,
+                        center: [firstViewStateRef.current.longitude, firstViewStateRef.current.latitude],
+                    }}
+                />
+                {resorts.map((resort) => (
+                    <NativeMarker
+                        key={resort.ID}
+                        id={resort.ID}
+                        lngLat={[resort.Longitude, resort.Latitude]}
+                        onPress={() => setSelectedResort(resort)}
+                    >
+                        <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => setSelectedResort(resort)}
+                            className="flex flex-col items-center justify-center"
+                        >
+                            {(viewState.zoom >= 10 || hoveredResortId === resort.ID || selectedResort?.ID === resort.ID) && (
+                                <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: 'bold',
+                                    color: selectedResort?.ID === resort.ID ? '#3b82f6' : '#ffffff',
+                                    textShadowColor: '#000000',
+                                    textShadowOffset: { width: 0, height: 0 },
+                                    textShadowRadius: 3,
+                                    marginBottom: 2
+                                }}>
+                                    {resort.Name}
+                                </Text>
+                            )}
+                            <View className="w-6 h-6 rounded-full flex items-center justify-center bg-blue-600 border-2 border-white shadow-lg">
+                                <MapPin size={14} color="#ffffff" />
+                            </View>
+                        </TouchableOpacity>
+                    </NativeMarker>
+                ))}
+
+                {viewState.zoom >= 10 && (
+                    <>
+                        <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                            <NativeLayer {...pisteLineStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...pisteLabelStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...pisteDirectionStyle} onPress={handleNativeFeaturePress} />
+                        </NativeGeoJSONSource>
+
+                        <NativeGeoJSONSource id="lifts-source" data={liftsGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                            <NativeLayer {...liftLineStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...liftLabelStyle} onPress={handleNativeFeaturePress} />
+                        </NativeGeoJSONSource>
+
+                        {trackPoints.length > 0 && (
+                            <>
+                                <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
+                                    <NativeLayer {...trackLineStyle} />
+                                </NativeGeoJSONSource>
+                                <NativeGeoJSONSource id="track-direction-source" data={trackDirectionGeoJSON}>
+                                    <NativeLayer {...trackDirectionStyle} />
+                                </NativeGeoJSONSource>
+                                {(hoveredRun || selectedRun) && (
+                                    <NativeGeoJSONSource id="highlighted-run-source" data={highlightedRunGeoJSON}>
+                                        <NativeLayer {...highlightedRunCaseStyle} />
+                                        <NativeLayer {...highlightedRunLineStyle} />
+                                    </NativeGeoJSONSource>
+                                )}
+                            </>
+                        )}
+                    </>
+                )}
+            </NativeMap>
+        </View>
+    );
+}

@@ -41,7 +41,6 @@ func (h *SkiResortHandler) ListByName(c *gin.Context) {
 		return
 	}
 
-	fmt.Println("Name", name)
 	resorts, err := h.svc.ListByName(c.Request.Context(), name)
 	if err != nil {
 		httputil.RespondError(c, err)

@@ -17,6 +17,7 @@ type Store interface {
 	SkiSession() SkiSessionStore
 	SessionPoint() SessionPointStore
 	SkiRun() SkiRunStore
+	VersionManifest() VersionManifestStore
 }
 
 // Pagination request parameters.
@@ -56,6 +57,12 @@ type SkiResortBBoxFilter struct {
 	MaxLongitude *float64
 }
 
+type VersionManifestStore interface {
+	ListAll(ctx context.Context) ([]models.VersionManifest, error)
+	GetLatestVersion(ctx context.Context, platform string) (*models.VersionManifest, error)
+	Create(ctx context.Context, versionManifest *models.VersionManifest) (*models.VersionManifest, error)
+}
+
 type SkiResortStore interface {
 	GetByID(ctx context.Context, id string) (models.SkiResort, error)
 	ListByName(ctx context.Context, name string) ([]models.SkiResort, error)
@@ -82,6 +89,7 @@ type UserStore interface {
 
 type SkiSessionStore interface {
 	Raw(ctx context.Context, query string, wktLine string, result interface{}) error
+	List(ctx context.Context) ([]models.SkiSession, error)
 	ListByResortID(ctx context.Context, resortID string, userID uuid.UUID) ([]models.SkiSession, error)
 	ListByUserID(ctx context.Context, userID uuid.UUID) ([]models.SkiSession, error)
 	GetByID(ctx context.Context, sessionID uuid.UUID) (*models.SkiSession, error)

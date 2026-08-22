@@ -13,6 +13,6 @@ type skiLiftStore struct {
 
 func (s *skiLiftStore) GetByResortID(ctx context.Context, resortID string) ([]models.SkiLift, error) {
 	var lifts []models.SkiLift
-	err := s.db.NewSelect().Model(&lifts).Where("resort_id = ?", resortID).Scan(ctx)
+	err := s.db.NewSelect().Model(&lifts).Where("resort_id = ? AND tags->>'status' = ?", resortID, "operating").Scan(ctx)
 	return lifts, err
 }

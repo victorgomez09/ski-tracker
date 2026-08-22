@@ -1,26 +1,20 @@
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useEffect } from 'react';
-import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { initDB } from 'tracking/database';
+let MapComponent: React.ComponentType<any>;
+if (Platform.OS === 'web') {
+  MapComponent = require('../../components/map/map.web').default;
+} else {
+  MapComponent = require('../../components/map/map.native').default;
+}
 
-import '../../styles/global.css';
-import InteractiveSkiMap from 'components/map/map';
-
-export default function App() {
-  useEffect(() => {
-    const initDatabase = async () => {
-      const database = await SQLite.openDatabaseAsync('ski_tracker.db');
-
-      await initDB(database);
-    };
-
-    initDatabase();
-  }, []);
-
+export default function MapView(props: any) {
   return (
-    <SafeAreaProvider>
-        <InteractiveSkiMap />
-    </SafeAreaProvider>
+    <SafeAreaView
+      edges={['top']}
+      style={{ flex: 1, backgroundColor: 'transparent' }}
+    >
+      <MapComponent {...props} />
+    </SafeAreaView>
   );
 }

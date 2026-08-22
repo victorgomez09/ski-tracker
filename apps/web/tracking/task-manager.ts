@@ -1,7 +1,6 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import * as SQLite from 'expo-sqlite';
-import { Barometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { savePointToLocalDB } from './database';
@@ -9,81 +8,127 @@ import { savePointToLocalDB } from './database';
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
 /**
- * Background location task for tracking ski sessions even when the app is in the background. This task is defined using Expo's TaskManager and will be triggered whenever the device's location changes based on the specified accuracy and intervals.
+ * Tarea en segundo plano para registrar coordenadas GPS.
  */
 TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
   if (error) {
-    console.error(error);
+    console.error('TaskManager error:', error);
     return;
   }
+  
   if (data) {
-    const resortId = await AsyncStorage.getItem('ACTIVE_RESORT_ID');
-    const database = await SQLite.openDatabaseAsync('ski_tracker.db');
     const { locations } = data as { locations: Location.LocationObject[] };
+    if (!locations || locations.length === 0) return;
 
-    for (const location of locations) {
-      console.log('Gps saved to sqlite:', location.coords.latitude, location.coords.longitude);
-      await savePointToLocalDB(
-        location.coords.latitude,
-        location.coords.longitude,
-        location.coords.altitude || 0,
-        location.coords.speed || 0,
-        null, // Barometer not read synchronously in background loop
-        resortId,
-        location.timestamp,
-        database
-      );
+    try {
+      // 1. Abrir base de datos y leer AsyncStorage UNA sola vez fuera del bucle
+      const resortId = await AsyncStorage.getItem('ACTIVE_RESORT_ID');
+      const database = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
+
+      for (const location of locations) {
+        console.log('GPS guardado en SQLite:', location.coords.latitude, location.coords.longitude);
+        await savePointToLocalDB(
+          location.coords.latitude,
+          location.coords.longitude,
+          location.coords.altitude || 0,
+          location.coords.speed || 0,
+          null, // Barómetro
+          resortId,
+          location.timestamp,
+          database
+        );
+      }
+    } catch (err) {
+      console.error('Error guardando puntos en background:', err);
     }
   }
 });
 
 /**
- * Starts tracking the user's location in the background. This function requests the necessary permissions and initiates location updates with specified accuracy and intervals. It also configures a foreground service notification to inform the user that their ski session is being monitored.
+ * Inicia el rastreo de ubicación en segundo plano con validación de permisos y Foreground Service.
  */
-export const startTracking = async (resortId: string) => {
-  await AsyncStorage.setItem('ACTIVE_RESORT_ID', resortId.toString());
-  const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-  if (foregroundStatus !== 'granted') return;
+export const startTracking = async (resortId: string, trackingTime: number): Promise<boolean> => {
+  try {
+    await AsyncStorage.setItem('ACTIVE_RESORT_ID', resortId.toString());
 
-  const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-  if (backgroundStatus !== 'granted') return;
+    // 1. Solicitar permiso en primer plano
+    const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+    if (foregroundStatus !== 'granted') {
+      console.warn('Permiso de ubicación en primer plano denegado.');
+      return false;
+    }
 
-  await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-    accuracy: Location.Accuracy.High,
-    timeInterval: 5000, // Get updates every 5 seconds even if movement is minimal
-    distanceInterval: 10, // Get updates every 10 meters
-    showsBackgroundLocationIndicator: true, // Show indicator on iOS/Android
-    foregroundService: {
-      notificationTitle: "Monitoring your ski session",
-      notificationBody: "Your ski session is in progress",
-    },
-  });
+    // 2. Solicitar permiso en segundo plano (Indispensable para Android 11+)
+    const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+    if (backgroundStatus !== 'granted') {
+      console.warn('Permiso de ubicación en segundo plano denegado.');
+      return false;
+    }
+
+    // 3. Verificar si la tarea ya está activa antes de volver a registrarla
+    const isAlreadyStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+    if (isAlreadyStarted) {
+      console.log('El servicio de rastreo ya estaba iniciado.');
+      return true;
+    }
+
+    // 4. Iniciar servicio en segundo plano
+    await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+      accuracy: Location.Accuracy.High,
+      timeInterval: trackingTime,
+      distanceInterval: 10,
+      showsBackgroundLocationIndicator: true, // Solo aplica a iOS
+      foregroundService: {
+        notificationTitle: "Monitoreando tu sesión de esquí",
+        notificationBody: "Tu sesión de esquí está activa en segundo plano",
+        // killWithApp: false, // Evita que el servicio muera si el usuario desliza y cierra la app
+      },
+    });
+
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Error al iniciar startTracking:', err);
+
+    if (message.includes('Foreground service permissions')) {
+      throw new Error(
+        'FOREGROUND_SERVICE_MISSING: El tracking en segundo plano requiere un build nativo con permisos de foreground service. ' +
+        'No funciona en Expo Go. Ejecuta "npx expo run:android" para generar e instalar la app.'
+      );
+    }
+
+    return false;
+  }
 };
 
 /**
- * Stops tracking the user's location in the background. This function checks if the background location task is registered and, if so, stops the location updates to conserve battery and resources.
+ * Detiene el rastreo de ubicación en segundo plano.
  */
-export const stopTracking = async () => {
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
-  if (isRegistered) {
-    await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+export const stopTracking = async (): Promise<void> => {
+  try {
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
+    if (isRegistered) {
+      await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      console.log('Rastreo de ubicación detenido.');
+    }
+  } catch (err) {
+    console.error('Error al detener tracking:', err);
   }
 };
 
 export const getCurrentLocation = async (): Promise<Location.LocationObject | null> => {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') {
-    console.error('Location permission not granted');
+    console.error('Permiso de ubicación no concedido.');
     return null;
   }
 
   try {
-    const location = await Location.getCurrentPositionAsync({
+    return await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.High,
     });
-    return location;
   } catch (error) {
-    console.error('Error getting current location:', error);
+    console.error('Error obteniendo la ubicación actual:', error);
     return null;
   }
 };

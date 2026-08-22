@@ -23,6 +23,8 @@ type ServerConfig struct {
 	Port            int
 	ShutdownTimeout time.Duration
 	AppURL          string // Public URL of the Ski Tracker instance (e.g. https://ski-tracker.example.com)
+	APIPublicURL    string // Public API URL used in Expo Updates asset URLs
+	OTAUpdatesDir   string // Directory that stores Expo Updates bundles
 }
 
 type DatabaseConfig struct {
@@ -61,6 +63,8 @@ func Load() (*Config, error) {
 			Port:            envInt("SERVER_PORT", 8080),
 			ShutdownTimeout: envDuration("SERVER_SHUTDOWN_TIMEOUT", 15*time.Second),
 			AppURL:          envStr("APP_URL", "http://localhost:3000"),
+			APIPublicURL:    envStr("API_PUBLIC_URL", ""),
+			OTAUpdatesDir:   envStr("OTA_UPDATES_DIR", "./updates"),
 		},
 		Database: DatabaseConfig{
 			URL:             envStr("DATABASE_URL", "postgres://ski_tracker:ski_tracker@localhost:5433/ski_tracker?sslmode=disable"),

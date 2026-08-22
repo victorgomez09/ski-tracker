@@ -1,31 +1,31 @@
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import {
-    Search,
-    MapPin,
     Activity,
     ChevronRight,
+    Compass,
+    Download,
     ExternalLink,
     Globe,
-    Calendar,
-    Navigation,
-    X,
-    Info,
-    Compass,
-    ArrowRight,
-    TrendingUp,
-    Map,
-    User,
     Lock,
-    Unlock
-} from "lucide-react";
+    Map as MapIcon,
+    MapPin,
+    Navigation,
+    Search,
+    Unlock,
+    X
+} from "lucide-react-native";
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { ActivityIndicator, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { API_BASE_URL } from "constants/constants";
-import { Resort } from "models/ski-resort.model";
-import { useAuth } from "context/auth.context";
-import { WeatherForecast } from "models/weather.model";
+import { OfflineMapsModal } from "components/map/offline-maps-panel";
 import { WeatherForecastDetails } from "components/resorts/weather-forecast";
+import { API_BASE_URL } from "constants/constants";
+import { useAuth } from "context/auth.context";
+import api from "interceptor/api";
+import { Resort } from "models/ski-resort.model";
+import { WeatherForecast } from "models/weather.model";
 
 // Cache state to survive tab navigation / component remounting
 let cachedResorts: Resort[] = [];
@@ -34,9 +34,29 @@ let cachedSelectedResort: Resort | null = null;
 let cachedSessions: any[] = [];
 let lastFetchedSearchTerm = cachedSearchTerm;
 
-export default function ResortsView() {
-    const router = useRouter();
+const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
+let useOffline: any;
+if (Platform.OS === 'web') {
+    useOffline = require('../../utils/offline-maps.util').useOfflineMaps;
+} else {
+    useOffline = require('../../hooks/use-offline.hook').useOfflineMaps;
+}
+
+export default function ResortsView() {
+    const isWeb = Platform.OS === "web";
+    const { t } = useTranslation();
+    const router = useRouter();
+    const { token } = useAuth();
+    const {
+        packs,
+        downloadingPack,
+        downloadingProgress,
+        downloadRegion,
+        deletePack,
+    } = useOffline(mapStyleUrl);
+
+    const [showOfflineModal, setShowOfflineModal] = useState(false);
     const [resorts, setResorts] = useState<Resort[]>(cachedResorts);
     const [searchTerm, setSearchTerm] = useState(cachedSearchTerm);
     const [selectedResort, setSelectedResort] = useState<Resort | null>(cachedSelectedResort);
@@ -44,7 +64,6 @@ export default function ResortsView() {
     const [isLoadingResorts, setIsLoadingResorts] = useState(false);
     const [isLoadingSessions, setIsLoadingSessions] = useState(false);
     const [weatherData, setWeatherData] = useState<WeatherForecast | null>(null);
-    const { token } = useAuth();
 
     // Cache sync helpers
     const setResortsWithCache = (val: Resort[]) => {
@@ -82,12 +101,8 @@ export default function ResortsView() {
         setIsLoadingResorts(true);
         const delayDebounceFn = setTimeout(async () => {
             try {
-                const response = await axios.get(`${API_BASE_URL}/resorts/by-name`, {
+                const response = await api.get(`${API_BASE_URL}/resorts/by-name`, {
                     params: { name: searchTerm },
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
                 });
 
                 if (response.status === 200) {
@@ -102,13 +117,12 @@ export default function ResortsView() {
             } finally {
                 setIsLoadingResorts(false);
             }
-        }, 350); // 350ms debounce
+        }, 350);
 
         return () => clearTimeout(delayDebounceFn);
     }, [searchTerm, token]);
 
-    const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const term = event.target.value;
+    const handleSearch = (term: string) => {
         setSearchTermWithCache(term);
         setSelectedResortWithCache(null);
     };
@@ -119,21 +133,12 @@ export default function ResortsView() {
         setIsLoadingSessions(true);
 
         try {
-            const sessionsRequest = await axios.get(`${API_BASE_URL}/ski-sessions`, {
+            const sessionsRequest = await api.get(`${API_BASE_URL}/ski-sessions/by-resort`, {
                 params: { resort_id: resort.ID },
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
             });
 
-            const weatherRequest = await axios.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
+            const weatherRequest = await api.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
                 params: { lat: resort.Latitude, lon: resort.Longitude },
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                    // "Cache-Control": "no-cache", // 1 hour cache
-                },
             });
 
             if (sessionsRequest.status === 200 && weatherRequest.status === 200) {
@@ -151,6 +156,23 @@ export default function ResortsView() {
     const handleSessionClick = (session: any) => {
         if (!selectedResort) return;
         router.push(`/map?sessionId=${session.id}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=14`);
+        setSelectedResortWithCache(null);
+    };
+
+    const handleDownloadCurrentView = (customName: string) => {
+        if (!selectedResort) return null;
+
+        const delta = 0.08;
+        const bounds: [west: number, south: number, east: number, north: number] = [
+            selectedResort.Longitude - delta,
+            selectedResort.Latitude - delta,
+            selectedResort.Longitude + delta,
+            selectedResort.Latitude + delta,
+        ];
+
+        if (isWeb) {
+            downloadRegion(customName, bounds, 10, 16);
+        }
     };
 
     const selectedResortSummary = useMemo(() => {
@@ -164,7 +186,7 @@ export default function ResortsView() {
             lifts: selectedResort.total_lifts ?? 0,
             pistes: selectedResort.total_pistes ?? 0,
             distance: selectedResort.distance_km ?? 0,
-            country: selectedResort.Country || "Unknown",
+            country: selectedResort.Country || t('unknown'),
             website: selectedResort.Website || null,
             pistesBreakdown: {
                 novice: pistes.filter(p => p.Difficulty?.toLowerCase() === 'novice').length ?? 0,
@@ -181,192 +203,158 @@ export default function ResortsView() {
         };
     }, [selectedResort]);
 
-    // Detail Panel JSX helper to avoid duplication between desktop pane and mobile modal
-    const renderDetailsContent = (isMobileView: boolean) => {
+    const renderDetailsContent = () => {
         if (!selectedResort) return null;
 
         return (
-            <div className="flex flex-col h-full bg-base-100">
-                {/* Header Banner */}
-                <div className="card relative bg-base-300 text-base-content border-2 border-primary shrink-0">
-                    <div className="card-body flex flex-row justify-between items-start">
-                        <div className="space-y-1 pr-6">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/20 text-primary border border-primary/30">
-                                <Globe className="w-3 h-3" />
-                                {selectedResort.Country}
-                            </span>
-                            <h2 className="text-2xl lg:text-3xl font-extrabold tracking-tight mt-1">{selectedResort.Name}</h2>
-                        </div>
-                        {isMobileView && (
-                            <button
-                                type="button"
-                                className="btn btn-circle btn-sm btn-ghost text-base-content border-0"
-                                onClick={() => setSelectedResortWithCache(null)}
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        )}
-                    </div>
-                </div>
+            <SafeAreaView
+                edges={['top', 'bottom']}
+                style={{ flex: 1, backgroundColor: 'transparent' }}
+            >
+                <ScrollView className="flex-1 bg-slate-900 p-4 space-y-6">
+                    {/* Header Banner */}
+                    <View className="bg-slate-800 rounded-md p-5 border border-slate-700 shadow-md flex-row justify-between items-start mb-4">
+                        <View className="flex-1">
+                            <View className="bg-blue-900/60 px-3 py-1 rounded-full self-start flex-row items-center gap-1 border border-blue-700">
+                                <Globe size={12} color="#60a5fa" />
+                                <Text className="text-xs text-blue-300 font-bold">{selectedResort.Country}</Text>
+                            </View>
+                            <Text className="text-2xl font-extrabold text-white mt-2 leading-tight">{selectedResort.Name}</Text>
+                        </View>
+                        <TouchableOpacity
+                            className="p-2 bg-slate-700 rounded-full"
+                            onPress={() => setSelectedResortWithCache(null)}
+                        >
+                            <X size={18} color="#94a3b8" />
+                        </TouchableOpacity>
+                    </View>
 
-                {/* Dashboard Scrollable Body */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
                     {/* Key Metrics Grid */}
-                    <div>
-                        <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Resort Metrics</h3>
-                        <div className="grid grid-cols-3 gap-3">
-                            <div className="card bg-base-200/60 border border-base-300/80 p-4 flex flex-col justify-between hover:border-primary/20 transition-all">
-                                <div className="card-body p-0">
-                                    <span className="text-base-content/60 text-xs font-medium">Lifts</span>
-                                    <div className="flex items-baseline gap-1 mt-2">
-                                        <span className="text-2xl font-bold tracking-tight text-base-content">{selectedResortSummary?.lifts}</span>
-                                    </div>
-                                </div>
-                            </div>
+                    <View className="mb-4">
+                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">{t('resort_metrics')}</Text>
+                        <View className="flex-row gap-3">
+                            <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
+                                <Text className="text-slate-400 text-xs font-medium">{t('lifts')}</Text>
+                                <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.lifts}</Text>
+                            </View>
 
-                            <div className="card bg-base-200/60 border border-base-300/80 p-4 flex flex-col justify-between hover:border-primary/20 transition-all">
-                                <div className="card-body p-0">
-                                    <span className="text-base-content/60 text-xs font-medium">Pistes</span>
-                                    <div className="flex items-baseline gap-1 mt-2">
-                                        <span className="text-2xl font-bold tracking-tight text-base-content">{selectedResortSummary?.pistes}</span>
-                                    </div>
-                                </div>
-                            </div>
+                            <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
+                                <Text className="text-slate-400 text-xs font-medium">{t('pistes')}</Text>
+                                <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.pistes}</Text>
+                            </View>
 
-                            <div className="card bg-base-200/60 border border-base-300/80 p-4 flex flex-col justify-between hover:border-primary/20 transition-all">
-                                <div className="card-body p-0">
-                                    <span className="text-base-content/60 text-xs font-medium">Distance</span>
-                                    <div className="flex items-baseline gap-1 mt-2">
-                                        <span className="text-2xl font-bold tracking-tight text-base-content">{selectedResortSummary?.distance.toFixed(1)}</span>
-                                        <span className="text-xs text-base-content/60 font-semibold">km</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                            <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
+                                <Text className="text-slate-400 text-xs font-medium">{t('distance')}</Text>
+                                <Text className="text-2xl font-bold text-white mt-1">
+                                    {selectedResortSummary?.distance.toFixed(1)} <Text className="text-xs text-slate-400">{t('km')}</Text>
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
 
                     {/* Pistes Breakdown */}
                     {selectedResortSummary && (
-                        <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Pistes Breakdown</h3>
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="w-3 h-3 rounded-full bg-[#00a859] shrink-0"></span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Novice</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.pistesBreakdown.novice} runs</div>
-                                        </div>
-                                    </div>
-                                </div>
+                        <View className="mb-4 w-full">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">{t('pistes_breakdown')}</Text>
+                            <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <View className="w-3 h-3 rounded-full bg-[#00a859]" />
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('novice')}</Text>
+                                        <Text className="text-sm font-bold text-white">{t('runs_count', { count: selectedResortSummary.pistesBreakdown.novice })}</Text>
+                                    </View>
+                                </View>
 
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="w-3 h-3 rounded-full bg-[#0072bc] shrink-0"></span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Easy</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.pistesBreakdown.easy} runs</div>
-                                        </div>
-                                    </div>
-                                </div>
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <View className="w-3 h-3 rounded-full bg-[#0072bc]" />
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('easy')}</Text>
+                                        <Text className="text-sm font-bold text-white">{t('runs_count', { count: selectedResortSummary.pistesBreakdown.easy })}</Text>
+                                    </View>
+                                </View>
 
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="w-3 h-3 rounded-full bg-[#f0141e] shrink-0"></span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Intermediate</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.pistesBreakdown.intermediate} runs</div>
-                                        </div>
-                                    </div>
-                                </div>
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <View className="w-3 h-3 rounded-full bg-[#f0141e]" />
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('intermediate')}</Text>
+                                        <Text className="text-sm font-bold text-white">{t('runs_count', { count: selectedResortSummary.pistesBreakdown.intermediate })}</Text>
+                                    </View>
+                                </View>
 
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="w-3 h-3 rounded-full bg-neutral-900 dark:bg-white shrink-0"></span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Expert</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.pistesBreakdown.advanced} runs</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <View className="w-3 h-3 rounded-full bg-black border border-slate-600" />
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('expert')}</Text>
+                                        <Text className="text-sm font-bold text-white">{t('runs_count', { count: selectedResortSummary.pistesBreakdown.advanced })}</Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </View>
                     )}
 
                     {/* Lifts Breakdown */}
                     {selectedResortSummary && (
-                        <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Lifts Breakdown</h3>
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="text-base shrink-0">🚡</span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Chair Lifts</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.liftsBreakdown.chair_lift}</div>
-                                        </div>
-                                    </div>
-                                </div>
+                        <View className="mb-4">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">{t('lifts_breakdown')}</Text>
+                            <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <Text className="text-base">🚡</Text>
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('chair_lifts')}</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.chair_lift}</Text>
+                                    </View>
+                                </View>
 
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="text-base shrink-0">⛷️</span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Drag Lifts</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.liftsBreakdown.drag_lift}</div>
-                                        </div>
-                                    </div>
-                                </div>
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <Text className="text-base">⛷️</Text>
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('drag_lifts')}</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.drag_lift}</Text>
+                                    </View>
+                                </View>
 
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="text-base shrink-0">🛹</span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Magic Carpets</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.liftsBreakdown.magic_carpet}</div>
-                                        </div>
-                                    </div>
-                                </div>
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <Text className="text-base">🛹</Text>
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('magic_carpets')}</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.magic_carpet}</Text>
+                                    </View>
+                                </View>
 
-                                <div className="card bg-base-200/40 border border-base-300/60 p-3 flex items-center gap-2.5">
-                                    <div className="card-body p-0">
-                                        <span className="text-base shrink-0">🪢</span>
-                                        <div>
-                                            <div className="text-[10px] text-base-content/60 font-semibold uppercase">Rope Tows</div>
-                                            <div className="text-sm font-extrabold text-base-content">{selectedResortSummary.liftsBreakdown.rope_tow}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
+                                    <Text className="text-base">🪢</Text>
+                                    <View>
+                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('rope_tows')}</Text>
+                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.rope_tow}</Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </View>
                     )}
 
-                    {/* Official Website CTA */}
+                    {/* Website CTA */}
                     {selectedResortSummary?.website && (
-                        <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50 mb-3">Website</h3>
-                            <div className="card bg-base-200/40 border border-base-300/60 p-4">
-                                <div className="card-body p-0 flex flex-row items-center justify-between w-full">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center text-info shrink-0">
-                                            <Globe className="w-5 h-5" />
-                                        </div>
-                                        <div>
-                                            <h4 className="font-semibold text-sm">Resort Website</h4>
-                                            <p className="text-xs text-base-content/60">Visit the official page for details</p>
-                                        </div>
-                                    </div>
-                                    <a
-                                        href={selectedResortSummary.website}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="btn btn-sm btn-ghost text-info hover:bg-info/10 gap-1"
-                                    >
-                                        Open <ExternalLink className="w-3.5 h-3.5" />
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
+                        <View className="mb-4">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">{t('website')}</Text>
+                            <View className="bg-slate-800 border border-slate-700 p-4 rounded-md flex-row items-center justify-between">
+                                <View className="flex-row items-center gap-3">
+                                    <View className="w-10 h-10 rounded-md bg-blue-900/60 items-center justify-center">
+                                        <Globe size={20} color="#60a5fa" />
+                                    </View>
+                                    <View>
+                                        <Text className="font-semibold text-sm text-white">{t('resort_website')}</Text>
+                                        <Text className="text-xs text-slate-400">{t('visit_official_page')}</Text>
+                                    </View>
+                                </View>
+                                <TouchableOpacity
+                                    className="bg-blue-600 px-3.5 py-2 rounded-md flex-row items-center gap-1"
+                                    onPress={() => Linking.openURL(selectedResortSummary.website!)}
+                                >
+                                    <Text className="text-white text-xs font-bold">{t('open')}</Text>
+                                    <ExternalLink size={14} color="#ffffff" />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
                     )}
 
                     {/* Weather Forecast */}
@@ -375,243 +363,235 @@ export default function ResortsView() {
                     )}
 
                     {/* Sessions Log */}
-                    <div className="flex flex-col flex-1 min-h-62.5">
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-base-content/50">Ski Sessions ({sessions.length})</h3>
-                            {isLoadingSessions && <span className="loading loading-spinner loading-xs text-primary"></span>}
-                        </div>
+                    <View className="my-4">
+                        <View className="flex-row items-center justify-between mb-3">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">{t('ski_sessions_count', { count: sessions.length })}</Text>
+                            {isLoadingSessions && <ActivityIndicator size="small" color="#3b82f6" />}
+                        </View>
 
                         {sessions.length > 0 ? (
-                            <div className="space-y-3">
+                            <View className="space-y-3">
                                 {sessions.map((session) => (
-                                    <button
+                                    <TouchableOpacity
                                         key={session.id}
-                                        type="button"
-                                        onClick={() => handleSessionClick(session)}
-                                        className="card w-full text-left p-4 cursor-pointer bg-base-200/40 hover:bg-base-200 border border-base-300 hover:border-primary/40 transition-all duration-200 flex justify-between items-center group shadow-sm hover:shadow"
+                                        onPress={() => handleSessionClick(session)}
+                                        className="bg-slate-800 p-4 rounded-md border border-slate-700 flex-row items-center justify-between my-1"
                                     >
-                                        <div className="card-body p-0 flex flex-row items-center justify-between w-full">
-                                            <div className="space-y-1.5">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="w-2 h-2 rounded-full bg-success"></span>
-                                                    <span className="font-semibold text-xs text-base-content">
-                                                        {new Date(session.start_time).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                                    </span>
-                                                    <span className="text-[10px] text-base-content/50">
-                                                        {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5 text-[11px] text-base-content/60">
-                                                    <User className="w-3 h-3 text-base-content/40" />
-                                                    <span className="font-medium text-base-content/85">
-                                                        {session.user ? (session.user.display_name || `${session.user.first_name} ${session.user.last_name}`.trim() || session.user.email) : 'Usuario desconocido'}
-                                                    </span>
-                                                    <span className="text-base-content/30">•</span>
-                                                    {session.is_public ? (
-                                                        <span className="flex items-center gap-0.5 text-[9px] text-success/80 font-semibold">
-                                                            <Unlock className="w-2.5 h-2.5" /> Pública
-                                                        </span>
-                                                    ) : (
-                                                        <span className="flex items-center gap-0.5 text-[9px] text-warning/80 font-semibold">
-                                                            <Lock className="w-2.5 h-2.5" /> Privada
-                                                        </span>
+                                        <View className="space-y-1">
+                                            <View className="flex-row items-center gap-2">
+                                                <View className="w-2 h-2 rounded-full bg-emerald-500" />
+                                                <Text className="font-bold text-xs text-white">
+                                                    {new Date(session.start_time).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                </Text>
+                                                <Text className="text-[10px] text-slate-400">
+                                                    {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </Text>
+                                            </View>
+                                            <View className="flex-row items-center gap-2 mt-1">
+                                                <View className="size-6 rounded-full bg-slate-700 items-center justify-center border-2 border-blue-500 overflow-hidden">
+                                                    {session.user?.avatar_url ? (
+                                                        <Image
+                                                            source={{ uri: session.user?.avatar_url }}
+                                                            className="w-full h-full"
+                                                            resizeMode="cover"
+                                                        />) : (
+                                                        <Text className="text-white font-extrabold text-xs tracking-wider">
+                                                            {session.user ? (session.user.display_name || `${session.user.first_name} ${session.user.last_name}`.trim() || session.user.email) : t('user')}
+                                                        </Text>
                                                     )}
-                                                </div>
-                                                <div className="flex items-center gap-3 text-[11px] text-base-content/75">
-                                                    <span className="flex items-center gap-1"><Navigation className="w-3 h-3 text-base-content/40" /> {(session.total_distance / 1000).toFixed(2)} km</span>
-                                                    <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3 text-base-content/40" /> {(session.max_speed * 3.6).toFixed(1)} km/h</span>
-                                                    <span className="px-1.5 py-0.5 rounded bg-base-300/80 text-[9px] uppercase font-bold text-base-content/70">{session.activity_type}</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="badge badge-sm badge-neutral/10 text-base-content font-medium px-2 py-2">{session.runs?.length || 0} runs</span>
-                                                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <ChevronRight className="w-4 h-4" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        ) : !isLoadingSessions ? (
-                            <div className="flex-1 border border-dashed border-base-300 rounded-xl flex flex-col items-center justify-center p-6 text-center bg-base-200/20">
-                                <Activity className="w-8 h-8 text-base-content/20 mb-2" />
-                                <h4 className="font-semibold text-sm text-base-content/70">No sessions recorded</h4>
-                                <p className="text-xs text-base-content/55 max-w-xs mt-1">You haven't recorded any sessions at this ski resort yet.</p>
-                            </div>
-                        ) : null}
-                    </div>
-                </div>
+                                                </View>
 
-                {/* Footer Action Bar */}
-                <div className="p-4 border-t border-base-200 bg-base-100 shrink-0 flex gap-3">
-                    <button
-                        type="button"
-                        className="btn btn-primary flex-1 shadow-md hover:shadow-lg font-bold gap-2"
-                        onClick={() => router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`)}
-                    >
-                        <Map className="w-4 h-4" />
-                        View on Map
-                    </button>
-                    {!isMobileView && (
-                        <button
-                            type="button"
-                            className="btn btn-ghost hover:bg-base-200 text-base-content/70"
-                            onClick={() => setSelectedResortWithCache(null)}
+                                                {session.is_public ? (
+                                                    <View className="flex-row items-center gap-1">
+                                                        <Unlock size={10} color="#34d399" />
+                                                        <Text className="text-[10px] text-emerald-400 font-semibold">{t('public')}</Text>
+                                                    </View>
+                                                ) : (
+                                                    <View className="flex-row items-center gap-1">
+                                                        <Lock size={10} color="#fbbf24" />
+                                                        <Text className="text-[10px] text-amber-400 font-semibold">{t('private')}</Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                            <View className="flex-row items-center gap-3 mt-1.5">
+                                                <Text className="text-[11px] text-slate-300">{(session.total_distance / 1000).toFixed(2)} km</Text>
+                                                <Text className="text-[11px] text-slate-300">{(session.max_speed * 3.6).toFixed(1)} km/h</Text>
+                                                <Text className="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-slate-200 font-bold uppercase">{session.activity_type === 'ski' ? t('ski') : t('snowboard')}</Text>
+                                            </View>
+                                        </View>
+
+                                        <ChevronRight size={20} color="#60a5fa" />
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        ) : !isLoadingSessions ? (
+                            <View className="border border-dashed border-slate-700 rounded-md p-6 items-center justify-center bg-slate-800/40">
+                                <Activity size={32} color="#64748b" />
+                                <Text className="font-semibold text-sm text-slate-300 mt-2">{t('no_sessions_recorded')}</Text>
+                                <Text className="text-xs text-slate-500 text-center mt-1">{t('no_sessions_resort')}</Text>
+                            </View>
+                        ) : null}
+                    </View>
+
+                    {/* Footer Action Bar */}
+                    <View className={`grid ${!isWeb ? 'grid-cols-3' : 'grid-cols-1'} w-full`}>
+                        <TouchableOpacity
+                            className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
+                            onPress={() => {
+                                router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`);
+                                setSelectedResortWithCache(null);
+                            }}
                         >
-                            Clear Selection
-                        </button>
-                    )}
-                </div>
-            </div>
+                            <MapIcon size={18} color="#ffffff" />
+                            {/* <Text className="text-white font-bold text-base">View on Map</Text> */}
+                        </TouchableOpacity>
+
+                        {!isWeb && (
+                            <>
+                                <TouchableOpacity
+                                    className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
+                                    onPress={() => {
+                                        router.push(`/tracking?lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=12`);
+                                        setSelectedResortWithCache(null);
+                                    }}
+                                >
+                                    <Navigation size={18} color="#ffffff" />
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
+                                    onPress={() => setShowOfflineModal(true)}
+                                >
+                                    <Download size={18} color="#ffffff" />
+                                </TouchableOpacity>
+                            </>
+                        )}
+                    </View>
+                </ScrollView>
+            </SafeAreaView>
         );
     };
 
     return (
-        <div className="flex h-[calc(100vh-4.5rem)] lg:h-screen w-full flex-row bg-base-200 overflow-hidden font-sans lg:pl-64">
-            {/* Left Column: Search & Results List */}
-            <div className="flex flex-col w-full lg:w-105 bg-base-100 border-r border-base-300 shrink-0 h-full overflow-hidden shadow-sm">
+        <SafeAreaView
+            edges={['top']}
+            style={{ flex: 1, backgroundColor: 'transparent' }}
+        >
+            {(showOfflineModal && isWeb) && (
+                <OfflineMapsModal
+                    onClose={() => setShowOfflineModal(false)}
+                    packs={packs}
+                    downloadingPack={downloadingPack}
+                    downloadProgress={downloadingProgress}
+                    onDownloadCurrentArea={handleDownloadCurrentView}
+                    onDeletePack={deletePack}
+                    currentResortName={selectedResort?.Name}
+                />
+            )
+            }
 
+            <View className="flex-1 bg-slate-950 p-4 pt-6">
                 {/* Search Header Container */}
-                <div className="p-4 border-b border-base-200 bg-base-100/80 backdrop-blur space-y-3 shrink-0">
-                    <div className="flex items-center justify-between">
-                        <h1 className="text-lg font-bold tracking-tight text-base-content">Ski Resorts</h1>
-                    </div>
-
-                    <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
-                            {isLoadingResorts ? (
-                                <span className="loading loading-spinner loading-xs text-primary"></span>
-                            ) : (
-                                <Search className="w-4 h-4" />
-                            )}
-                        </div>
-                        <input
-                            type="search"
-                            className="input input-bordered w-full pl-9 pr-4 text-sm bg-base-200/50 focus:bg-base-100 focus:border-primary/50 transition-all placeholder:text-base-content/40"
-                            placeholder="Search by name, country..."
+                <View className="mb-4">
+                    <Text className="text-xl font-extrabold text-white mb-3">{t('ski_resorts')}</Text>
+                    <View className="relative flex-row items-center bg-slate-800 rounded-md px-4 border border-slate-700">
+                        {isLoadingResorts ? (
+                            <ActivityIndicator size="small" color="#3b82f6" />
+                        ) : (
+                            <Search size={18} color="#94a3b8" />
+                        )}
+                        <TextInput
+                            className="flex-1 p-3.5 text-sm text-white ml-2"
+                            placeholder={t('search_placeholder') as string}
+                            placeholderTextColor="#94a3b8"
                             value={searchTerm}
-                            onChange={handleSearch}
+                            onChangeText={handleSearch}
                         />
-                    </div>
-                </div>
+                    </View>
+                </View>
 
                 {/* List Body Container */}
-                <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-base-200/30">
+                <ScrollView className="flex-1 space-y-3">
                     {resorts.length > 0 && (
-                        <>
-                            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-base-content/45">
-                                Matching Resorts ({resorts.length})
-                            </div>
-                            <div className="space-y-2">
+                        <View className="mb-4">
+                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                {t('matching_resorts', { count: resorts.length })}
+                            </Text>
+                            <View className="space-y-2">
                                 {resorts.map((resort) => {
                                     const isSelected = selectedResort?.ID === resort.ID;
                                     return (
-                                        <button
+                                        <TouchableOpacity
                                             key={resort.ID}
-                                            type="button"
-                                            className={`w-full text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer flex flex-col gap-2.5 relative overflow-hidden group hover:shadow-sm ${isSelected
-                                                ? "border-primary bg-primary/5 shadow-inner"
-                                                : "border-base-300/80 bg-base-100 hover:border-base-300 hover:bg-base-50"
+                                            className={`rounded-md border p-4 mb-2 ${isSelected
+                                                ? "border-blue-500 bg-blue-950/40"
+                                                : "border-slate-800 bg-slate-900"
                                                 }`}
-                                            onClick={() => handleResortSelect(resort)}
+                                            onPress={() => handleResortSelect(resort)}
                                         >
-                                            {/* Selection indicator line */}
-                                            {isSelected && (
-                                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
-                                            )}
+                                            <View className="flex-row justify-between items-start">
+                                                <View>
+                                                    <Text className="font-bold text-base text-white">{resort.Name}</Text>
+                                                    <View className="flex-row items-center gap-1 mt-1">
+                                                        <MapPin size={12} color="#94a3b8" />
+                                                        <Text className="text-xs text-slate-400">{resort.Country}</Text>
+                                                    </View>
+                                                </View>
+                                                <View className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                                                    <Text className="text-xs font-bold text-slate-200">{t('lifts_count', { count: resort.total_lifts ?? 0 })}</Text>
+                                                </View>
+                                            </View>
 
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="space-y-0.5">
-                                                    <h3 className="font-bold text-sm text-base-content tracking-tight group-hover:text-primary transition-colors">
-                                                        {resort.Name}
-                                                    </h3>
-                                                    <div className="flex items-center gap-1 text-[11px] text-base-content/60">
-                                                        <MapPin className="w-3 h-3 text-base-content/40" />
-                                                        <span>{resort.Country}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="badge badge-sm badge-neutral/10 font-semibold px-2 py-2 shrink-0">
-                                                    {resort.total_lifts ?? 0} Lifts
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-3 pt-2 border-t border-base-200/50 text-[10px] text-base-content/50">
-                                                <span className="font-medium">{resort.total_pistes ?? 0} Pistes</span>
-                                                <span className="w-1 h-1 rounded-full bg-base-300"></span>
-                                                <span className="font-medium">{resort.distance_km?.toFixed(1) ?? "0.0"} km runs</span>
-                                            </div>
-                                        </button>
+                                            <View className="flex-row items-center gap-3 pt-3 mt-2 border-t border-slate-800">
+                                                <Text className="text-xs text-slate-400">{t('pistes_count', { count: resort.total_pistes ?? 0 })}</Text>
+                                                <Text className="text-xs text-slate-400">•</Text>
+                                                <Text className="text-xs text-slate-400">{t('km_runs', { distance: resort.distance_km?.toFixed(1) ?? "0.0" })}</Text>
+                                            </View>
+                                        </TouchableOpacity>
                                     );
                                 })}
-                            </div>
-                        </>
+                            </View>
+                        </View>
                     )}
 
                     {/* Welcome / Initial State */}
                     {resorts.length === 0 && searchTerm.length <= 2 && (
-                        <div className="flex flex-col items-center justify-center p-8 text-center h-70">
-                            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-4 shadow-sm">
-                                <Compass className="w-6 h-6 animate-pulse" />
-                            </div>
-                            <h3 className="font-bold text-sm text-base-content">Explore Ski Resorts</h3>
-                            <p className="text-xs text-base-content/60 max-w-xs mt-1.5 leading-relaxed">
-                                Enter 3 or more characters in the search bar above to look up global ski resorts and check metrics.
-                            </p>
-                        </div>
+                        <View className="items-center justify-center p-8 text-center my-12">
+                            <View className="w-16 h-16 rounded-md bg-blue-900/40 items-center justify-center mb-4 border border-blue-700">
+                                <Compass size={32} color="#60a5fa" />
+                            </View>
+                            <Text className="font-bold text-base text-white">{t('explore_resorts')}</Text>
+                            <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
+                                {t('explore_resorts_desc')}
+                            </Text>
+                        </View>
                     )}
 
                     {/* No results state */}
                     {resorts.length === 0 && searchTerm.length > 2 && !isLoadingResorts && (
-                        <div className="flex flex-col items-center justify-center p-8 text-center h-70">
-                            <div className="w-12 h-12 rounded-2xl bg-error/10 flex items-center justify-center text-error mb-4">
-                                <X className="w-6 h-6" />
-                            </div>
-                            <h3 className="font-bold text-sm text-base-content">No Resorts Found</h3>
-                            <p className="text-xs text-base-content/60 max-w-xs mt-1.5 leading-relaxed">
-                                We couldn't find any resorts matching “{searchTerm}”. Check spelling or try another term.
-                            </p>
-                        </div>
+                        <View className="items-center justify-center p-8 text-center my-12">
+                            <View className="w-16 h-16 rounded-md bg-red-900/40 items-center justify-center mb-4 border border-red-700">
+                                <X size={32} color="#f87171" />
+                            </View>
+                            <Text className="font-bold text-base text-white">{t('no_resorts_found')}</Text>
+                            <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
+                                {t('no_resorts_matching', { searchTerm })}
+                            </Text>
+                        </View>
                     )}
-                </div>
-            </div>
+                </ScrollView>
 
-            {/* Right Column: Resort Dashboard (Desktop View) */}
-            <div className="hidden lg:flex flex-1 h-full bg-base-200 overflow-hidden">
-                {selectedResort ? (
-                    <div className="w-full h-full p-6">
-                        <div className="w-full h-full rounded-2xl border border-base-300 bg-base-100 shadow-sm overflow-hidden">
-                            {renderDetailsContent(false)}
-                        </div>
-                    </div>
-                ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-base-200/50">
-                        <div className="w-16 h-16 rounded-2xl bg-base-300/40 border border-base-300 flex items-center justify-center text-base-content/30 mb-4">
-                            <Map className="w-8 h-8" />
-                        </div>
-                        <h2 className="font-bold text-base text-base-content">Resort Dashboard Console</h2>
-                        <p className="text-xs text-base-content/50 max-w-sm mt-1.5 leading-relaxed">
-                            Select a ski resort from the side list to open its statistics details, active sessions logs, and maps navigation panel.
-                        </p>
-                    </div>
-                )}
-            </div>
-
-            {/* Floating Bottom Sheet (Mobile View Overlay) */}
-            {selectedResort && (
-                <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/40 backdrop-blur-sm">
-                    {/* Backdrop Click Dismiss */}
-                    <div className="absolute inset-0 -z-10" onClick={() => setSelectedResortWithCache(null)}></div>
-
-                    <div className="w-full bg-base-100 rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up">
-                        {/* Drag Handle Indicator */}
-                        <div className="w-12 h-1 bg-base-300 rounded-full mx-auto my-3 shrink-0"></div>
-                        <div className="flex-1 overflow-hidden">
-                            {renderDetailsContent(true)}
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
+                {/* Modal Detail View for Selected Resort */}
+                <Modal
+                    visible={!!selectedResort}
+                    animationType="slide"
+                    onRequestClose={() => setSelectedResortWithCache(null)}
+                >
+                    <View className="flex-1 bg-slate-950">
+                        {renderDetailsContent()}
+                    </View>
+                </Modal>
+            </View>
+        </SafeAreaView>
     );
 }

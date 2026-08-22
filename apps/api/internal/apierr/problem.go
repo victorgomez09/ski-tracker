@@ -61,6 +61,9 @@ var (
 	ErrNotFound = &ProblemDetail{
 		Type: "https://ski-tracker.dev/errors/not-found", Title: "Not Found", Status: http.StatusNotFound,
 	}
+	ErrNotAcceptable = &ProblemDetail{
+		Type: "https://ski-tracker.dev/errors/not-acceptable", Title: "Not Acceptable", Status: http.StatusNotAcceptable,
+	}
 	ErrConflict = &ProblemDetail{
 		Type: "https://ski-tracker.dev/errors/conflict", Title: "Conflict", Status: http.StatusConflict,
 	}

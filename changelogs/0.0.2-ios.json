@@ -1,0 +1,18 @@
+{
+  "platform": "ios",
+  "version": "0.0.2",
+  "build_number": 2,
+  "min_version": "0.0.2",
+  "changelog": {
+    "en": [
+      "Add automatic updates"
+    ],
+    "es": [
+      "Implementar sistema de actualizaciones automáticas"
+    ]
+  },
+  "force_update": true,
+  "ota_available": true,
+  "store_url": "",
+  "is_active": true
+}
