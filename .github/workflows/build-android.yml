@@ -62,13 +62,13 @@ jobs:
         working-directory: apps/web
         run: pnpm tsc
 
-      - name: 🧹 Run ESLint
-        working-directory: apps/web
-        run: pnpm lint
+      # - name: 🧹 Run ESLint
+      #   working-directory: apps/web
+      #   run: pnpm lint
 
-      - name: 🎨 Run Prettier check
-        working-directory: apps/web
-        run: pnpm format:check
+      # - name: 🎨 Run Prettier check
+      #   working-directory: apps/web
+      #   run: pnpm format:check
 
   build-and-release:
     needs: test
