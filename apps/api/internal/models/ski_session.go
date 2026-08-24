@@ -26,4 +26,5 @@ type SkiSession struct {
 	Points []SessionPoint `bun:"rel:has-many,join:id=session_id" json:"points,omitempty"`
 	Runs   []SkiRun       `bun:"rel:has-many,join:id=session_id" json:"runs,omitempty"`
 	Resort *SkiResort     `bun:"rel:belongs-to,join:resort_id=id" json:"resort,omitempty"`
+	Photos []SessionPhoto `bun:"rel:has-many,join:id=session_id" json:"photos,omitempty"`
 }

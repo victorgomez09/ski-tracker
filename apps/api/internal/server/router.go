@@ -81,6 +81,7 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.POST("/ski-sessions", skiSessionHandler.StartSession)
 			protected.POST("/ski-sessions/:id/points", skiSessionHandler.AddPoints)
 			protected.POST("/ski-sessions/:id/finish", skiSessionHandler.FinishSession)
+			protected.GET("/ski-sessions/photos/*path", skiSessionHandler.GetPhoto)
 
 			// User routes
 			userHandler := v1.NewUserHandler(deps.Services.User, deps.Store)

@@ -16,12 +16,13 @@ import {
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivityIndicator, Image, Linking, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Image, Linking, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { OfflineMapsModal } from "components/map/offline-maps-panel";
 import { WeatherForecastDetails } from "components/resorts/weather-forecast";
 import { API_BASE_URL } from "constants/constants";
+import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 import { useAuth } from "context/auth.context";
 import api from "interceptor/api";
 import { Resort } from "models/ski-resort.model";
@@ -48,6 +49,8 @@ export default function ResortsView() {
     const { t } = useTranslation();
     const router = useRouter();
     const { token } = useAuth();
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const {
         packs,
         downloadingPack,
@@ -211,42 +214,42 @@ export default function ResortsView() {
                 edges={['top', 'bottom']}
                 style={{ flex: 1, backgroundColor: 'transparent' }}
             >
-                <ScrollView className="flex-1 bg-slate-900 p-4 space-y-6">
+                <ScrollView style={styles.detailsScrollView}>
                     {/* Header Banner */}
-                    <View className="bg-slate-800 rounded-md p-5 border border-slate-700 shadow-md flex-row justify-between items-start mb-4">
-                        <View className="flex-1">
-                            <View className="bg-blue-900/60 px-3 py-1 rounded-full self-start flex-row items-center gap-1 border border-blue-700">
-                                <Globe size={12} color="#60a5fa" />
-                                <Text className="text-xs text-blue-300 font-bold">{selectedResort.Country}</Text>
+                    <View style={styles.headerBanner}>
+                        <View style={{ flex: 1 }}>
+                            <View style={styles.countryBadge}>
+                                <Globe size={12} color={colors.primaryDark} />
+                                <Text style={styles.countryText}>{selectedResort.Country}</Text>
                             </View>
-                            <Text className="text-2xl font-extrabold text-white mt-2 leading-tight">{selectedResort.Name}</Text>
+                            <Text style={styles.resortName}>{selectedResort.Name}</Text>
                         </View>
                         <TouchableOpacity
-                            className="p-2 bg-slate-700 rounded-full"
+                            style={styles.closeButton}
                             onPress={() => setSelectedResortWithCache(null)}
                         >
-                            <X size={18} color="#94a3b8" />
+                            <X size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
                     {/* Key Metrics Grid */}
-                    <View className="mb-4">
-                        <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">{t('resort_metrics')}</Text>
-                        <View className="flex-row gap-3">
-                            <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
-                                <Text className="text-slate-400 text-xs font-medium">{t('lifts')}</Text>
-                                <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.lifts}</Text>
+                    <View style={{ marginBottom: SPACING.md }}>
+                        <Text style={styles.sectionHeader}>{t('resort_metrics')}</Text>
+                        <View style={styles.metricsGrid}>
+                            <View style={styles.metricCard}>
+                                <Text style={styles.metricLabel}>{t('lifts')}</Text>
+                                <Text style={styles.metricValue}>{selectedResortSummary?.lifts}</Text>
                             </View>
 
-                            <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
-                                <Text className="text-slate-400 text-xs font-medium">{t('pistes')}</Text>
-                                <Text className="text-2xl font-bold text-white mt-1">{selectedResortSummary?.pistes}</Text>
+                            <View style={styles.metricCard}>
+                                <Text style={styles.metricLabel}>{t('pistes')}</Text>
+                                <Text style={styles.metricValue}>{selectedResortSummary?.pistes}</Text>
                             </View>
 
-                            <View className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-md">
-                                <Text className="text-slate-400 text-xs font-medium">{t('distance')}</Text>
-                                <Text className="text-2xl font-bold text-white mt-1">
-                                    {selectedResortSummary?.distance.toFixed(1)} <Text className="text-xs text-slate-400">{t('km')}</Text>
+                            <View style={styles.metricCard}>
+                                <Text style={styles.metricLabel}>{t('distance')}</Text>
+                                <Text style={styles.metricValue}>
+                                    {selectedResortSummary?.distance.toFixed(1)} <Text style={{ fontSize: 12, color: colors.textSecondary }}>{t('km')}</Text>
                                 </Text>
                             </View>
                         </View>
@@ -254,38 +257,38 @@ export default function ResortsView() {
 
                     {/* Pistes Breakdown */}
                     {selectedResortSummary && (
-                        <View className="mb-4 w-full">
-                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">{t('pistes_breakdown')}</Text>
-                            <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
-                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                    <View className="w-3 h-3 rounded-full bg-[#00a859]" />
+                        <View style={{ marginBottom: SPACING.md, width: '100%' }}>
+                            <Text style={styles.sectionHeader}>{t('pistes_breakdown')}</Text>
+                            <View style={styles.breakdownGrid}>
+                                <View style={styles.breakdownCard}>
+                                    <View style={[styles.statusDot, { backgroundColor: '#00a859' }]} />
                                     <View>
-                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('novice')}</Text>
-                                        <Text className="text-sm font-bold text-white">{t('runs_count', { count: selectedResortSummary.pistesBreakdown.novice })}</Text>
+                                        <Text style={styles.breakdownLabel}>{t('novice')}</Text>
+                                        <Text style={styles.breakdownValue}>{t('runs_count', { count: selectedResortSummary.pistesBreakdown.novice })}</Text>
                                     </View>
                                 </View>
 
-                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                    <View className="w-3 h-3 rounded-full bg-[#0072bc]" />
+                                <View style={styles.breakdownCard}>
+                                    <View style={[styles.statusDot, { backgroundColor: '#0072bc' }]} />
                                     <View>
-                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('easy')}</Text>
-                                        <Text className="text-sm font-bold text-white">{t('runs_count', { count: selectedResortSummary.pistesBreakdown.easy })}</Text>
+                                        <Text style={styles.breakdownLabel}>{t('easy')}</Text>
+                                        <Text style={styles.breakdownValue}>{t('runs_count', { count: selectedResortSummary.pistesBreakdown.easy })}</Text>
                                     </View>
                                 </View>
 
-                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                    <View className="w-3 h-3 rounded-full bg-[#f0141e]" />
+                                <View style={styles.breakdownCard}>
+                                    <View style={[styles.statusDot, { backgroundColor: '#f0141e' }]} />
                                     <View>
-                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('intermediate')}</Text>
-                                        <Text className="text-sm font-bold text-white">{t('runs_count', { count: selectedResortSummary.pistesBreakdown.intermediate })}</Text>
+                                        <Text style={styles.breakdownLabel}>{t('intermediate')}</Text>
+                                        <Text style={styles.breakdownValue}>{t('runs_count', { count: selectedResortSummary.pistesBreakdown.intermediate })}</Text>
                                     </View>
                                 </View>
 
-                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                    <View className="w-3 h-3 rounded-full bg-black border border-slate-600" />
+                                <View style={styles.breakdownCard}>
+                                    <View style={[styles.statusDot, { backgroundColor: '#000000', borderWidth: 1, borderColor: colors.border }]} />
                                     <View>
-                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('expert')}</Text>
-                                        <Text className="text-sm font-bold text-white">{t('runs_count', { count: selectedResortSummary.pistesBreakdown.advanced })}</Text>
+                                        <Text style={styles.breakdownLabel}>{t('expert')}</Text>
+                                        <Text style={styles.breakdownValue}>{t('runs_count', { count: selectedResortSummary.pistesBreakdown.advanced })}</Text>
                                     </View>
                                 </View>
                             </View>
@@ -294,38 +297,38 @@ export default function ResortsView() {
 
                     {/* Lifts Breakdown */}
                     {selectedResortSummary && (
-                        <View className="mb-4">
-                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">{t('lifts_breakdown')}</Text>
-                            <View className="grid grid-cols-2 grid-wrap gap-2 w-full">
-                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                    <Text className="text-base">🚡</Text>
+                        <View style={{ marginBottom: SPACING.md }}>
+                            <Text style={styles.sectionHeader}>{t('lifts_breakdown')}</Text>
+                            <View style={styles.breakdownGrid}>
+                                <View style={styles.breakdownCard}>
+                                    <Text style={{ fontSize: 16 }}>🚡</Text>
                                     <View>
-                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('chair_lifts')}</Text>
-                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.chair_lift}</Text>
+                                        <Text style={styles.breakdownLabel}>{t('chair_lifts')}</Text>
+                                        <Text style={styles.breakdownValue}>{selectedResortSummary.liftsBreakdown.chair_lift}</Text>
                                     </View>
                                 </View>
 
-                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                    <Text className="text-base">⛷️</Text>
+                                <View style={styles.breakdownCard}>
+                                    <Text style={{ fontSize: 16 }}>⛷️</Text>
                                     <View>
-                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('drag_lifts')}</Text>
-                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.drag_lift}</Text>
+                                        <Text style={styles.breakdownLabel}>{t('drag_lifts')}</Text>
+                                        <Text style={styles.breakdownValue}>{selectedResortSummary.liftsBreakdown.drag_lift}</Text>
                                     </View>
                                 </View>
 
-                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                    <Text className="text-base">🛹</Text>
+                                <View style={styles.breakdownCard}>
+                                    <Text style={{ fontSize: 16 }}>🛹</Text>
                                     <View>
-                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('magic_carpets')}</Text>
-                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.magic_carpet}</Text>
+                                        <Text style={styles.breakdownLabel}>{t('magic_carpets')}</Text>
+                                        <Text style={styles.breakdownValue}>{selectedResortSummary.liftsBreakdown.magic_carpet}</Text>
                                     </View>
                                 </View>
 
-                                <View className="bg-slate-800 border border-slate-700 p-3 rounded-md flex-row items-center gap-2.5 mb-2">
-                                    <Text className="text-base">🪢</Text>
+                                <View style={styles.breakdownCard}>
+                                    <Text style={{ fontSize: 16 }}>🪢</Text>
                                     <View>
-                                        <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('rope_tows')}</Text>
-                                        <Text className="text-sm font-bold text-white">{selectedResortSummary.liftsBreakdown.rope_tow}</Text>
+                                        <Text style={styles.breakdownLabel}>{t('rope_tows')}</Text>
+                                        <Text style={styles.breakdownValue}>{selectedResortSummary.liftsBreakdown.rope_tow}</Text>
                                     </View>
                                 </View>
                             </View>
@@ -334,24 +337,24 @@ export default function ResortsView() {
 
                     {/* Website CTA */}
                     {selectedResortSummary?.website && (
-                        <View className="mb-4">
-                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">{t('website')}</Text>
-                            <View className="bg-slate-800 border border-slate-700 p-4 rounded-md flex-row items-center justify-between">
-                                <View className="flex-row items-center gap-3">
-                                    <View className="w-10 h-10 rounded-md bg-blue-900/60 items-center justify-center">
-                                        <Globe size={20} color="#60a5fa" />
+                        <View style={{ marginBottom: SPACING.md }}>
+                            <Text style={styles.sectionHeader}>{t('website')}</Text>
+                            <View style={styles.websiteCard}>
+                                <View style={styles.websiteLeft}>
+                                    <View style={styles.iconContainer}>
+                                        <Globe size={20} color={colors.primaryDark} />
                                     </View>
                                     <View>
-                                        <Text className="font-semibold text-sm text-white">{t('resort_website')}</Text>
-                                        <Text className="text-xs text-slate-400">{t('visit_official_page')}</Text>
+                                        <Text style={styles.websiteTitle}>{t('resort_website')}</Text>
+                                        <Text style={styles.websiteSubtitle}>{t('visit_official_page')}</Text>
                                     </View>
                                 </View>
                                 <TouchableOpacity
-                                    className="bg-blue-600 px-3.5 py-2 rounded-md flex-row items-center gap-1"
+                                    style={styles.websiteButton}
                                     onPress={() => Linking.openURL(selectedResortSummary.website!)}
                                 >
-                                    <Text className="text-white text-xs font-bold">{t('open')}</Text>
-                                    <ExternalLink size={14} color="#ffffff" />
+                                    <Text style={styles.websiteButtonText}>{t('open')}</Text>
+                                    <ExternalLink size={14} color={colors.textOnPrimary} />
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -363,106 +366,105 @@ export default function ResortsView() {
                     )}
 
                     {/* Sessions Log */}
-                    <View className="my-4">
-                        <View className="flex-row items-center justify-between mb-3">
-                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">{t('ski_sessions_count', { count: sessions.length })}</Text>
-                            {isLoadingSessions && <ActivityIndicator size="small" color="#3b82f6" />}
+                    <View style={{ marginVertical: SPACING.md }}>
+                        <View style={styles.sessionHeaderRow}>
+                            <Text style={styles.sectionHeader}>{t('ski_sessions_count', { count: sessions.length })}</Text>
+                            {isLoadingSessions && <ActivityIndicator size="small" color={colors.primary} />}
                         </View>
 
                         {sessions.length > 0 ? (
-                            <View className="space-y-3">
+                            <View style={{ gap: SPACING.sm }}>
                                 {sessions.map((session) => (
                                     <TouchableOpacity
                                         key={session.id}
                                         onPress={() => handleSessionClick(session)}
-                                        className="bg-slate-800 p-4 rounded-md border border-slate-700 flex-row items-center justify-between my-1"
+                                        style={styles.sessionItem}
                                     >
-                                        <View className="space-y-1">
-                                            <View className="flex-row items-center gap-2">
-                                                <View className="w-2 h-2 rounded-full bg-emerald-500" />
-                                                <Text className="font-bold text-xs text-white">
+                                        <View style={styles.sessionItemLeft}>
+                                            <View style={styles.sessionItemRow}>
+                                                <View style={styles.sessionDot} />
+                                                <Text style={styles.sessionDate}>
                                                     {new Date(session.start_time).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                                                 </Text>
-                                                <Text className="text-[10px] text-slate-400">
+                                                <Text style={styles.sessionTime}>
                                                     {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </Text>
                                             </View>
-                                            <View className="flex-row items-center gap-2 mt-1">
-                                                <View className="size-6 rounded-full bg-slate-700 items-center justify-center border-2 border-blue-500 overflow-hidden">
+                                            <View style={styles.sessionUserRow}>
+                                                <View style={styles.avatarContainer}>
                                                     {session.user?.avatar_url ? (
                                                         <Image
                                                             source={{ uri: session.user?.avatar_url }}
-                                                            className="w-full h-full"
+                                                            style={styles.avatarImage}
                                                             resizeMode="cover"
                                                         />) : (
-                                                        <Text className="text-white font-extrabold text-xs tracking-wider">
+                                                        <Text style={styles.avatarText}>
                                                             {session.user ? (session.user.display_name || `${session.user.first_name} ${session.user.last_name}`.trim() || session.user.email) : t('user')}
                                                         </Text>
                                                     )}
                                                 </View>
 
                                                 {session.is_public ? (
-                                                    <View className="flex-row items-center gap-1">
-                                                        <Unlock size={10} color="#34d399" />
-                                                        <Text className="text-[10px] text-emerald-400 font-semibold">{t('public')}</Text>
+                                                    <View style={styles.privacyBadge}>
+                                                        <Unlock size={10} color={colors.success} />
+                                                        <Text style={styles.publicText}>{t('public')}</Text>
                                                     </View>
                                                 ) : (
-                                                    <View className="flex-row items-center gap-1">
-                                                        <Lock size={10} color="#fbbf24" />
-                                                        <Text className="text-[10px] text-amber-400 font-semibold">{t('private')}</Text>
+                                                    <View style={styles.privacyBadge}>
+                                                        <Lock size={10} color={colors.warning} />
+                                                        <Text style={styles.privateText}>{t('private')}</Text>
                                                     </View>
                                                 )}
                                             </View>
-                                            <View className="flex-row items-center gap-3 mt-1.5">
-                                                <Text className="text-[11px] text-slate-300">{(session.total_distance / 1000).toFixed(2)} km</Text>
-                                                <Text className="text-[11px] text-slate-300">{(session.max_speed * 3.6).toFixed(1)} km/h</Text>
-                                                <Text className="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-slate-200 font-bold uppercase">{session.activity_type === 'ski' ? t('ski') : t('snowboard')}</Text>
+                                            <View style={styles.sessionStatsRow}>
+                                                <Text style={styles.sessionStatText}>{(session.total_distance / 1000).toFixed(2)} km</Text>
+                                                <Text style={styles.sessionStatText}>{(session.max_speed * 3.6).toFixed(1)} km/h</Text>
+                                                <Text style={styles.activityBadge}>{session.activity_type === 'ski' ? t('ski') : t('snowboard')}</Text>
                                             </View>
                                         </View>
 
-                                        <ChevronRight size={20} color="#60a5fa" />
+                                        <ChevronRight size={20} color={colors.primary} />
                                     </TouchableOpacity>
                                 ))}
                             </View>
                         ) : !isLoadingSessions ? (
-                            <View className="border border-dashed border-slate-700 rounded-md p-6 items-center justify-center bg-slate-800/40">
-                                <Activity size={32} color="#64748b" />
-                                <Text className="font-semibold text-sm text-slate-300 mt-2">{t('no_sessions_recorded')}</Text>
-                                <Text className="text-xs text-slate-500 text-center mt-1">{t('no_sessions_resort')}</Text>
+                            <View style={styles.noSessionsCard}>
+                                <Activity size={32} color={colors.textLight} />
+                                <Text style={styles.noSessionsTitle}>{t('no_sessions_recorded')}</Text>
+                                <Text style={styles.noSessionsSubtitle}>{t('no_sessions_resort')}</Text>
                             </View>
                         ) : null}
                     </View>
 
                     {/* Footer Action Bar */}
-                    <View className={`grid ${!isWeb ? 'grid-cols-3' : 'grid-cols-1'} w-full`}>
+                    <View style={[styles.footerActions, !isWeb && styles.footerActionsGrid]}>
                         <TouchableOpacity
-                            className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
+                            style={styles.actionButton}
                             onPress={() => {
                                 router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`);
                                 setSelectedResortWithCache(null);
                             }}
                         >
-                            <MapIcon size={18} color="#ffffff" />
-                            {/* <Text className="text-white font-bold text-base">View on Map</Text> */}
+                            <MapIcon size={18} color={colors.textOnPrimary} />
                         </TouchableOpacity>
 
                         {!isWeb && (
                             <>
                                 <TouchableOpacity
-                                    className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
+                                    style={styles.actionButton}
                                     onPress={() => {
                                         router.push(`/tracking?lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=12`);
                                         setSelectedResortWithCache(null);
                                     }}
                                 >
-                                    <Navigation size={18} color="#ffffff" />
+                                    <Navigation size={18} color={colors.textOnPrimary} />
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    className="bg-blue-600 p-4 rounded-md flex-row items-center justify-center gap-2 mb-8 shadow-md"
+                                    style={styles.actionButton}
                                     onPress={() => setShowOfflineModal(true)}
                                 >
-                                    <Download size={18} color="#ffffff" />
+                                    <Download size={18} color={colors.textOnPrimary} />
                                 </TouchableOpacity>
                             </>
                         )}
@@ -487,23 +489,22 @@ export default function ResortsView() {
                     onDeletePack={deletePack}
                     currentResortName={selectedResort?.Name}
                 />
-            )
-            }
+            )}
 
-            <View className="flex-1 bg-slate-950 p-4 pt-6">
+            <View style={styles.container}>
                 {/* Search Header Container */}
-                <View className="mb-4">
-                    <Text className="text-xl font-extrabold text-white mb-3">{t('ski_resorts')}</Text>
-                    <View className="relative flex-row items-center bg-slate-800 rounded-md px-4 border border-slate-700">
+                <View style={styles.searchHeader}>
+                    <Text style={styles.title}>{t('ski_resorts')}</Text>
+                    <View style={styles.searchBar}>
                         {isLoadingResorts ? (
-                            <ActivityIndicator size="small" color="#3b82f6" />
+                            <ActivityIndicator size="small" color={colors.primary} />
                         ) : (
-                            <Search size={18} color="#94a3b8" />
+                            <Search size={18} color={colors.textLight} />
                         )}
                         <TextInput
-                            className="flex-1 p-3.5 text-sm text-white ml-2"
+                            style={styles.searchInput}
                             placeholder={t('search_placeholder') as string}
-                            placeholderTextColor="#94a3b8"
+                            placeholderTextColor={colors.textLight}
                             value={searchTerm}
                             onChangeText={handleSearch}
                         />
@@ -511,41 +512,38 @@ export default function ResortsView() {
                 </View>
 
                 {/* List Body Container */}
-                <ScrollView className="flex-1 space-y-3">
+                <ScrollView style={styles.resortList}>
                     {resorts.length > 0 && (
-                        <View className="mb-4">
-                            <Text className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                        <View style={styles.matchingResortsContainer}>
+                            <Text style={styles.matchingResortsHeader}>
                                 {t('matching_resorts', { count: resorts.length })}
                             </Text>
-                            <View className="space-y-2">
+                            <View style={styles.matchingResortsList}>
                                 {resorts.map((resort) => {
                                     const isSelected = selectedResort?.ID === resort.ID;
                                     return (
                                         <TouchableOpacity
                                             key={resort.ID}
-                                            className={`rounded-md border p-4 mb-2 ${isSelected
-                                                ? "border-blue-500 bg-blue-950/40"
-                                                : "border-slate-800 bg-slate-900"
-                                                }`}
+                                            style={[styles.resortCard, isSelected ? styles.resortCardSelected : styles.resortCardUnselected]}
                                             onPress={() => handleResortSelect(resort)}
                                         >
-                                            <View className="flex-row justify-between items-start">
+                                            <View style={styles.resortCardHeader}>
                                                 <View>
-                                                    <Text className="font-bold text-base text-white">{resort.Name}</Text>
-                                                    <View className="flex-row items-center gap-1 mt-1">
-                                                        <MapPin size={12} color="#94a3b8" />
-                                                        <Text className="text-xs text-slate-400">{resort.Country}</Text>
+                                                    <Text style={[styles.resortCardName, isSelected && { color: colors.primaryDark }]}>{resort.Name}</Text>
+                                                    <View style={styles.resortCardLocation}>
+                                                        <MapPin size={12} color={colors.textSecondary} />
+                                                        <Text style={styles.resortCardCountry}>{resort.Country}</Text>
                                                     </View>
                                                 </View>
-                                                <View className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
-                                                    <Text className="text-xs font-bold text-slate-200">{t('lifts_count', { count: resort.total_lifts ?? 0 })}</Text>
+                                                <View style={styles.resortCardBadge}>
+                                                    <Text style={styles.resortCardBadgeText}>{t('lifts_count', { count: resort.total_lifts ?? 0 })}</Text>
                                                 </View>
                                             </View>
 
-                                            <View className="flex-row items-center gap-3 pt-3 mt-2 border-t border-slate-800">
-                                                <Text className="text-xs text-slate-400">{t('pistes_count', { count: resort.total_pistes ?? 0 })}</Text>
-                                                <Text className="text-xs text-slate-400">•</Text>
-                                                <Text className="text-xs text-slate-400">{t('km_runs', { distance: resort.distance_km?.toFixed(1) ?? "0.0" })}</Text>
+                                            <View style={styles.resortCardFooter}>
+                                                <Text style={styles.resortCardFooterText}>{t('pistes_count', { count: resort.total_pistes ?? 0 })}</Text>
+                                                <Text style={styles.resortCardFooterText}>•</Text>
+                                                <Text style={styles.resortCardFooterText}>{t('km_runs', { distance: resort.distance_km?.toFixed(1) ?? "0.0" })}</Text>
                                             </View>
                                         </TouchableOpacity>
                                     );
@@ -556,12 +554,12 @@ export default function ResortsView() {
 
                     {/* Welcome / Initial State */}
                     {resorts.length === 0 && searchTerm.length <= 2 && (
-                        <View className="items-center justify-center p-8 text-center my-12">
-                            <View className="w-16 h-16 rounded-md bg-blue-900/40 items-center justify-center mb-4 border border-blue-700">
-                                <Compass size={32} color="#60a5fa" />
+                        <View style={styles.emptyStateContainer}>
+                            <View style={styles.emptyStateIconContainer}>
+                                <Compass size={32} color={colors.primary} />
                             </View>
-                            <Text className="font-bold text-base text-white">{t('explore_resorts')}</Text>
-                            <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
+                            <Text style={styles.emptyStateTitle}>{t('explore_resorts')}</Text>
+                            <Text style={styles.emptyStateSubtitle}>
                                 {t('explore_resorts_desc')}
                             </Text>
                         </View>
@@ -569,12 +567,12 @@ export default function ResortsView() {
 
                     {/* No results state */}
                     {resorts.length === 0 && searchTerm.length > 2 && !isLoadingResorts && (
-                        <View className="items-center justify-center p-8 text-center my-12">
-                            <View className="w-16 h-16 rounded-md bg-red-900/40 items-center justify-center mb-4 border border-red-700">
-                                <X size={32} color="#f87171" />
+                        <View style={styles.emptyStateContainer}>
+                            <View style={[styles.emptyStateIconContainer, styles.emptyStateIconContainerError]}>
+                                <X size={32} color={colors.danger} />
                             </View>
-                            <Text className="font-bold text-base text-white">{t('no_resorts_found')}</Text>
-                            <Text className="text-xs text-slate-400 text-center mt-2 max-w-xs leading-relaxed">
+                            <Text style={styles.emptyStateTitle}>{t('no_resorts_found')}</Text>
+                            <Text style={styles.emptyStateSubtitle}>
                                 {t('no_resorts_matching', { searchTerm })}
                             </Text>
                         </View>
@@ -587,7 +585,7 @@ export default function ResortsView() {
                     animationType="slide"
                     onRequestClose={() => setSelectedResortWithCache(null)}
                 >
-                    <View className="flex-1 bg-slate-950">
+                    <View style={styles.modalContainer}>
                         {renderDetailsContent()}
                     </View>
                 </Modal>
@@ -595,3 +593,458 @@ export default function ResortsView() {
         </SafeAreaView>
     );
 }
+
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: colors.background,
+        padding: SPACING.md,
+    },
+    modalContainer: {
+        flex: 1,
+        backgroundColor: colors.background,
+    },
+    searchHeader: {
+        marginBottom: SPACING.md,
+    },
+    title: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: colors.textPrimary,
+        marginBottom: SPACING.sm,
+    },
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.card,
+        borderRadius: BORDER_RADIUS.md,
+        paddingHorizontal: SPACING.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        ...SHADOWS.sm,
+    },
+    searchInput: {
+        flex: 1,
+        paddingVertical: 12,
+        fontSize: 14,
+        color: colors.textPrimary,
+        marginLeft: SPACING.sm,
+    },
+    resortList: {
+        flex: 1,
+    },
+    matchingResortsContainer: {
+        marginBottom: SPACING.md,
+    },
+    matchingResortsHeader: {
+        fontSize: 12,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        color: colors.textSecondary,
+        marginBottom: SPACING.sm,
+    },
+    matchingResortsList: {
+        gap: SPACING.sm,
+    },
+    resortCard: {
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        padding: SPACING.md,
+        marginBottom: SPACING.sm,
+        ...SHADOWS.sm,
+    },
+    resortCardSelected: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primaryLight,
+    },
+    resortCardUnselected: {
+        borderColor: colors.border,
+        backgroundColor: colors.card,
+    },
+    resortCardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    },
+    resortCardName: {
+        fontWeight: '700',
+        fontSize: 16,
+        color: colors.textPrimary,
+    },
+    resortCardLocation: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+        gap: 4,
+    },
+    resortCardCountry: {
+        fontSize: 12,
+        color: colors.textSecondary,
+    },
+    resortCardBadge: {
+        backgroundColor: colors.surface,
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: BORDER_RADIUS.round,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    resortCardBadgeText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: colors.textSecondary,
+    },
+    resortCardFooter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingTop: SPACING.sm,
+        marginTop: SPACING.sm,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
+        gap: SPACING.sm,
+    },
+    resortCardFooterText: {
+        fontSize: 12,
+        color: colors.textSecondary,
+    },
+    emptyStateContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: SPACING.xl,
+        marginVertical: 48,
+    },
+    emptyStateIconContainer: {
+        width: 64,
+        height: 64,
+        borderRadius: BORDER_RADIUS.md,
+        backgroundColor: colors.primaryLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: SPACING.md,
+        borderWidth: 1,
+        borderColor: colors.primary,
+    },
+    emptyStateIconContainerError: {
+        backgroundColor: '#FEE2E2',
+        borderColor: colors.danger,
+    },
+    emptyStateTitle: {
+        fontWeight: '700',
+        fontSize: 16,
+        color: colors.textPrimary,
+    },
+    emptyStateSubtitle: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        marginTop: SPACING.sm,
+        maxWidth: 260,
+        lineHeight: 18,
+    },
+    detailsScrollView: {
+        flex: 1,
+        backgroundColor: colors.background,
+        padding: SPACING.md,
+    },
+    headerBanner: {
+        backgroundColor: colors.card,
+        borderRadius: BORDER_RADIUS.md,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: colors.border,
+        ...SHADOWS.md,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: SPACING.md,
+    },
+    countryBadge: {
+        backgroundColor: colors.primaryLight,
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: BORDER_RADIUS.round,
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        borderWidth: 1,
+        borderColor: colors.primary,
+    },
+    countryText: {
+        fontSize: 12,
+        color: colors.primaryDark,
+        fontWeight: '700',
+    },
+    resortName: {
+        fontSize: 24,
+        fontWeight: '800',
+        color: colors.textPrimary,
+        marginTop: SPACING.sm,
+        lineHeight: 28,
+    },
+    closeButton: {
+        padding: SPACING.sm,
+        backgroundColor: colors.surface,
+        borderRadius: BORDER_RADIUS.round,
+    },
+    sectionHeader: {
+        fontSize: 12,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        color: colors.textSecondary,
+        marginBottom: SPACING.sm,
+    },
+    metricsGrid: {
+        flexDirection: 'row',
+        gap: SPACING.sm,
+        marginBottom: SPACING.md,
+    },
+    metricCard: {
+        flex: 1,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.md,
+        ...SHADOWS.sm,
+    },
+    metricLabel: {
+        color: colors.textSecondary,
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    metricValue: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: colors.textPrimary,
+        marginTop: 4,
+    },
+    breakdownGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        marginBottom: SPACING.md,
+    },
+    breakdownCard: {
+        width: '48%',
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: SPACING.sm,
+        ...SHADOWS.sm,
+    },
+    statusDot: {
+        width: 12,
+        height: 12,
+        borderRadius: BORDER_RADIUS.round,
+    },
+    breakdownLabel: {
+        fontSize: 10,
+        color: colors.textSecondary,
+        textTransform: 'uppercase',
+        fontWeight: '600',
+    },
+    breakdownValue: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: colors.textPrimary,
+    },
+    websiteCard: {
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: SPACING.md,
+        ...SHADOWS.sm,
+    },
+    websiteLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+    },
+    iconContainer: {
+        width: 40,
+        height: 40,
+        borderRadius: BORDER_RADIUS.md,
+        backgroundColor: colors.primaryLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    websiteTitle: {
+        fontWeight: '600',
+        fontSize: 14,
+        color: colors.textPrimary,
+    },
+    websiteSubtitle: {
+        fontSize: 12,
+        color: colors.textSecondary,
+    },
+    websiteButton: {
+        backgroundColor: colors.primary,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: BORDER_RADIUS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    websiteButtonText: {
+        color: colors.textOnPrimary,
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    sessionHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: SPACING.sm,
+    },
+    sessionItem: {
+        backgroundColor: colors.card,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: SPACING.sm,
+        ...SHADOWS.sm,
+    },
+    sessionItemLeft: {
+        gap: 4,
+    },
+    sessionItemRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    sessionDot: {
+        width: 8,
+        height: 8,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.success,
+    },
+    sessionDate: {
+        fontWeight: '700',
+        fontSize: 12,
+        color: colors.textPrimary,
+    },
+    sessionTime: {
+        fontSize: 10,
+        color: colors.textSecondary,
+    },
+    sessionUserRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 4,
+    },
+    avatarContainer: {
+        width: 24,
+        height: 24,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.surface,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 2,
+        borderColor: colors.primary,
+        overflow: 'hidden',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
+    },
+    avatarText: {
+        color: colors.textPrimary,
+        fontWeight: '800',
+        fontSize: 10,
+    },
+    privacyBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    publicText: {
+        fontSize: 10,
+        color: colors.success,
+        fontWeight: '600',
+    },
+    privateText: {
+        fontSize: 10,
+        color: colors.warning,
+        fontWeight: '600',
+    },
+    sessionStatsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginTop: 6,
+    },
+    sessionStatText: {
+        fontSize: 11,
+        color: colors.textSecondary,
+    },
+    activityBadge: {
+        fontSize: 10,
+        backgroundColor: colors.surface,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: BORDER_RADIUS.sm,
+        color: colors.textSecondary,
+        fontWeight: '700',
+    },
+    noSessionsCard: {
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: colors.border,
+        borderRadius: BORDER_RADIUS.md,
+        padding: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.card,
+    },
+    noSessionsTitle: {
+        fontWeight: '600',
+        fontSize: 14,
+        color: colors.textPrimary,
+        marginTop: 8,
+    },
+    noSessionsSubtitle: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        marginTop: 4,
+    },
+    footerActions: {
+        width: '100%',
+        marginBottom: SPACING.xl,
+    },
+    footerActionsGrid: {
+        flexDirection: 'row',
+        gap: SPACING.sm,
+    },
+    actionButton: {
+        flex: 1,
+        backgroundColor: colors.primary,
+        padding: 16,
+        borderRadius: BORDER_RADIUS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        ...SHADOWS.md,
+        marginBottom: SPACING.md,
+    },
+});

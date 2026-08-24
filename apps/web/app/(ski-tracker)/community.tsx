@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Image,
   LayoutAnimation,
   Platform,
+  StyleSheet,
   Text,
   TouchableOpacity,
   UIManager,
@@ -12,11 +13,14 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { API_BASE_URL } from "constants/constants";
+import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 import { useRouter } from "expo-router";
 import api from "interceptor/api";
 import { Activity, Calendar, ChevronDown, ChevronUp, MapIcon, Ruler, TrendingDown, Users, Zap } from "lucide-react-native";
 import { Session } from "models/session.model";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+import { useAuth } from "context/auth.context";
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -25,48 +29,48 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const msToKmh = (ms: number): string => (ms * 3.6).toFixed(1);
 const metersToKm = (m: number): string => (m / 1000).toFixed(2);
 
-const getDifficultyMeta = (diff: string) => {
+const getDifficultyMeta = (diff: string, colors: typeof LIGHT_COLORS) => {
   switch (diff?.toLowerCase()) {
     case 'novice':
       return {
         labelKey: 'novice',
-        dotBg: 'bg-[#00a859]',
-        badgeBg: 'bg-emerald-950/80',
-        textColor: 'text-emerald-400',
-        borderColor: 'border-emerald-800'
+        dotBgColor: '#00a859',
+        badgeBgColor: 'rgba(16, 185, 129, 0.1)',
+        textColor: '#10B981',
+        borderColor: 'rgba(16, 185, 129, 0.2)'
       };
     case 'easy':
       return {
         labelKey: 'easy',
-        dotBg: 'bg-[#0072bc]',
-        badgeBg: 'bg-blue-950/80',
-        textColor: 'text-blue-400',
-        borderColor: 'border-blue-800'
+        dotBgColor: '#0072bc',
+        badgeBgColor: 'rgba(59, 130, 246, 0.1)',
+        textColor: '#3B82F6',
+        borderColor: 'rgba(59, 130, 246, 0.2)'
       };
     case 'intermediate':
       return {
         labelKey: 'intermediate',
-        dotBg: 'bg-[#f0141e]',
-        badgeBg: 'bg-rose-950/80',
-        textColor: 'text-rose-400',
-        borderColor: 'border-rose-800'
+        dotBgColor: '#f0141e',
+        badgeBgColor: 'rgba(239, 68, 68, 0.1)',
+        textColor: '#EF4444',
+        borderColor: 'rgba(239, 68, 68, 0.2)'
       };
     case 'advanced':
     case 'expert':
       return {
         labelKey: 'expert',
-        dotBg: 'bg-black border border-slate-600',
-        badgeBg: 'bg-slate-950',
-        textColor: 'text-slate-200',
-        borderColor: 'border-slate-700'
+        dotBgColor: '#000000',
+        badgeBgColor: colors.surface,
+        textColor: colors.textPrimary,
+        borderColor: colors.border
       };
     default:
       return {
         labelKey: diff ? diff.toLowerCase() : 'general',
-        dotBg: 'bg-slate-500',
-        badgeBg: 'bg-slate-800',
-        textColor: 'text-slate-400',
-        borderColor: 'border-slate-700'
+        dotBgColor: colors.textLight,
+        badgeBgColor: colors.surface,
+        textColor: colors.textSecondary,
+        borderColor: colors.border
       };
   }
 };
@@ -85,6 +89,8 @@ export default function CommunityView() {
   const { t } = useTranslation();
   const [communityData, setCommunityData] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const colors = useThemeColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   useEffect(() => {
     const fetchCommunityData = async () => {
@@ -109,11 +115,11 @@ export default function CommunityView() {
         edges={['top']}
         style={{ flex: 1, backgroundColor: 'transparent' }}
       >
-        <View className="flex-1 justify-center items-center bg-slate-900 p-4">
-          <View className="bg-slate-800 border border-slate-700 p-6 rounded-xl items-center max-w-xs w-full">
-            <Users size={32} color="#94a3b8" />
-            <Text className="text-white font-bold text-base mt-3">{t('no_activity_yet')}</Text>
-            <Text className="text-slate-400 text-xs text-center mt-1">
+        <View style={styles.loadingContainer}>
+          <View style={styles.loadingCard}>
+            <Users size={32} color={colors.textSecondary} />
+            <Text style={styles.noActivityTitle}>{t('no_activity_yet')}</Text>
+            <Text style={styles.noActivitySubtitle}>
               {loading ? t('loading_community_sessions') : t('no_community_sessions')}
             </Text>
           </View>
@@ -127,19 +133,19 @@ export default function CommunityView() {
       edges={['top']}
       style={{ flex: 1, backgroundColor: 'transparent' }}
     >
-      <View className="flex-1 bg-slate-900 p-4">
-        <View className="flex-row items-center justify-between mb-4">
+      <View style={styles.container}>
+        <View style={styles.headerRow}>
           <View>
-            <Text className="text-2xl font-extrabold text-white leading-tight">
+            <Text style={styles.title}>
               {t('community_feed')}
             </Text>
-            <Text className="text-xs text-slate-400 font-medium mt-0.5">
+            <Text style={styles.subtitle}>
               {t('live_rider_activity')}
             </Text>
           </View>
-          <View className="bg-blue-900/40 px-3 py-1.5 rounded-full border border-blue-700/60 flex-row items-center gap-1.5">
-            <Users size={12} color="#60a5fa" />
-            <Text className="text-xs text-blue-300 font-bold">
+          <View style={styles.badge}>
+            <Users size={12} color={colors.primaryDark} />
+            <Text style={styles.badgeText}>
               {t('sessions_count', { count: communityData.length })}
             </Text>
           </View>
@@ -161,7 +167,10 @@ export default function CommunityView() {
 const SkiSessionCard = ({ session }: { session: Session }) => {
   const { t } = useTranslation();
   const router = useRouter();
+  const { token } = useAuth();
   const [expanded, setExpanded] = useState(false);
+  const colors = useThemeColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const toggleExpand = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -174,152 +183,192 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
   const initials = `${firstName[0] || 'U'}${lastName[0] || ''}`.toUpperCase();
 
   return (
-    <View className="bg-slate-800 border border-slate-700 p-4 rounded-xl mb-4 shadow-lg">
-      <View className="flex-row items-center justify-between mb-3">
-        <View className="flex-row items-center gap-3 flex-1">
-          <View className="size-9 rounded-full bg-slate-700 items-center justify-center border-2 border-blue-500 overflow-hidden">
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={styles.userInfo}>
+          <View style={styles.avatarContainer}>
             {session.user?.avatar_url ? (
               <Image
                 source={{ uri: session.user?.avatar_url }}
-                className="w-full h-full"
+                style={styles.avatarImage}
                 resizeMode="cover"
               />) : (
-
-              <Text className="text-white font-extrabold text-xs tracking-wider">
+              <Text style={styles.avatarText}>
                 {initials}
               </Text>
             )}
           </View>
 
-          <View className="flex-1">
-            <Text className="text-sm font-bold text-white leading-tight" numberOfLines={1}>
+          <View style={styles.userMeta}>
+            <Text style={styles.displayName} numberOfLines={1}>
               {session.user?.display_name || `${firstName} ${lastName}`.trim()}
             </Text>
-            <View className="flex-row items-center gap-1 mt-0.5">
-              <Calendar size={10} color="#94a3b8" />
-              <Text className="text-[11px] text-slate-400 font-medium">
+            <View style={styles.dateRow}>
+              <Calendar size={10} color={colors.textSecondary} />
+              <Text style={styles.dateText}>
                 {formatDate(session.start_time)}
               </Text>
             </View>
           </View>
         </View>
 
-        <View className="flex-row items-center gap-2">
-          <View className="bg-slate-900/80 px-2.5 py-1 rounded-full border border-slate-700/80 flex-row items-center gap-1.5">
-            <Text className="text-xs">
+        <View style={styles.headerRight}>
+          <View style={styles.activityTypeBadge}>
+            <Text style={styles.activityTypeIcon}>
               {session.activity_type === 'ski' ? '⛷️' : '🏂'}
             </Text>
-            <Text className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">
+            <Text style={styles.activityTypeText}>
               {session.activity_type === 'ski' ? t('ski') : t('snowboard')}
             </Text>
           </View>
 
           <TouchableOpacity
-            className="bg-blue-600 p-2 rounded-md flex-row items-center justify-center gap-2"
+            style={styles.mapButton}
             onPress={() => router.push(`/map?sessionId=${session.id}&lat=${session.resort.Latitude}&lng=${session.resort.Longitude}&zoom=14`)}
           >
-            <MapIcon size={9} color="#ffffff" />
+            <MapIcon size={9} color={colors.textOnPrimary} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <View className="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 flex-row justify-between items-center my-1">
-        <View className="items-center flex-1">
-          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('distance')}</Text>
-          <Text className="text-sm font-extrabold text-white mt-0.5">
-            {metersToKm(session.total_distance)} <Text className="text-[10px] font-normal text-slate-400">{t('km')}</Text>
+      <View style={styles.statsGrid}>
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('distance')}</Text>
+          <Text style={styles.statValue}>
+            {metersToKm(session.total_distance)} <Text style={styles.statUnit}>{t('km')}</Text>
           </Text>
         </View>
 
-        <View className="w-px h-7 bg-slate-700/80" />
+        <View style={styles.divider} />
 
-        <View className="items-center flex-1">
-          <Text className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('vertical_drop')}</Text>
-          <Text className="text-sm font-extrabold text-white mt-0.5">
-            {Math.round(session.vertical_drop)} <Text className="text-[10px] font-normal text-slate-400">{t('m')}</Text>
+        <View style={styles.statCol}>
+          <Text style={[styles.statLabel, { textAlign: 'center' }]}>{t('vertical_drop')}</Text>
+          <Text style={styles.statValue}>
+            {Math.round(session.vertical_drop)} <Text style={styles.statUnit}>{t('m')}</Text>
           </Text>
         </View>
 
-        <View className="w-px h-7 bg-slate-700/80" />
+        <View style={styles.divider} />
 
-        <View className="items-center flex-1">
-          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('max_speed')}</Text>
-          <Text className="text-sm font-extrabold text-white mt-0.5">
-            {msToKmh(session.max_speed)} <Text className="text-[10px] font-normal text-slate-400">{t('km_h')}</Text>
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('max_speed')}</Text>
+          <Text style={styles.statValue}>
+            {msToKmh(session.max_speed)} <Text style={styles.statUnit}>{t('km_h')}</Text>
           </Text>
         </View>
 
-        <View className="w-px h-7 bg-slate-700/80" />
+        <View style={styles.divider} />
 
-        <View className="items-center flex-1">
-          <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('downs')}</Text>
-          <Text className="text-sm font-extrabold text-white mt-0.5">
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('downs')}</Text>
+          <Text style={styles.statValue}>
             {runsCount}
           </Text>
         </View>
       </View>
 
+      {/* PHOTOS THUMBNAILS (UP TO 5) */}
+      {session.photos && session.photos.length > 0 && (
+        <View style={styles.photosRow}>
+          {session.photos.slice(0, 5).map((photo) => (
+            <Image
+              key={photo.id}
+              source={{
+                uri: `${API_BASE_URL}/ski-sessions/photos/${photo.photo_url}`,
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+              }}
+              style={styles.photoThumbnail}
+              resizeMode="cover"
+            />
+          ))}
+          {session.photos.length > 5 && (
+            <View style={styles.morePhotosBadge}>
+              <Text style={styles.morePhotosText}>+{session.photos.length - 5}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
       {/* SESSION RUNS */}
       {runsCount > 0 && (
-        <View className="mt-2 pt-1">
+        <View style={{ marginTop: 8, paddingTop: 4 }}>
           <TouchableOpacity
-            className="flex-row items-center justify-between py-2 px-1 border-t border-slate-700/50"
+            style={styles.runsTrigger}
             onPress={toggleExpand}
             activeOpacity={0.7}
           >
-            <View className="flex-row items-center gap-1.5">
-              <Activity size={12} color="#60a5fa" />
-              <Text className="text-xs font-semibold text-blue-400">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Activity size={12} color={colors.primaryDark} />
+              <Text style={styles.runsTriggerText}>
                 {expanded ? t('hide') : t('view_detailed_runs', { count: runsCount })}
               </Text>
             </View>
             {expanded ? (
-              <ChevronUp size={14} color="#60a5fa" />
+              <ChevronUp size={14} color={colors.primaryDark} />
             ) : (
-              <ChevronDown size={14} color="#60a5fa" />
+              <ChevronDown size={14} color={colors.primaryDark} />
             )}
           </TouchableOpacity>
 
           {expanded && (
-            <View className="mt-2 space-y-2">
+            <View style={styles.runsContainer}>
+              {/* ALL PHOTOS (when expanded) */}
+              {session.photos && session.photos.length > 0 && (
+                <View style={{ marginBottom: 16, paddingTop: 8 }}>
+                  <Text style={styles.runsPhotosHeader}>Fotos de la Sesión</Text>
+                  <View style={styles.runsPhotosList}>
+                    {session.photos.map((photo) => (
+                      <Image
+                        key={photo.id}
+                        source={{
+                          uri: `${API_BASE_URL}/ski-sessions/photos/${photo.photo_url}`,
+                          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                        }}
+                        style={{ width: 72, height: 72, borderRadius: BORDER_RADIUS.sm }}
+                        resizeMode="cover"
+                      />
+                    ))}
+                  </View>
+                </View>
+              )}
               {session.runs?.map((run, index) => {
-                const diffMeta = getDifficultyMeta(run.predominant_diff);
+                const diffMeta = getDifficultyMeta(run.predominant_diff, colors);
                 return (
                   <View
                     key={run.id || index}
-                    className="bg-slate-900/90 border border-slate-700/70 p-3 rounded-lg"
+                    style={styles.runCard}
                   >
-                    <View className="flex-row items-center justify-between mb-2">
-                      <Text className="text-xs font-bold text-slate-200">
+                    <View style={styles.runCardHeader}>
+                      <Text style={styles.runTitle}>
                         {t('down_number', { index: index + 1 })}
                       </Text>
 
-                      <View className={`flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border ${diffMeta.badgeBg} ${diffMeta.borderColor}`}>
-                        <View className={`w-2 h-2 rounded-full ${diffMeta.dotBg}`} />
-                        <Text className={`text-[10px] font-bold ${diffMeta.textColor}`}>
+                      <View style={[styles.diffBadge, { backgroundColor: diffMeta.badgeBgColor, borderColor: diffMeta.borderColor }]}>
+                        <View style={[styles.diffDot, { backgroundColor: diffMeta.dotBgColor }]} />
+                        <Text style={[styles.diffText, { color: diffMeta.textColor }]}>
                           {t(diffMeta.labelKey, { defaultValue: diffMeta.labelKey })}
                         </Text>
                       </View>
                     </View>
 
-                    <View className="flex-row items-center justify-between bg-slate-800/60 p-2 rounded border border-slate-700/40">
-                      <View className="flex-row items-center gap-1">
-                        <Ruler size={11} color="#94a3b8" />
-                        <Text className="text-xs font-semibold text-slate-300">
+                    <View style={styles.runStatsRow}>
+                      <View style={styles.runStatItem}>
+                        <Ruler size={11} color={colors.textSecondary} />
+                        <Text style={styles.runStatText}>
                           {Math.round(run.total_distance)}m
                         </Text>
                       </View>
 
-                      <View className="flex-row items-center gap-1">
-                        <TrendingDown size={11} color="#94a3b8" />
-                        <Text className="text-xs font-semibold text-slate-300">
+                      <View style={styles.runStatItem}>
+                        <TrendingDown size={11} color={colors.textSecondary} />
+                        <Text style={styles.runStatText}>
                           {Math.round(run.vertical_drop)}m
                         </Text>
                       </View>
 
-                      <View className="flex-row items-center gap-1">
-                        <Zap size={11} color="#94a3b8" />
-                        <Text className="text-xs font-semibold text-slate-300">
+                      <View style={styles.runStatItem}>
+                        <Zap size={11} color={colors.textSecondary} />
+                        <Text style={styles.runStatText}>
                           {msToKmh(run.max_speed)} {t('km_h')}
                         </Text>
                       </View>
@@ -334,3 +383,321 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
     </View>
   );
 };
+
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    padding: SPACING.md,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    padding: SPACING.md,
+  },
+  loadingCard: {
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
+    padding: 24,
+    borderRadius: BORDER_RADIUS.xl,
+    alignItems: 'center',
+    maxWidth: 280,
+    width: '100%',
+    ...SHADOWS.md,
+  },
+  noActivityTitle: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+    fontSize: 16,
+    marginTop: SPACING.sm,
+  },
+  noActivitySubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.md,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    lineHeight: 28,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  badge: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: BORDER_RADIUS.round,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  badgeText: {
+    fontSize: 12,
+    color: colors.primaryDark,
+    fontWeight: '700',
+  },
+  card: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.xl,
+    marginBottom: SPACING.md,
+    ...SHADOWS.md,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  avatarContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: BORDER_RADIUS.round,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.primary,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarText: {
+    color: colors.textPrimary,
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  userMeta: {
+    flex: 1,
+  },
+  displayName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    lineHeight: 18,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  dateText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  activityTypeBadge: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BORDER_RADIUS.round,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  activityTypeIcon: {
+    fontSize: 12,
+  },
+  activityTypeText: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  mapButton: {
+    backgroundColor: colors.primary,
+    padding: 8,
+    borderRadius: BORDER_RADIUS.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsGrid: {
+    backgroundColor: colors.surface,
+    padding: 12,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  statCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginTop: 2,
+  },
+  statUnit: {
+    fontSize: 10,
+    fontWeight: '400',
+    color: colors.textSecondary,
+  },
+  divider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.border,
+  },
+  photosRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  photoThumbnail: {
+    width: 44,
+    height: 44,
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  morePhotosBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: BORDER_RADIUS.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  morePhotosText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  runsTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  runsTriggerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primaryDark,
+  },
+  runsContainer: {
+    marginTop: 8,
+    gap: 8,
+  },
+  runsPhotosHeader: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  runsPhotosList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  runCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  runCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  runTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  diffBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: BORDER_RADIUS.round,
+    borderWidth: 1,
+  },
+  diffDot: {
+    width: 8,
+    height: 8,
+    borderRadius: BORDER_RADIUS.round,
+  },
+  diffText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  runStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.card,
+    padding: 8,
+    borderRadius: BORDER_RADIUS.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  runStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  runStatText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+});

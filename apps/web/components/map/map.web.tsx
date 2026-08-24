@@ -3,7 +3,6 @@ import { useLocalSearchParams } from 'expo-router/build/hooks';
 import maplibregl from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
-import { Area, AreaChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CircleQuestionMark } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -11,15 +10,245 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
+import { useThemeColors, COLORS, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 import { MapDetailPanel } from './map-detail-panel';
 import { ResortDetailPanel } from './resort-detail-panel';
-import { AltitudeTooltip } from './altitude-tooltip';
-import { SpeedTooltip } from './speed-tooltip';
 import { LegendDetailPanel } from './legend-detail-panel';
 import api from 'interceptor/api';
+const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((lat1 * Math.PI) / 180) *
+            Math.cos((lat2 * Math.PI) / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
+
+interface GenericChartDatum {
+    distance: number;
+    elevation: number;
+    speed: number;
+    slopePct: number;
+    slopeDeg: number;
+}
+
+const computeChartData = (points: any[]) => {
+    if (!points || points.length === 0) return [];
+    let cumulativeDistance = 0;
+    return points.map((p, idx) => {
+        if (idx > 0) {
+            const prev = points[idx - 1];
+            cumulativeDistance += getDistance(prev.lat, prev.lon, p.lat, p.lon);
+        }
+        const prevPoint = idx > 0 ? points[idx - 1] : p;
+        const elevDiff = p.altitude - prevPoint.altitude;
+        const distDiff = idx > 0 ? getDistance(prevPoint.lat, prevPoint.lon, p.lat, p.lon) * 1000 : 0; // meters
+        const slopePct = distDiff > 0.1 ? Math.round((elevDiff / distDiff) * 100 * 10) / 10 : 0;
+        const slopeDeg = Math.round(Math.atan(Math.abs(slopePct) / 100) * (180 / Math.PI));
+
+        return {
+            distance: cumulativeDistance, // in km
+            elevation: Math.round(p.altitude),
+            speed: p.speed * 3.6, // km/h
+            slopePct,
+            slopeDeg,
+        };
+    });
+};
+
+const getSlopeColor = (slopePct: number) => {
+    const absSlope = Math.abs(slopePct);
+    if (absSlope < 15) return '#00a859';
+    if (absSlope < 25) return '#0072bc';
+    if (absSlope < 40) return '#f0141e';
+    return '#000000';
+};
+
+const WebChart: React.FC<{
+    data: GenericChartDatum[];
+    yKey: 'elevation' | 'speed';
+    height: number;
+    selectedIndex: number | null;
+    onSelectIndex: (index: number) => void;
+    colors: typeof LIGHT_COLORS;
+    strokeColor?: string;
+}> = ({ data, yKey, height, selectedIndex, onSelectIndex, colors, strokeColor }) => {
+    const [containerWidth, setContainerWidth] = useState<number>(0);
+
+    if (!data || data.length === 0) return null;
+
+    const minVal = Math.min(...data.map(d => d[yKey]));
+    const maxVal = Math.max(...data.map(d => d[yKey]));
+    const maxDist = Math.max(...data.map(d => d.distance)) || 1;
+    const valRange = maxVal - minVal || 1;
+
+    const padding = { top: 10, bottom: 25, left: 40, right: 15 };
+    const svgWidth = containerWidth > 0 ? containerWidth : 500;
+    const svgHeight = height;
+
+    const chartW = svgWidth - padding.left - padding.right;
+    const chartH = svgHeight - padding.top - padding.bottom;
+    const bottomY = padding.top + chartH;
+
+    const points = data.map((d) => {
+        const x = padding.left + (d.distance / maxDist) * chartW;
+        const y = padding.top + chartH - ((d[yKey] - minVal) / valRange) * chartH;
+        return { x, y, ...d };
+    });
+
+    return (
+        <div 
+            style={{ height, width: '100%' }} 
+            ref={(el) => {
+                if (el) {
+                    const w = el.getBoundingClientRect().width;
+                    if (w > 0 && Math.abs(w - containerWidth) > 1) {
+                        setContainerWidth(w);
+                    }
+                }
+            }}
+        >
+            {containerWidth > 0 && (
+                <svg 
+                    width="100%" 
+                    height="100%" 
+                    viewBox={`0 0 ${svgWidth} ${svgHeight}`} 
+                    style={{ overflow: 'visible' }}
+                >
+                    {[0, 0.5, 1].map((ratio, i) => {
+                        const y = padding.top + chartH * ratio;
+                        const val = Math.round(maxVal - ratio * valRange);
+                        const unit = yKey === 'elevation' ? 'm' : ' km/h';
+                        return (
+                            <g key={i}>
+                                <line x1={padding.left} y1={y} x2={svgWidth - padding.right} y2={y} stroke={colors.border} strokeDasharray="3,3" strokeWidth="1" />
+                                <text x={padding.left - 5} y={y + 3} fill={colors.textSecondary} fontSize="10" textAnchor="end">{val}{unit}</text>
+                            </g>
+                        );
+                    })}
+
+                    {points.map((p, idx) => {
+                        if (idx === points.length - 1) return null;
+                        const nextP = points[idx + 1];
+                        const color = strokeColor || getSlopeColor(nextP.slopePct);
+                        const segmentD = `M ${p.x} ${p.y} L ${nextP.x} ${nextP.y} L ${nextP.x} ${bottomY} L ${p.x} ${bottomY} Z`;
+
+                        return (
+                            <g key={`segment-${idx}`}>
+                                <path
+                                    d={segmentD}
+                                    fill={color}
+                                    fillOpacity={yKey === 'elevation' ? "0.25" : "0.15"}
+                                />
+                                <line
+                                    x1={p.x}
+                                    y1={p.y}
+                                    x2={nextP.x}
+                                    y2={nextP.y}
+                                    stroke={color}
+                                    strokeWidth="2.5"
+                                />
+                            </g>
+                        );
+                    })}
+
+                    {points.map((p, idx) => (
+                        <circle
+                            key={idx}
+                            cx={p.x}
+                            cy={p.y}
+                            r={selectedIndex === idx ? 6 : 4}
+                            fill="#ffffff"
+                            stroke={strokeColor || getSlopeColor(p.slopePct)}
+                            strokeWidth="2"
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => onSelectIndex(idx)}
+                            onMouseEnter={() => onSelectIndex(idx)}
+                        />
+                    ))}
+
+                    {selectedIndex !== null && points[selectedIndex] && (
+                        <line
+                            x1={points[selectedIndex].x}
+                            y1={padding.top}
+                            x2={points[selectedIndex].x}
+                            y2={bottomY}
+                            stroke="#f59e0b"
+                            strokeDasharray="2,2"
+                            strokeWidth="1.5"
+                        />
+                    )}
+                </svg>
+            )}
+        </div>
+    );
+};
+
+const AnalyserChart: React.FC<{
+    data: GenericChartDatum[];
+    yKey: 'elevation' | 'speed';
+    height?: number;
+    strokeColor?: string;
+}> = ({ data, yKey, height = 130, strokeColor }) => {
+    const { t } = useTranslation();
+    const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
+
+    useEffect(() => {
+        if (!data || data.length === 0) {
+            setSelectedIndex(null);
+            return;
+        }
+        setSelectedIndex(prev => (prev === null || prev >= data.length ? Math.floor(data.length / 2) : prev));
+    }, [data]);
+
+    if (!data || data.length === 0) return null;
+
+    const selectedDatum = selectedIndex !== null ? data[selectedIndex] : null;
+
+    return (
+        <div style={styles.chartWrapper}>
+            {selectedDatum && (
+                <div style={styles.tooltipContainer}>
+                    <span style={styles.tooltipTextPrimary}>
+                        {yKey === 'elevation' 
+                            ? t('alt', { elevation: selectedDatum.elevation }) 
+                            : `${selectedDatum.speed.toFixed(1)} km/h`}
+                    </span>
+                    <span style={styles.tooltipTextSecondary}>
+                        {t('dist', { distance: selectedDatum.distance.toFixed(2) })}
+                    </span>
+                    {yKey === 'elevation' && (
+                        <span style={styles.tooltipTextTertiary}>
+                            {t('slope', { slopeDeg: selectedDatum.slopeDeg, slopePct: selectedDatum.slopePct })}
+                        </span>
+                    )}
+                </div>
+            )}
+
+            <WebChart
+                data={data}
+                yKey={yKey}
+                height={height}
+                selectedIndex={selectedIndex}
+                onSelectIndex={setSelectedIndex}
+                colors={colors}
+                strokeColor={strokeColor}
+            />
+        </div>
+    );
+};
 
 export default function InteractiveSkiMap() {
     const { t } = useTranslation();
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const searchParams = useLocalSearchParams();
     const mapRef = useRef<MapRef>(null);
     const isInternalMoveRef = useRef(false);
@@ -98,9 +327,8 @@ export default function InteractiveSkiMap() {
     const { token } = useAuth();
 
     useEffect(() => {
-        // Si el cambio de URL fue provocado por el propio mapa, lo ignoramos para evitar el bucle/tirón
         if (isInternalMoveRef.current) {
-            isInternalMoveRef.current = false; // Reseteamos la bandera
+            isInternalMoveRef.current = false;
             return;
         }
 
@@ -124,7 +352,7 @@ export default function InteractiveSkiMap() {
                 try {
                     const res = await api.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`);
                     if (res.status === 200 && res.data) {
-                        const session = res.data.data || res.data; // Handle either wrap or raw
+                        const session = res.data.data || res.data;
                         setSessionDetails(session);
                         if (session.points && Array.isArray(session.points) && session.points.length > 0) {
                             const parsedPoints = session.points.map((p: any) => {
@@ -139,7 +367,6 @@ export default function InteractiveSkiMap() {
                             });
                             setTrackPoints(parsedPoints);
 
-                            // Center map on first track point
                             if (parsedPoints.length > 0) {
                                 setViewState(prev => ({
                                     ...prev,
@@ -233,13 +460,12 @@ export default function InteractiveSkiMap() {
                 ['literal', [2, 2]],
                 ['literal', [1, 0]]
             ],
-            // if selected or hovered, increase width
             'line-width': [
                 'case',
                 ['==', ['get', 'id'], selectedFeature?.ID || ''], 9,
                 ['==', ['get', 'id'], hoveredFeatureId || ''], 8,
                 ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
-                ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7, // thicker for matched pistes
+                ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7,
                 5
             ]
         }
@@ -250,7 +476,7 @@ export default function InteractiveSkiMap() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#8e44ad', // purple
+            'line-color': '#8e44ad',
             'line-width': 4,
             'line-opacity': (hoveredRun || selectedRun) ? 0.35 : 0.9
         }
@@ -271,7 +497,7 @@ export default function InteractiveSkiMap() {
             'text-ignore-placement': true
         },
         paint: {
-            'text-color': '#8e44ad', // purple
+            'text-color': '#8e44ad',
             'text-halo-color': '#ffffff',
             'text-halo-width': 1.5,
             'text-opacity': (hoveredRun || selectedRun) ? 0.35 : 0.9
@@ -283,7 +509,7 @@ export default function InteractiveSkiMap() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#1a052e', // darker purple/black outline
+            'line-color': '#1a052e',
             'line-width': 10,
             'line-opacity': 0.8
         }
@@ -294,7 +520,7 @@ export default function InteractiveSkiMap() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#e67e22', // orange highlight
+            'line-color': '#e67e22',
             'line-width': 5,
             'line-opacity': 1.0
         }
@@ -419,7 +645,7 @@ export default function InteractiveSkiMap() {
                     type: 'Feature' as const,
                     properties: {
                         id: l.ID,
-                        type: l.LiftType, // Ej: chairlift, gondola, ski_lift, etc.
+                        type: l.LiftType,
                         name: l.Name || `Lift #${l.ID.slice(0, 4)}`,
                         resortName: r.Name,
                         resortId: r.ID
@@ -556,7 +782,6 @@ export default function InteractiveSkiMap() {
         }
     };
 
-    // --- Handler when the user finishes moving/zooming the map ---
     const handleMouseMove = (event: any) => {
         const map = event.target;
 
@@ -585,7 +810,6 @@ export default function InteractiveSkiMap() {
         setHoveredFeatureId(null);
     };
 
-    // --- Handler for clicks on map lines ---
     const handleMapClick = (event: any) => {
         const map = event.target;
         if (!map.isStyleLoaded() || viewState.zoom < 10) return;
@@ -611,14 +835,14 @@ export default function InteractiveSkiMap() {
                     const foundLift = resort.lifts.find(l => l.ID === featureId);
                     if (foundLift) {
                         setSelectedFeature(foundLift);
-                        setSelectedResort(null); // Clear resort selection when selecting specific feature
+                        setSelectedResort(null);
                         return;
                     }
                 } else if (!isLift && resort.pistes) {
                     const foundPiste = resort.pistes.find(p => p.ID === featureId);
                     if (foundPiste) {
                         setSelectedFeature(foundPiste);
-                        setSelectedResort(null); // Clear resort selection when selecting specific feature
+                        setSelectedResort(null);
                         return;
                     }
                 }
@@ -661,19 +885,16 @@ export default function InteractiveSkiMap() {
     }, []);
 
     return (
-        <div className="flex-1 w-full h-full relative">
-            {/* Legend panel */}
+        <div style={styles.container}>
             {selectedLegend && (
                 <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
             )}
-            {/* Pistes and lifts details panel */}
             {selectedFeature && (
                 <MapDetailPanel
                     data={selectedFeature}
                     onClose={() => setSelectedFeature(null)}
                 />
             )}
-            {/* Resort details panel */}
             {selectedResort && (
                 <ResortDetailPanel
                     resort={selectedResort}
@@ -696,19 +917,18 @@ export default function InteractiveSkiMap() {
                 maplibreLogo={false}
                 attributionControl={false}
             >
-                <div className="absolute bottom-2 right-2 z-10 flex flex-col gap-1.5">
-                        <NavigationControl showCompass={true} showZoom={true} />
+                <div style={styles.controlsContainer}>
+                    <NavigationControl showCompass={true} showZoom={true} />
 
-                        <button
-                            onClick={() => {
-                                setSelectedLegend(true);
-                            }}
-                            className="flex items-center justify-center p-1.5 size-8 rounded-md cursor-pointer bg-base-100 hover:bg-base-200 border-2 border-gray-400/60 font-semibold"
-                        >
-                            <CircleQuestionMark className="size-4" />
-                        </button>
+                    <button
+                        onClick={() => {
+                            setSelectedLegend(true);
+                        }}
+                        style={styles.helpButton}
+                    >
+                        <CircleQuestionMark style={{ width: '16px', height: '16px' }} />
+                    </button>
                 </div>
-                {/* Resort markers */}
                 {resorts?.map(resort => (
                     <Marker
                         key={resort.ID}
@@ -723,7 +943,6 @@ export default function InteractiveSkiMap() {
                         }}
                     >
                         <div
-                            className="resort-marker-container"
                             style={{ cursor: 'pointer', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
                             onMouseEnter={() => setHoveredResortId(resort.ID)}
                             onMouseLeave={() => setHoveredResortId(null)}
@@ -733,7 +952,7 @@ export default function InteractiveSkiMap() {
                                     backgroundColor: 'transparent',
                                     fontSize: '11px',
                                     fontWeight: 'bold',
-                                    color: selectedResort?.ID === resort.ID ? '#3b82f6' : '#2c3e50',
+                                    color: selectedResort?.ID === resort.ID ? colors.primary : colors.textPrimary,
                                     textShadow: '0 0 3px #ffffff, 0 0 3px #ffffff, 0 0 3px #ffffff',
                                     whiteSpace: 'nowrap',
                                     marginBottom: '2px',
@@ -744,11 +963,13 @@ export default function InteractiveSkiMap() {
                                     {resort.Name}
                                 </div>
                             )}
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center border shadow transition-all duration-200 ${selectedResort?.ID === resort.ID
-                                ? 'bg-primary border-primary text-white scale-110'
-                                : 'bg-white border-primary/30 text-primary hover:scale-105'
-                                }`}>
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                            <div style={{
+                                ...styles.markerPin,
+                                backgroundColor: selectedResort?.ID === resort.ID ? colors.primary : colors.card,
+                                color: selectedResort?.ID === resort.ID ? colors.textOnPrimary : colors.primary,
+                                transform: selectedResort?.ID === resort.ID ? 'scale(1.1)' : 'scale(1)',
+                            }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style={{ width: '14px', height: '14px' }}>
                                     <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.157-1.127C18.061 17.7 22 13.666 22 9.5 22 4.253 17.523 0 12 0S2 4.253 2 9.5c0 4.166 3.939 8.2 8.18 11.724a16.977 16.977 0 001.36 1.127zm-1.54-12.85a2 2 0 114 0 2 2 0 01-4 0z" clipRule="evenodd" />
                                 </svg>
                             </div>
@@ -756,7 +977,6 @@ export default function InteractiveSkiMap() {
                     </Marker>
                 ))}
 
-                {/* 2. Zoom >= 10: Render pistes in detail and also the central or resort marker */}
                 {viewState.zoom >= 10 && (
                     <>
                         <Source id="pistes-source" type="geojson" data={pistesGeoJSON}>
@@ -789,17 +1009,17 @@ export default function InteractiveSkiMap() {
             </Map>
 
             {searchParams.sessionId && trackPoints.length > 0 && (
-                <div className="absolute top-16 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 text-white md:w-80 max-h-[75vh] shadow-2xl space-y-3">
-                    <div className="flex flex-row justify-between items-center pb-2 border-b border-slate-800 w-full">
+                <div style={styles.analyserPanel}>
+                    <div style={styles.analyserHeader}>
                         <div>
-                            <h3 className="font-bold text-sm">{t('session_analyser')}</h3>
-                            <p className="text-[10px] opacity-70">
+                            <h3 style={styles.analyserTitle}>{t('session_analyser')}</h3>
+                            <p style={styles.analyserSubtitle}>
                                 {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
                             </p>
                         </div>
                         <button
                             type="button"
-                            className="btn btn-xs btn-circle btn-ghost font-bold text-white"
+                            style={styles.closeButton}
                             onClick={() => {
                                 setTrackPoints([]);
                                 setMatchedPisteIds([]);
@@ -813,68 +1033,59 @@ export default function InteractiveSkiMap() {
                     </div>
 
                     {selectedRun ? (
-                        <div className="space-y-3">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.sm}px` }}>
                             <button
                                 type="button"
-                                className="bg-blue-600 p-2 rounded-md flex-row items-center justify-center shadow-md cursor-pointer text-sm"
+                                style={styles.backButton}
                                 onClick={() => setSelectedRun(null)}
                             >
                                 {t('back_to_runs')}
                             </button>
-                            <div className="p-2 bg-slate-700/60 rounded-md">
-                                <h4 className="font-bold text-xs">{t('run_details', { index: selectedRun.index })}</h4>
-                                <div className="grid grid-cols-2 gap-2 mt-1 text-[11px] opacity-80">
+                            <div style={styles.runDetailsCard}>
+                                <h4 style={styles.runDetailsTitle}>{t('run_details', { index: selectedRun.index })}</h4>
+                                <div style={styles.runDetailsGrid}>
                                     <div>{t('drop')}: {selectedRun.verticalDrop.toFixed(1)} m</div>
                                     <div>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <div className="text-[11px] font-semibold opacity-70 uppercase">{t('elevation_profile')}</div>
-                                <div className="h-32 bg-slate-700/60 rounded-md p-1">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, alt: p.altitude }))}>
-                                            <XAxis dataKey="name" hide />
-                                            <YAxis domain={['dataMin - 10', 'dataMax + 10']} hide />
-                                            <Tooltip content={<AltitudeTooltip />} />
-                                            <Area type="monotone" dataKey="alt" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
-                                </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.xs}px` }}>
+                                <div style={styles.profileLabel}>{t('elevation_profile')}</div>
+                                <AnalyserChart data={computeChartData(selectedRun.points)} yKey="elevation" />
 
-                                <div className="text-[11px] font-semibold opacity-70 uppercase">{t('speed_profile')}</div>
-                                <div className="h-32 bg-slate-700/60 rounded-md p-1">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={selectedRun.points.map((p: any, idx: number) => ({ name: idx, speed: p.speed * 3.6 }))}>
-                                            <XAxis dataKey="name" hide />
-                                            <YAxis hide />
-                                            <Tooltip content={<SpeedTooltip />} />
-                                            <Line type="monotone" dataKey="speed" stroke="#ef4444" strokeWidth={2} dot={false} />
-                                        </LineChart>
-                                    </ResponsiveContainer>
-                                </div>
+                                <div style={styles.profileLabel}>{t('speed_profile')}</div>
+                                <AnalyserChart data={computeChartData(selectedRun.points)} yKey="speed" strokeColor={colors.danger} />
                             </div>
                         </div>
                     ) : (
-                        <div className="space-y-3">
-                            <div className="tabs tabs-boxed tabs-sm w-full grid grid-cols-3">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.sm}px` }}>
+                            <div style={styles.tabsContainer}>
                                 <button
                                     type="button"
-                                    className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
+                                    style={{
+                                        ...styles.tabButton,
+                                        ...(activeTab === 'runs' ? styles.tabButtonActive : {})
+                                    }}
                                     onClick={() => setActiveTab('runs')}
                                 >
                                     {t('runs')}
                                 </button>
                                 <button
                                     type="button"
-                                    className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
+                                    style={{
+                                        ...styles.tabButton,
+                                        ...(activeTab === 'elevation' ? styles.tabButtonActive : {})
+                                    }}
                                     onClick={() => setActiveTab('elevation')}
                                 >
                                     {t('elevation')}
                                 </button>
                                 <button
                                     type="button"
-                                    className={`px-3 py-1.5 rounded-md cursor-pointer ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
+                                    style={{
+                                        ...styles.tabButton,
+                                        ...(activeTab === 'speed' ? styles.tabButtonActive : {})
+                                    }}
                                     onClick={() => setActiveTab('speed')}
                                 >
                                     {t('speed')}
@@ -882,19 +1093,18 @@ export default function InteractiveSkiMap() {
                             </div>
 
                             {activeTab === 'runs' && (
-                                <div className="space-y-2">
-                                    <div className="text-xs font-semibold opacity-75">{t('descent_runs')} ({detectedRuns.length})</div>
-                                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.xs}px` }}>
+                                    <div style={styles.profileLabel}>{t('descent_runs')} ({detectedRuns.length})</div>
+                                    <div style={styles.runsList}>
                                         {detectedRuns.map((run) => (
                                             <button
                                                 key={run.id}
                                                 type="button"
-                                                className="flex items-center justify-between bg-slate-800 border border-slate-700 p-4 rounded-md space-y-4 w-full"
+                                                style={styles.runItem}
                                                 onMouseEnter={() => setHoveredRun(run)}
                                                 onMouseLeave={() => setHoveredRun(null)}
                                                 onClick={() => {
                                                     setSelectedRun(run);
-                                                    // Fly/Center map on this run's starting point
                                                     if (run.points.length > 0 && mapRef.current) {
                                                         mapRef.current.getMap().flyTo({
                                                             center: [run.points[0].lon, run.points[0].lat],
@@ -905,12 +1115,12 @@ export default function InteractiveSkiMap() {
                                                 }}
                                             >
                                                 <div>
-                                                    <div className="font-bold text-xs">{t('run_title', { index: run.index })}</div>
-                                                    <div className="text-[10px] opacity-70 mt-0.5">
+                                                    <div style={styles.runItemTitle}>{t('run_title', { index: run.index })}</div>
+                                                    <div style={styles.runItemSubtitle}>
                                                         {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
                                                     </div>
                                                 </div>
-                                                <span className="text-[11px] text-white font-medium">{t('charts')} →</span>
+                                                <span style={styles.chartArrowText}>{t('charts')} →</span>
                                             </button>
                                         ))}
                                     </div>
@@ -918,34 +1128,16 @@ export default function InteractiveSkiMap() {
                             )}
 
                             {activeTab === 'elevation' && (
-                                <div className="space-y-2">
-                                    <div className="text-xs font-semibold opacity-75">{t('elevation_profile')}</div>
-                                    <div className="h-44 bg-slate-700/60 rounded-md p-1">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={trackPoints.map((p, idx) => ({ name: idx, alt: p.altitude }))}>
-                                                <XAxis dataKey="name" hide />
-                                                <YAxis domain={['dataMin - 20', 'dataMax + 20']} hide />
-                                                <Tooltip content={<AltitudeTooltip />} />
-                                                <Area type="monotone" dataKey="alt" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} />
-                                            </AreaChart>
-                                        </ResponsiveContainer>
-                                    </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.xs}px` }}>
+                                    <div style={styles.profileLabel}>{t('elevation_profile')}</div>
+                                    <AnalyserChart data={computeChartData(trackPoints)} yKey="elevation" />
                                 </div>
                             )}
 
                             {activeTab === 'speed' && (
-                                <div className="space-y-2">
-                                    <div className="text-xs font-semibold opacity-75">{t('speed_profile')}</div>
-                                    <div className="h-44 bg-slate-700/60 rounded-md p-1">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <LineChart data={trackPoints.map((p, idx) => ({ name: idx, speed: p.speed * 3.6 }))}>
-                                                <XAxis dataKey="name" hide />
-                                                <YAxis hide />
-                                                <Tooltip content={<SpeedTooltip />} />
-                                                <Line type="monotone" dataKey="speed" stroke="#ef4444" strokeWidth={2} dot={false} />
-                                            </LineChart>
-                                        </ResponsiveContainer>
-                                    </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.xs}px` }}>
+                                    <div style={styles.profileLabel}>{t('speed_profile')}</div>
+                                    <AnalyserChart data={computeChartData(trackPoints)} yKey="speed" strokeColor={colors.danger} />
                                 </div>
                             )}
                         </div>
@@ -955,3 +1147,230 @@ export default function InteractiveSkiMap() {
         </div>
     );
 }
+
+const getStyles = (colors: typeof LIGHT_COLORS) => ({
+    container: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+        position: 'relative' as const,
+        backgroundColor: colors.background,
+    },
+    controlsContainer: {
+        position: 'absolute' as const,
+        bottom: '8px',
+        right: '8px',
+        zIndex: 10,
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: '6px',
+    },
+    helpButton: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '6px',
+        width: '32px',
+        height: '32px',
+        borderRadius: `${BORDER_RADIUS.md}px`,
+        cursor: 'pointer',
+        backgroundColor: colors.card,
+        border: `2px solid ${colors.border}`,
+        fontWeight: '600' as const,
+        boxShadow: '0 2px 4px rgba(0,0,0,0.07)',
+    },
+    markerPin: {
+        width: '24px',
+        height: '24px',
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        border: '2px solid white',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        transition: 'all 0.2s',
+    },
+    analyserPanel: {
+        position: 'absolute' as const,
+        left: '20px',
+        top: '20px',
+        bottom: '20px',
+        width: '380px',
+        height: 'auto',
+        right: 'auto',
+        zIndex: 40,
+        backgroundColor: colors.card,
+        border: `1px solid ${colors.border}`,
+        borderRadius: `${BORDER_RADIUS.xl}px`,
+        padding: `${SPACING.md}px`,
+        color: colors.textPrimary,
+        maxHeight: 'calc(100% - 40px)',
+        overflowY: 'auto' as const,
+        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: `${SPACING.sm}px`,
+    },
+    analyserHeader: {
+        display: 'flex',
+        flexDirection: 'row' as const,
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingBottom: `${SPACING.sm}px`,
+        borderBottom: `1px solid ${colors.border}`,
+        width: '100%',
+    },
+    analyserTitle: {
+        fontWeight: 'bold',
+        fontSize: '14px',
+        margin: 0,
+        color: colors.textPrimary,
+    },
+    analyserSubtitle: {
+        fontSize: '10px',
+        color: colors.textSecondary,
+        margin: 0,
+    },
+    closeButton: {
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        fontWeight: 'bold',
+        color: colors.textSecondary,
+        fontSize: '14px',
+    },
+    backButton: {
+        backgroundColor: colors.primary,
+        padding: '8px 12px',
+        border: 'none',
+        borderRadius: `${BORDER_RADIUS.md}px`,
+        cursor: 'pointer',
+        color: colors.textOnPrimary,
+        fontSize: '14px',
+        alignSelf: 'flex-start',
+    },
+    runDetailsCard: {
+        padding: `${SPACING.sm}px`,
+        backgroundColor: colors.surface,
+        borderRadius: `${BORDER_RADIUS.md}px`,
+        border: `1px solid ${colors.border}`,
+    },
+    runDetailsTitle: {
+        fontWeight: 'bold',
+        fontSize: '12px',
+        margin: 0,
+        color: colors.textPrimary,
+    },
+    runDetailsGrid: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '8px',
+        marginTop: '4px',
+        fontSize: '11px',
+        color: colors.textSecondary,
+    },
+    profileLabel: {
+        fontSize: '11px',
+        fontWeight: '600' as const,
+        color: colors.textSecondary,
+        textTransform: 'uppercase' as const,
+        marginTop: `${SPACING.sm}px`,
+    },
+    chartContainer: {
+        height: '128px',
+        backgroundColor: colors.surface,
+        borderRadius: `${BORDER_RADIUS.md}px`,
+        padding: '4px',
+        border: `1px solid ${colors.border}`,
+    },
+    tabsContainer: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr 1fr',
+        backgroundColor: colors.surface,
+        padding: '4px',
+        borderRadius: `${BORDER_RADIUS.md}px`,
+    },
+    tabButton: {
+        padding: '6px 12px',
+        borderRadius: `${BORDER_RADIUS.sm}px`,
+        cursor: 'pointer',
+        border: 'none',
+        fontSize: '12px',
+        fontWeight: 'bold',
+        backgroundColor: 'transparent',
+        color: colors.textSecondary,
+    },
+    tabButtonActive: {
+        backgroundColor: colors.primary,
+        color: colors.textOnPrimary,
+    },
+    runsList: {
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: '8px',
+        maxHeight: '288px',
+        overflowY: 'auto' as const,
+        paddingRight: '4px',
+    },
+    runItem: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: colors.card,
+        border: `1px solid ${colors.border}`,
+        padding: `${SPACING.sm}px`,
+        borderRadius: `${BORDER_RADIUS.md}px`,
+        width: '100%',
+        cursor: 'pointer',
+        textAlign: 'left' as const,
+    },
+    runItemTitle: {
+        fontWeight: 'bold',
+        fontSize: '12px',
+        color: colors.textPrimary,
+    },
+    runItemSubtitle: {
+        fontSize: '10px',
+        color: colors.textSecondary,
+        marginTop: '2px',
+    },
+    chartArrowText: {
+        fontSize: '11px',
+        color: colors.primary,
+        fontWeight: '500',
+    },
+    chartWrapper: {
+        backgroundColor: colors.surface,
+        padding: `${SPACING.sm}px`,
+        borderRadius: `${BORDER_RADIUS.md}px`,
+        border: `1px solid ${colors.border}`,
+    },
+    tooltipContainer: {
+        display: 'flex',
+        flexDirection: 'row' as const,
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingLeft: `${SPACING.sm}px`,
+        paddingRight: `${SPACING.sm}px`,
+        paddingTop: '6px',
+        paddingBottom: '6px',
+        marginBottom: `${SPACING.sm}px`,
+        borderRadius: `${BORDER_RADIUS.sm}px`,
+        backgroundColor: colors.card,
+        border: `1px solid ${colors.border}`,
+        boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+    },
+    tooltipTextPrimary: {
+        fontSize: '10px',
+        fontWeight: '600' as const,
+        color: colors.textPrimary,
+    },
+    tooltipTextSecondary: {
+        fontSize: '10px',
+        color: colors.textSecondary,
+    },
+    tooltipTextTertiary: {
+        fontSize: '10px',
+        color: colors.textLight,
+    },
+});

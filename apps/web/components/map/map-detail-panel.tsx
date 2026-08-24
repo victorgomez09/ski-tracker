@@ -1,8 +1,9 @@
 import { Lift, Piste } from 'models/ski-resort.model';
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Platform, processColor } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Platform, processColor, StyleSheet } from 'react-native';
 import { X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
+import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 
 let LineChart: any = null;
 if (Platform.OS !== 'web') {
@@ -29,16 +30,17 @@ const getDifficultyMeta = (difficulty: string) => {
     const diff = difficulty?.toLowerCase() || '';
     switch (diff) {
         case 'novice':
-            return { labelKey: 'novice', bg: 'bg-[#00a859]', hex: '#00a859' };
+            return { labelKey: 'novice', hex: '#00a859' };
         case 'easy':
-            return { labelKey: 'easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
+            return { labelKey: 'easy', hex: '#0072bc' };
         case 'intermediate':
-            return { labelKey: 'intermediate', bg: 'bg-[#f0141e]', hex: '#f0141e' };
+            return { labelKey: 'intermediate', hex: '#f0141e' };
         case 'advanced':
+            return { labelKey: 'expert', hex: '#000000' };
         case 'expert':
-            return { labelKey: 'expert', bg: 'bg-black', hex: '#000000' };
+            return { labelKey: 'expert', hex: '#000000' };
         default:
-            return { labelKey: 'easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
+            return { labelKey: 'easy', hex: '#0072bc' };
     }
 };
 
@@ -56,7 +58,9 @@ const WebChart: React.FC<{
     height: number;
     selectedIndex: number | null;
     onSelectIndex: (index: number) => void;
-}> = ({ data, height, selectedIndex, onSelectIndex }) => {
+    colors: typeof LIGHT_COLORS;
+    styles: any;
+}> = ({ data, height, selectedIndex, onSelectIndex, colors, styles }) => {
     const [containerWidth, setContainerWidth] = useState<number>(0);
 
     if (!data || data.length === 0) return null;
@@ -82,8 +86,7 @@ const WebChart: React.FC<{
 
     return (
         <View 
-            style={{ height }} 
-            className="w-full"
+            style={[{ height }, styles.wFull]} 
             onLayout={(e) => {
                 const w = e.nativeEvent.layout.width;
                 if (w > 0 && Math.abs(w - containerWidth) > 1) {
@@ -103,8 +106,8 @@ const WebChart: React.FC<{
                         const val = Math.round(maxElev - ratio * elevRange);
                         return (
                             <g key={i}>
-                                <line x1={padding.left} y1={y} x2={svgWidth - padding.right} y2={y} stroke="#334155" strokeDasharray="3,3" strokeWidth="1" />
-                                <text x={padding.left - 5} y={y + 3} fill="#94a3b8" fontSize="10" textAnchor="end">{val}m</text>
+                                <line x1={padding.left} y1={y} x2={svgWidth - padding.right} y2={y} stroke={colors.border} strokeDasharray="3,3" strokeWidth="1" />
+                                <text x={padding.left - 5} y={y + 3} fill={colors.textSecondary} fontSize="10" textAnchor="end">{val}m</text>
                             </g>
                         );
                     })}
@@ -171,7 +174,9 @@ const NativeChart: React.FC<{
     data: ChartDatum[];
     height: number;
     onSelectIndex: (index: number) => void;
-}> = ({ data, height, onSelectIndex }) => {
+    colors: typeof LIGHT_COLORS;
+    styles: any;
+}> = ({ data, height, onSelectIndex, colors, styles }) => {
     if (!LineChart || !data || data.length === 0) return null;
 
     const chartValues = data.map(d => ({ x: d.distance, y: d.elevation }));
@@ -221,15 +226,15 @@ const NativeChart: React.FC<{
     return (
         <View style={{ height }}>
             <LineChart
-                style={{ flex: 1 }}
+                style={styles.flex1}
                 data={{
                     dataSets: segmentDataSets,
                 }}
                 xAxis={{
                     position: 'BOTTOM',
-                    textColor: processColor('#94a3b8'),
+                    textColor: processColor(colors.textSecondary),
                     textSize: 9,
-                    gridColor: processColor('#334155'),
+                    gridColor: processColor(colors.border),
                     gridDashedLine: { lineLength: 3, spaceLength: 3 },
                     valueFormatter: "###0.0'km'",
                     granularityEnabled: true,
@@ -237,9 +242,9 @@ const NativeChart: React.FC<{
                 }}
                 yAxis={{
                     left: {
-                        textColor: processColor('#94a3b8'),
+                        textColor: processColor(colors.textSecondary),
                         textSize: 9,
-                        gridColor: processColor('#334155'),
+                        gridColor: processColor(colors.border),
                         gridDashedLine: { lineLength: 3, spaceLength: 3 },
                         valueFormatter: "###0'm'",
                         spaceBottom: 15,
@@ -275,6 +280,8 @@ export const ElevationChart: React.FC<{
 }> = ({ data, height = 160 }) => {
     const { t } = useTranslation();
     const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
 
     useEffect(() => {
         if (!data || data.length === 0) {
@@ -291,16 +298,16 @@ export const ElevationChart: React.FC<{
     const selectedDatum = selectedIndex !== null ? data[selectedIndex] : null;
 
     return (
-        <View className="bg-slate-800 p-2 rounded-md border border-slate-700">
+        <View style={styles.chartWrapper}>
             {selectedDatum && (
-                <View className="flex-row justify-between items-center px-2 py-1.5 mb-2 rounded bg-slate-900/90 border border-slate-700">
-                    <Text className="text-[10px] font-semibold text-slate-100">
+                <View style={styles.tooltipContainer}>
+                    <Text style={styles.tooltipTextPrimary}>
                         {t('alt', { elevation: selectedDatum.elevation })}
                     </Text>
-                    <Text className="text-[10px] text-slate-300">
+                    <Text style={styles.tooltipTextSecondary}>
                         {t('dist', { distance: selectedDatum.distance.toFixed(1) })}
                     </Text>
-                    <Text className="text-[10px] text-slate-400">
+                    <Text style={styles.tooltipTextTertiary}>
                         {t('slope', { slopeDeg: selectedDatum.slopeDeg, slopePct: selectedDatum.slopePct })}
                     </Text>
                 </View>
@@ -312,36 +319,40 @@ export const ElevationChart: React.FC<{
                     height={height}
                     selectedIndex={selectedIndex}
                     onSelectIndex={setSelectedIndex}
+                    colors={colors}
+                    styles={styles}
                 />
             ) : (
                 <NativeChart
                     data={data}
                     height={height}
                     onSelectIndex={setSelectedIndex}
+                    colors={colors}
+                    styles={styles}
                 />
             )}
 
-            <View className="flex-row justify-between mt-2 px-1">
-                <Text className="text-[10px] text-slate-400">{t('min_label', { minElev })}</Text>
-                <Text className="text-[10px] text-slate-400">{t('max_label', { maxElev })}</Text>
+            <View style={styles.minMaxContainer}>
+                <Text style={styles.minMaxText}>{t('min_label', { minElev })}</Text>
+                <Text style={styles.minMaxText}>{t('max_label', { maxElev })}</Text>
             </View>
 
-            <View className="flex-row justify-around items-center mt-3 pt-2 border-t border-slate-700/60 flex-wrap gap-1">
-                <View className="flex-row items-center gap-1.5">
-                    <View className="w-3 h-3 rounded bg-[#00a859]/40 border border-[#00a859]" />
-                    <Text className="text-[9px] text-slate-300">{t('novice_slope_desc')}</Text>
+            <View style={styles.legendContainer}>
+                <View style={styles.legendItem}>
+                    <View style={[styles.legendBox, styles.legendNovice]} />
+                    <Text style={styles.legendLabel}>{t('novice_slope_desc')}</Text>
                 </View>
-                <View className="flex-row items-center gap-1.5">
-                    <View className="w-3 h-3 rounded bg-[#0072bc]/40 border border-[#0072bc]" />
-                    <Text className="text-[9px] text-slate-300">{t('easy_slope_desc')}</Text>
+                <View style={styles.legendItem}>
+                    <View style={[styles.legendBox, styles.legendEasy]} />
+                    <Text style={styles.legendLabel}>{t('easy_slope_desc')}</Text>
                 </View>
-                <View className="flex-row items-center gap-1.5">
-                    <View className="w-3 h-3 rounded bg-[#f0141e]/40 border border-[#f0141e]" />
-                    <Text className="text-[9px] text-slate-300">{t('intermediate_slope_desc')}</Text>
+                <View style={styles.legendItem}>
+                    <View style={[styles.legendBox, styles.legendIntermediate]} />
+                    <Text style={styles.legendLabel}>{t('intermediate_slope_desc')}</Text>
                 </View>
-                <View className="flex-row items-center gap-1.5">
-                    <View className="w-3 h-3 rounded bg-black border border-white" />
-                    <Text className="text-[9px] text-slate-300">{t('expert_slope_desc')}</Text>
+                <View style={styles.legendItem}>
+                    <View style={[styles.legendBox, styles.legendExpert]} />
+                    <Text style={styles.legendLabel}>{t('expert_slope_desc')}</Text>
                 </View>
             </View>
         </View>
@@ -351,6 +362,9 @@ export const ElevationChart: React.FC<{
 export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose }) => {
     const isWeb = Platform.OS === 'web';
     const { t } = useTranslation();
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
+
     const tags = data?.Tags || {};
     const elevationProfile = tags.elevationProfile || {};
     const heights = elevationProfile.heights || [];
@@ -430,67 +444,67 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
     if (!data) return null;
 
     return (
-        <View className="absolute inset-0 flex items-center justify-center bg-black/60 z-50 p-3">
-            <View className={`bg-slate-900 border border-slate-700 shadow-md p-4 rounded-xl ${isWeb ? 'w-11/12 h-11/12' : 'w-full h-full'} flex`}>
-                <ScrollView className="space-y-4" showsVerticalScrollIndicator={false}>
-                    <View className="flex-row justify-between items-start">
-                        <Text className="text-xs text-slate-400 font-medium flex-1 pr-2">
+        <View style={styles.overlay} pointerEvents="box-none">
+            <View style={[styles.panel, isWeb ? styles.panelWeb : styles.panelMobile]}>
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                    <View style={styles.breadcrumbHeader}>
+                        <Text style={styles.breadcrumbText}>
                             {country} › {region} › {skiArea}
                         </Text>
-                        <TouchableOpacity onPress={onClose} className="p-1.5 rounded-full bg-slate-800">
-                            <X size={18} color="#94a3b8" />
+                        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                            <X size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
-                    <View className="flex-row items-center gap-3">
+                    <View style={styles.titleContainer}>
                         {!(data as Lift).LiftType ? (
-                            <View className={`w-9 h-9 rounded-full ${diffMeta.bg} items-center justify-center shadow-md`}>
-                                <Text className="text-white font-bold text-sm">{ref}</Text>
+                            <View style={[styles.badgeCircle, { backgroundColor: diffMeta.hex }]}>
+                                <Text style={styles.badgeText}>{ref}</Text>
                             </View>
                         ) : (
-                            <View className="w-9 h-9 rounded-full bg-slate-700 items-center justify-center shadow-md">
-                                <Text className="text-lg">🚠</Text>
+                            <View style={styles.badgeIconCircle}>
+                                <Text style={styles.emojiText}>🚠</Text>
                             </View>
                         )}
-                        <Text className="text-xl font-bold text-white flex-1">{name}</Text>
+                        <Text style={styles.titleText}>{name}</Text>
                     </View>
 
                     {(!(data as Lift).LiftType && type === 'LineString') && (
                         <>
-                            <Text className="text-xs text-slate-400 capitalize font-medium">
+                            <Text style={styles.subtitleText}>
                                 {t('downhill_ski_run', { difficulty: t(diffMeta.labelKey) })}
                             </Text>
 
-                            <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
-                                <View className="items-center">
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('distance')}</Text>
-                                    <Text className="text-sm font-bold text-white mt-0.5">{totalDistance}m</Text>
+                            <View style={styles.statsContainer}>
+                                <View style={styles.statBox}>
+                                    <Text style={styles.statLabel}>{t('distance')}</Text>
+                                    <Text style={styles.statValue}>{totalDistance}m</Text>
                                 </View>
-                                <View className="items-center">
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('ascent')}</Text>
-                                    <Text className="text-sm font-bold text-white mt-0.5">{ascent}m</Text>
+                                <View style={styles.statBox}>
+                                    <Text style={styles.statLabel}>{t('ascent')}</Text>
+                                    <Text style={styles.statValue}>{ascent}m</Text>
                                 </View>
-                                <View className="items-center">
-                                    <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('descent')}</Text>
-                                    <Text className="text-sm font-bold text-white mt-0.5">{descent}m</Text>
+                                <View style={styles.statBox}>
+                                    <Text style={styles.statLabel}>{t('descent')}</Text>
+                                    <Text style={styles.statValue}>{descent}m</Text>
                                 </View>
-                                <View className="items-center">
-                                    <Text className="text-xs text-slate-400">{t('average_slope')}</Text>
-                                    <Text className="text-sm font-bold text-slate-200">{avgSlopeDeg}° ({avgSlopePct}%)</Text>
+                                <View style={styles.statBox}>
+                                    <Text style={styles.statLabel}>{t('average_slope')}</Text>
+                                    <Text style={styles.statValue}>{avgSlopeDeg}° ({avgSlopePct}%)</Text>
                                 </View>
-                                <View className="items-center">
-                                    <Text className="text-xs text-slate-400">{t('max_slope')}</Text>
-                                    <Text className="text-sm font-bold text-slate-200">{maxSlopeDeg}° ({maxSlopePct}%)</Text>
+                                <View style={styles.statBox}>
+                                    <Text style={styles.statLabel}>{t('max_slope')}</Text>
+                                    <Text style={styles.statValue}>{maxSlopeDeg}° ({maxSlopePct}%)</Text>
                                 </View>
                             </View>
 
-                            <View className="mt-2">
-                                <Text className="text-xs font-bold text-slate-400 uppercase mb-2">{t('elevation_profile_title')}</Text>
+                            <View style={styles.elevationSection}>
+                                <Text style={styles.sectionHeader}>{t('elevation_profile_title')}</Text>
                                 {chartData.length > 0 ? (
                                     <ElevationChart data={chartData} />
                                 ) : (
-                                    <View className="p-4 border border-dashed border-slate-700 rounded-md items-center">
-                                        <Text className="text-xs text-slate-500">{t('no_elevation_data')}</Text>
+                                    <View style={styles.noDataContainer}>
+                                        <Text style={styles.noDataText}>{t('no_elevation_data')}</Text>
                                     </View>
                                 )}
                             </View>
@@ -498,18 +512,18 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
                     )}
 
                     {((data as Lift).LiftType && type === 'LineString') && (
-                        <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
-                            <View className="items-center">
-                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('type')}</Text>
-                                <Text className="text-sm font-bold text-white mt-0.5">{parseLiftType((data as Lift).LiftType)}</Text>
+                        <View style={styles.statsContainer}>
+                            <View style={styles.statBox}>
+                                <Text style={styles.statLabel}>{t('type')}</Text>
+                                <Text style={styles.statValue}>{parseLiftType((data as Lift).LiftType)}</Text>
                             </View>
-                            <View className="items-center">
-                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('capacity')}</Text>
-                                <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).Capacity ? t('persons_count', { count: (data as Lift).Capacity }) : '-'}</Text>
+                            <View style={styles.statBox}>
+                                <Text style={styles.statLabel}>{t('capacity')}</Text>
+                                <Text style={styles.statValue}>{(data as Lift).Capacity ? t('persons_count', { count: (data as Lift).Capacity }) : '-'}</Text>
                             </View>
-                            <View className="items-center">
-                                <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('hourly_label')}</Text>
-                                <Text className="text-sm font-bold text-white mt-0.5">{(data as Lift).CapacityHourly ? t('persons_count', { count: (data as Lift).CapacityHourly }) : '-'}</Text>
+                            <View style={styles.statBox}>
+                                <Text style={styles.statLabel}>{t('hourly_label')}</Text>
+                                <Text style={styles.statValue}>{(data as Lift).CapacityHourly ? t('persons_count', { count: (data as Lift).CapacityHourly }) : '-'}</Text>
                             </View>
                         </View>
                     )}
@@ -518,3 +532,244 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
         </View>
     );
 };
+
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+    wFull: {
+        width: '100%',
+    },
+    flex1: {
+        flex: 1,
+    },
+    overlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'transparent',
+        zIndex: 50,
+    },
+    panel: {
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.xl,
+        ...SHADOWS.lg,
+        display: 'flex',
+        position: 'absolute',
+    },
+    panelWeb: {
+        left: 20,
+        top: 16,
+        bottom: 16,
+        width: 380,
+        height: 'auto',
+    },
+    panelMobile: {
+        bottom: 16,
+        left: 16,
+        right: 16,
+        maxHeight: '45%',
+    },
+    scrollContent: {
+        flexDirection: 'column',
+        gap: SPACING.md,
+    },
+    breadcrumbHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    },
+    breadcrumbText: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        fontWeight: '500',
+        flex: 1,
+        paddingRight: SPACING.sm,
+    },
+    closeButton: {
+        padding: SPACING.xs + 2,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.surface,
+    },
+    titleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+    },
+    badgeCircle: {
+        width: 36,
+        height: 36,
+        borderRadius: BORDER_RADIUS.round,
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...SHADOWS.sm,
+    },
+    badgeText: {
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    badgeIconCircle: {
+        width: 36,
+        height: 36,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.surface,
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...SHADOWS.sm,
+    },
+    emojiText: {
+        fontSize: 18,
+    },
+    titleText: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+        flex: 1,
+    },
+    subtitleText: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        textTransform: 'capitalize',
+        fontWeight: '500',
+    },
+    statsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+        paddingVertical: SPACING.md,
+        marginVertical: SPACING.xs,
+        flexWrap: 'wrap',
+        gap: SPACING.sm,
+    },
+    statBox: {
+        alignItems: 'center',
+        minWidth: '18%',
+    },
+    statLabel: {
+        fontSize: 10,
+        color: colors.textSecondary,
+        textTransform: 'uppercase',
+        fontWeight: '600',
+    },
+    statValue: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+        marginTop: 2,
+    },
+    elevationSection: {
+        marginTop: SPACING.xs,
+    },
+    sectionHeader: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: colors.textSecondary,
+        textTransform: 'uppercase',
+        marginBottom: SPACING.sm,
+    },
+    chartWrapper: {
+        backgroundColor: colors.surface,
+        padding: SPACING.sm,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    tooltipContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: SPACING.sm,
+        paddingVertical: 6,
+        marginBottom: SPACING.sm,
+        borderRadius: BORDER_RADIUS.sm,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        ...SHADOWS.sm,
+    },
+    tooltipTextPrimary: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: colors.textPrimary,
+    },
+    tooltipTextSecondary: {
+        fontSize: 10,
+        color: colors.textSecondary,
+    },
+    tooltipTextTertiary: {
+        fontSize: 10,
+        color: colors.textLight,
+    },
+    minMaxContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: SPACING.sm,
+        paddingHorizontal: 4,
+    },
+    minMaxText: {
+        fontSize: 10,
+        color: colors.textLight,
+    },
+    legendContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        marginTop: SPACING.md,
+        paddingTop: SPACING.sm,
+        borderTopWidth: 1,
+        borderColor: colors.border,
+        flexWrap: 'wrap',
+        gap: 4,
+    },
+    legendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    legendBox: {
+        width: 12,
+        height: 12,
+        borderRadius: BORDER_RADIUS.sm - 2,
+    },
+    legendNovice: {
+        backgroundColor: 'rgba(0, 168, 89, 0.4)',
+        borderWidth: 1,
+        borderColor: '#00a859',
+    },
+    legendEasy: {
+        backgroundColor: 'rgba(0, 114, 188, 0.4)',
+        borderWidth: 1,
+        borderColor: '#0072bc',
+    },
+    legendIntermediate: {
+        backgroundColor: 'rgba(240, 20, 30, 0.4)',
+        borderWidth: 1,
+        borderColor: '#f0141e',
+    },
+    legendExpert: {
+        backgroundColor: '#000000',
+        borderWidth: 1,
+        borderColor: '#FFFFFF',
+    },
+    legendLabel: {
+        fontSize: 9,
+        color: colors.textSecondary,
+    },
+    noDataContainer: {
+        padding: SPACING.lg,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: colors.border,
+        borderRadius: BORDER_RADIUS.md,
+        alignItems: 'center',
+    },
+    noDataText: {
+        fontSize: 12,
+        color: colors.textLight,
+    },
+});

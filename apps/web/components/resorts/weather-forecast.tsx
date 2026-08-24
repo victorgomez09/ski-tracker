@@ -1,8 +1,9 @@
-import { Sun, Cloud, CloudRain, Snowflake, Wind, Compass, Layers, Mountain, Droplets, Flame, Gauge, Sunrise, Sunset, Umbrella, Eye } from 'lucide-react-native';
+import { Sun, Cloud, CloudRain, Snowflake, Wind, Compass, Droplets, Flame, Gauge, Umbrella, Eye } from 'lucide-react-native';
 import { WeatherForecast } from 'models/weather.model';
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 
 interface WeatherWidgetProps {
     data: WeatherForecast;
@@ -31,16 +32,16 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
             case 1:
             case 2:
             case 3:
-                return { label: t('partly_cloudy'), icon: <Cloud size={24} color="#3b82f6" /> };
+                return { label: t('partly_cloudy'), icon: <Cloud size={24} color={COLORS.primary} /> };
             case 45:
             case 48:
-                return { label: t('foggy'), icon: <Cloud size={24} color="#94a3b8" /> };
+                return { label: t('foggy'), icon: <Cloud size={24} color={COLORS.textLight} /> };
             case 51:
             case 53:
             case 55:
             case 61:
             case 63:
-                return { label: t('rain_showers'), icon: <CloudRain size={24} color="#3b82f6" /> };
+                return { label: t('rain_showers'), icon: <CloudRain size={24} color={COLORS.primary} /> };
             case 71:
             case 73:
             case 75:
@@ -49,40 +50,40 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
             case 95:
             case 96:
             case 99:
-                return { label: t('thunderstorm'), icon: <CloudRain size={24} color="#ef4444" /> };
+                return { label: t('thunderstorm'), icon: <CloudRain size={24} color={COLORS.danger} /> };
             default:
-                return { label: t('variable'), icon: <Cloud size={24} color="#94a3b8" /> };
+                return { label: t('variable'), icon: <Cloud size={24} color={COLORS.textLight} /> };
         }
     };
 
     const currentWeatherInfo = getWeatherInfo(current.weather_code);
 
     return (
-        <View className="space-y-3">
+        <View style={styles.container}>
             {/* Header Tabs */}
-            <View className="flex-row justify-between items-center mb-3">
-                <Text className="text-xs font-bold uppercase tracking-wider text-slate-400">{t('detailed_weather')}</Text>
-                <View className="flex-row bg-slate-800 p-1 rounded-md">
+            <View style={styles.header}>
+                <Text style={styles.headerTitle}>{t('detailed_weather')}</Text>
+                <View style={styles.tabsWrapper}>
                     <TouchableOpacity
-                        className={`px-3 py-1.5 rounded-md ${activeTab === 'current' ? 'bg-blue-600' : ''}`}
+                        style={[styles.tabButton, activeTab === 'current' && styles.tabButtonActive]}
                         onPress={() => setActiveTab('current')}
                     >
-                        <Text className={`text-xs font-semibold ${activeTab === 'current' ? 'text-white' : 'text-slate-400'}`}>{t('current')}</Text>
+                        <Text style={[styles.tabText, activeTab === 'current' && styles.tabTextActive]}>{t('current')}</Text>
                     </TouchableOpacity>
                     {data.hourly && (
                         <TouchableOpacity
-                            className={`px-3 py-1.5 rounded-md ${activeTab === 'hourly' ? 'bg-blue-600' : ''}`}
+                            style={[styles.tabButton, activeTab === 'hourly' && styles.tabButtonActive]}
                             onPress={() => setActiveTab('hourly')}
                         >
-                            <Text className={`text-xs font-semibold ${activeTab === 'hourly' ? 'text-white' : 'text-slate-400'}`}>{t('hourly')}</Text>
+                            <Text style={[styles.tabText, activeTab === 'hourly' && styles.tabTextActive]}>{t('hourly')}</Text>
                         </TouchableOpacity>
                     )}
                     {data.daily && (
                         <TouchableOpacity
-                            className={`px-3 py-1.5 rounded-md ${activeTab === 'daily' ? 'bg-blue-600' : ''}`}
+                            style={[styles.tabButton, activeTab === 'daily' && styles.tabButtonActive]}
                             onPress={() => setActiveTab('daily')}
                         >
-                            <Text className={`text-xs font-semibold ${activeTab === 'daily' ? 'text-white' : 'text-slate-400'}`}>{t('daily')}</Text>
+                            <Text style={[styles.tabText, activeTab === 'daily' && styles.tabTextActive]}>{t('daily')}</Text>
                         </TouchableOpacity>
                     )}
                 </View>
@@ -90,73 +91,73 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
 
             {/* CURRENT TAB */}
             {activeTab === 'current' && (
-                <View className="bg-slate-800 border border-slate-700 p-4 rounded-md space-y-4">
-                    <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-3">
-                            <View className="p-3 rounded-md bg-slate-700">
+                <View style={styles.bodyCard}>
+                    <View style={styles.conditionRow}>
+                        <View style={styles.conditionLeft}>
+                            <View style={styles.iconCircle}>
                                 {currentWeatherInfo.icon}
                             </View>
                             <View>
-                                <Text className="text-[10px] text-slate-400 font-semibold uppercase">{t('condition')}</Text>
-                                <Text className="text-base font-bold text-white">{currentWeatherInfo.label}</Text>
-                                <Text className="text-[10px] text-slate-400">
+                                <Text style={styles.metricLabel}>{t('condition')}</Text>
+                                <Text style={styles.conditionText}>{currentWeatherInfo.label}</Text>
+                                <Text style={styles.timeText}>
                                     {t('updated')}: {new Date(current.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </Text>
                             </View>
                         </View>
-                        <View className="items-end">
-                            <Text className="text-3xl font-extrabold text-white">{current.temperature_2m}{currentUnits.temperature_2m}</Text>
-                            <Text className="text-[11px] text-slate-400">{t('feels_like')}: {current.apparent_temperature}{currentUnits.temperature_2m}</Text>
+                        <View style={styles.conditionRight}>
+                            <Text style={styles.tempText}>{current.temperature_2m}{currentUnits.temperature_2m}</Text>
+                            <Text style={styles.feelsLikeText}>{t('feels_like')}: {current.apparent_temperature}{currentUnits.temperature_2m}</Text>
                         </View>
                     </View>
 
                     {/* Metrics Grid */}
-                    <View className="flex-row flex-wrap gap-2 pt-3 border-t border-slate-700">
-                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                    <View style={styles.metricsGrid}>
+                        <View style={styles.metricCard}>
                             <Wind size={16} color="#38bdf8" />
                             <View>
-                                <Text className="text-[9px] text-slate-400 uppercase font-semibold">{t('wind_speed')}</Text>
-                                <Text className="text-xs font-bold text-white">{current.wind_speed_10m} {currentUnits.wind_speed_10m}</Text>
+                                <Text style={styles.gridMetricLabel}>{t('wind_speed')}</Text>
+                                <Text style={styles.gridMetricValue}>{current.wind_speed_10m} {currentUnits.wind_speed_10m}</Text>
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View style={styles.metricCard}>
                             <Flame size={16} color="#f59e0b" />
                             <View>
-                                <Text className="text-[9px] text-slate-400 uppercase font-semibold">{t('wind_gusts')}</Text>
-                                <Text className="text-xs font-bold text-white">{current.wind_gusts_10m} {currentUnits.wind_gusts_10m}</Text>
+                                <Text style={styles.gridMetricLabel}>{t('wind_gusts')}</Text>
+                                <Text style={styles.gridMetricValue}>{current.wind_gusts_10m} {currentUnits.wind_gusts_10m}</Text>
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View style={styles.metricCard}>
                             <Compass size={16} color="#c084fc" />
                             <View>
-                                <Text className="text-[9px] text-slate-400 uppercase font-semibold">{t('wind_dir')}</Text>
-                                <Text className="text-xs font-bold text-white">{current.wind_direction_10m}{currentUnits.wind_direction_10m}</Text>
+                                <Text style={styles.gridMetricLabel}>{t('wind_dir')}</Text>
+                                <Text style={styles.gridMetricValue}>{current.wind_direction_10m}{currentUnits.wind_direction_10m}</Text>
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View style={styles.metricCard}>
                             <Eye size={16} color="#34d399" />
                             <View>
-                                <Text className="text-[9px] text-slate-400 uppercase font-semibold">{t('visibility')}</Text>
-                                <Text className="text-xs font-bold text-white">{formatVisibility(current.visibility)}</Text>
+                                <Text style={styles.gridMetricLabel}>{t('visibility')}</Text>
+                                <Text style={styles.gridMetricValue}>{formatVisibility(current.visibility)}</Text>
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
-                            <Droplets size={16} color="#60a5fa" />
+                        <View style={styles.metricCard}>
+                            <Droplets size={16} color={COLORS.primary} />
                             <View>
-                                <Text className="text-[9px] text-slate-400 uppercase font-semibold">{t('humidity')}</Text>
-                                <Text className="text-xs font-bold text-white">{current.relative_humidity_2m}{currentUnits.relative_humidity_2m}</Text>
+                                <Text style={styles.gridMetricLabel}>{t('humidity')}</Text>
+                                <Text style={styles.gridMetricValue}>{current.relative_humidity_2m}{currentUnits.relative_humidity_2m}</Text>
                             </View>
                         </View>
 
-                        <View className="bg-slate-700/60 rounded-md p-3 flex-row items-center gap-2 w-[48%] mb-2">
+                        <View style={styles.metricCard}>
                             <Gauge size={16} color="#4ade80" />
                             <View>
-                                <Text className="text-[9px] text-slate-400 uppercase font-semibold">{t('pressure')}</Text>
-                                <Text className="text-xs font-bold text-white">{current.surface_pressure} {currentUnits.surface_pressure}</Text>
+                                <Text style={styles.gridMetricLabel}>{t('pressure')}</Text>
+                                <Text style={styles.gridMetricValue}>{current.surface_pressure} {currentUnits.surface_pressure}</Text>
                             </View>
                         </View>
                     </View>
@@ -165,9 +166,9 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
 
             {/* HOURLY TAB */}
             {activeTab === 'hourly' && data.hourly && (
-                <View className="bg-slate-800 border border-slate-700 p-4 rounded-md">
-                    <Text className="text-[10px] text-slate-400 font-semibold uppercase mb-3">{t('upcoming_hours')}</Text>
-                    <ScrollView className="flex flex-col gap-2 w-full h-72" showsVerticalScrollIndicator={true}>
+                <View style={styles.bodyCard}>
+                    <Text style={styles.sectionHeader}>{t('upcoming_hours')}</Text>
+                    <ScrollView style={styles.scrollList} showsVerticalScrollIndicator={true}>
                         {data.hourly.time.slice(0, 12).map((timeStr, index) => {
                             const hourFormatted = new Date(timeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                             const temp = data.hourly.temperature_2m[index];
@@ -176,31 +177,31 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             const windSpeed = data.hourly.wind_speed_10m ? data.hourly.wind_speed_10m[index] : 0;
 
                             return (
-                                <View key={index} className="bg-slate-700/60 rounded-md p-3 flex-row items-center justify-between my-1">
-                                    <Text className="text-xs font-semibold text-white w-14">{hourFormatted}</Text>
+                                <View key={index} style={styles.hourlyItem}>
+                                    <Text style={styles.hourText}>{hourFormatted}</Text>
                                     
-                                    <View className="flex-row items-center gap-3 flex-1 justify-center">
+                                    <View style={styles.hourlyBadgeContainer}>
                                         {snowfall > 0 ? (
-                                            <View className="bg-sky-900/80 px-2 py-0.5 rounded-full flex-row items-center gap-1">
-                                                <Snowflake size={10} color="#38bdf8" />
-                                                <Text className="text-[10px] text-sky-200 font-bold">{snowfall}{hourlyUnits.snowfall}</Text>
+                                            <View style={styles.snowBadge}>
+                                                <Snowflake size={10} color="#0284c7" />
+                                                <Text style={styles.snowBadgeText}>{snowfall}{hourlyUnits.snowfall}</Text>
                                             </View>
                                         ) : prob > 0 ? (
-                                            <View className="bg-blue-900/60 px-2 py-0.5 rounded-full flex-row items-center gap-1">
-                                                <Umbrella size={10} color="#60a5fa" />
-                                                <Text className="text-[10px] text-blue-300 font-bold">{prob}%</Text>
+                                            <View style={styles.rainBadge}>
+                                                <Umbrella size={10} color={COLORS.primaryDark} />
+                                                <Text style={styles.rainBadgeText}>{prob}%</Text>
                                             </View>
                                         ) : (
-                                            <Text className="text-[10px] text-slate-400">{t('no_precip')}</Text>
+                                            <Text style={styles.noPrecipText}>{t('no_precip')}</Text>
                                         )}
                                     </View>
                                     
-                                    <View className="flex-row items-center gap-1 w-16 justify-end">
-                                        <Wind size={10} color="#94a3b8" />
-                                        <Text className="text-[10px] text-slate-300">{windSpeed} {hourlyUnits.wind_speed_10m}</Text>
+                                    <View style={styles.hourlyWind}>
+                                        <Wind size={10} color={COLORS.textLight} />
+                                        <Text style={styles.hourlyWindText}>{windSpeed} {hourlyUnits.wind_speed_10m}</Text>
                                     </View>
                                     
-                                    <Text className="text-sm font-bold text-white w-12 text-right">{temp}°</Text>
+                                    <Text style={styles.hourlyTempText}>{temp}°</Text>
                                 </View>
                             );
                         })}
@@ -210,36 +211,278 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
 
             {/* DAILY TAB */}
             {activeTab === 'daily' && data.daily && (
-                <View className="bg-slate-800 border border-slate-700 p-4 rounded-md space-y-2">
-                    <Text className="text-[10px] text-slate-400 font-semibold uppercase mb-2">{t('multiday_outlook')}</Text>
-                    {data.daily.time.map((dayStr, index) => {
-                        const dateObj = new Date(dayStr);
-                        const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                        const maxTemp = data.daily?.temperature_2m_max[index];
-                        const minTemp = data.daily?.temperature_2m_min[index];
-                        const snowfallSum = data.daily?.snowfall_sum ? data.daily.snowfall_sum[index] : 0;
+                <View style={styles.bodyCard}>
+                    <Text style={styles.sectionHeader}>{t('multiday_outlook')}</Text>
+                    <View style={styles.dailyContainer}>
+                        {data.daily.time.map((dayStr, index) => {
+                            const dateObj = new Date(dayStr);
+                            const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                            const maxTemp = data.daily?.temperature_2m_max[index];
+                            const minTemp = data.daily?.temperature_2m_min[index];
+                            const snowfallSum = data.daily?.snowfall_sum ? data.daily.snowfall_sum[index] : 0;
 
-                        return (
-                            <View key={index} className="bg-slate-700/60 rounded-md p-3 flex-row items-center justify-between my-1">
-                                <Text className="text-xs font-semibold text-white w-28">{dayName}</Text>
-                                {snowfallSum > 0 ? (
-                                    <View className="bg-sky-900/80 px-2 py-0.5 rounded-full flex-row items-center gap-1">
-                                        <Snowflake size={10} color="#38bdf8" />
-                                        <Text className="text-[10px] text-sky-200 font-bold">{snowfallSum} cm</Text>
+                            return (
+                                <View key={index} style={styles.hourlyItem}>
+                                    <Text style={styles.dayNameText}>{dayName}</Text>
+                                    {snowfallSum > 0 ? (
+                                        <View style={styles.snowBadge}>
+                                            <Snowflake size={10} color="#0284c7" />
+                                            <Text style={styles.snowBadgeText}>{snowfallSum} cm</Text>
+                                        </View>
+                                    ) : (
+                                        <Text style={styles.noPrecipText}>{t('no_snow')}</Text>
+                                    )}
+                                    <View style={styles.dailyTempRange}>
+                                        <Text style={styles.dailyMaxText}>{maxTemp}°</Text>
+                                        <Text style={styles.dailySlashText}>/</Text>
+                                        <Text style={styles.dailyMinText}>{minTemp}°</Text>
                                     </View>
-                                ) : (
-                                    <Text className="text-[10px] text-slate-400">{t('no_snow')}</Text>
-                                )}
-                                <View className="flex-row items-center gap-1">
-                                    <Text className="text-xs font-bold text-red-400">{maxTemp}°</Text>
-                                    <Text className="text-xs text-slate-500">/</Text>
-                                    <Text className="text-xs font-bold text-blue-400">{minTemp}°</Text>
                                 </View>
-                            </View>
-                        );
-                    })}
+                            );
+                        })}
+                    </View>
                 </View>
             )}
         </View>
     );
 };
+
+const styles = StyleSheet.create({
+    container: {
+        flexDirection: 'column',
+        gap: SPACING.sm,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    headerTitle: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        color: COLORS.textSecondary,
+    },
+    tabsWrapper: {
+        flexDirection: 'row',
+        backgroundColor: COLORS.surface,
+        padding: 4,
+        borderRadius: BORDER_RADIUS.md,
+    },
+    tabButton: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: BORDER_RADIUS.sm,
+    },
+    tabButtonActive: {
+        backgroundColor: COLORS.primary,
+    },
+    tabText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: COLORS.textSecondary,
+    },
+    tabTextActive: {
+        color: COLORS.textOnPrimary,
+    },
+    bodyCard: {
+        backgroundColor: COLORS.card,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.lg,
+        flexDirection: 'column',
+        gap: SPACING.md,
+        ...SHADOWS.sm,
+    },
+    conditionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    conditionLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+    },
+    iconCircle: {
+        padding: 10,
+        borderRadius: BORDER_RADIUS.md,
+        backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    metricLabel: {
+        fontSize: 10,
+        color: COLORS.textLight,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+    },
+    conditionText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: COLORS.textPrimary,
+    },
+    timeText: {
+        fontSize: 10,
+        color: COLORS.textSecondary,
+        marginTop: 2,
+    },
+    conditionRight: {
+        alignItems: 'end',
+    },
+    tempText: {
+        fontSize: 30,
+        fontWeight: '800',
+        color: COLORS.textPrimary,
+    },
+    feelsLikeText: {
+        fontSize: 11,
+        color: COLORS.textSecondary,
+    },
+    metricsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        paddingTop: SPACING.md,
+        borderTopWidth: 1,
+        borderColor: COLORS.border,
+    },
+    metricCard: {
+        backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        borderRadius: BORDER_RADIUS.md,
+        padding: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        width: '48%',
+        marginBottom: 4,
+    },
+    gridMetricLabel: {
+        fontSize: 9,
+        color: COLORS.textLight,
+        textTransform: 'uppercase',
+        fontWeight: '600',
+    },
+    gridMetricValue: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: COLORS.textPrimary,
+    },
+    sectionHeader: {
+        fontSize: 10,
+        color: COLORS.textLight,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        marginBottom: 4,
+    },
+    scrollList: {
+        height: 280,
+    },
+    hourlyItem: {
+        backgroundColor: COLORS.surface,
+        borderRadius: BORDER_RADIUS.md,
+        padding: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginVertical: 4,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    hourText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        width: 56,
+    },
+    hourlyBadgeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flex: 1,
+        justifyContent: 'center',
+    },
+    snowBadge: {
+        backgroundColor: '#e0f2fe',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: BORDER_RADIUS.round,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    snowBadgeText: {
+        fontSize: 10,
+        color: '#0369a1',
+        fontWeight: 'bold',
+    },
+    rainBadge: {
+        backgroundColor: COLORS.primaryLight,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: BORDER_RADIUS.round,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    rainBadgeText: {
+        fontSize: 10,
+        color: COLORS.primaryDark,
+        fontWeight: 'bold',
+    },
+    noPrecipText: {
+        fontSize: 10,
+        color: COLORS.textLight,
+    },
+    hourlyWind: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        width: 64,
+        justifyContent: 'flex-end',
+    },
+    hourlyWindText: {
+        fontSize: 10,
+        color: COLORS.textSecondary,
+    },
+    hourlyTempText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: COLORS.textPrimary,
+        width: 48,
+        textAlign: 'right',
+    },
+    dailyContainer: {
+        flexDirection: 'column',
+    },
+    dayNameText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        width: 112,
+    },
+    dailyTempRange: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    dailyMaxText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: COLORS.danger,
+    },
+    dailySlashText: {
+        fontSize: 12,
+        color: COLORS.textLight,
+    },
+    dailyMinText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: COLORS.primary,
+    },
+});

@@ -1,12 +1,13 @@
 import { useRouter } from "expo-router";
 import { Controller, SubmitHandler, useForm } from "react-hook-form";
 import axios from "axios";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
-import { useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from "react-native";
+import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { API_BASE_URL } from "constants/constants";
 import { useAuth } from "context/auth.context";
+import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 
 interface Login {
     email: string;
@@ -23,6 +24,8 @@ export default function LoginView() {
     const router = useRouter();
     const { signIn } = useAuth();
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     
     const {
         control,
@@ -59,18 +62,18 @@ export default function LoginView() {
         }
     };
 
+    const isButtonDisabled = isSubmitting || Object.keys(errors).length > 0;
+
     return (
-        <ScrollView contentContainerStyle={{ 
-                    flexGrow: 1, 
-                    justifyContent: 'center', 
-                    alignItems: 'center' 
-                }} 
-                className="bg-slate-900 p-6">
-            <View className="bg-slate-800 rounded-md p-6 w-full max-w-sm border border-slate-700 shadow-2xl">
-                <Text className="text-2xl font-bold text-white mb-6 text-center">{t('login')}</Text>
+        <ScrollView 
+            contentContainerStyle={styles.scrollContent} 
+            style={styles.scrollView}
+        >
+            <View style={styles.card}>
+                <Text style={styles.title}>{t('login')}</Text>
 
                 {/* EMAIL */}
-                <Text className="text-sm font-semibold text-slate-300 mb-1">{t('email')}</Text>
+                <Text style={styles.label}>{t('email')}</Text>
                 <Controller
                     control={control}
                     name="email"
@@ -83,9 +86,12 @@ export default function LoginView() {
                     }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
-                            className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.email ? "border-red-500" : "border-slate-600"} mb-1`}
+                            style={[
+                                styles.input,
+                                errors.email ? styles.inputError : styles.inputNormal
+                            ]}
                             placeholder={t('email') as string}
-                            placeholderTextColor="#94a3b8"
+                            placeholderTextColor={colors.textLight}
                             keyboardType="email-address"
                             autoCapitalize="none"
                             onBlur={onBlur}
@@ -95,20 +101,23 @@ export default function LoginView() {
                     )}
                 />
                 {errors.email && (
-                    <Text className="text-xs text-red-400 italic mb-3">{errors.email.message}</Text>
+                    <Text style={styles.errorText}>{errors.email.message}</Text>
                 )}
 
                 {/* PASSWORD */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('password')}</Text>
+                <Text style={[styles.label, styles.labelSpacing]}>{t('password')}</Text>
                 <Controller
                     control={control}
                     name="password"
                     rules={{ required: t('password_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
-                            className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.password ? "border-red-500" : "border-slate-600"} mb-1`}
+                            style={[
+                                styles.input,
+                                errors.password ? styles.inputError : styles.inputNormal
+                            ]}
                             placeholder={t('password') as string}
-                            placeholderTextColor="#94a3b8"
+                            placeholderTextColor={colors.textLight}
                             secureTextEntry
                             onBlur={onBlur}
                             onChangeText={onChange}
@@ -117,24 +126,27 @@ export default function LoginView() {
                     )}
                 />
                 {errors.password && (
-                    <Text className="text-xs text-red-400 italic mb-3">{errors.password.message}</Text>
+                    <Text style={styles.errorText}>{errors.password.message}</Text>
                 )}
 
                 {/* SUBMIT */}
                 <TouchableOpacity
-                    className={`bg-blue-600 p-4 rounded-md items-center mt-6 shadow-md ${isSubmitting || Object.keys(errors).length > 0 ? "opacity-60" : ""}`}
+                    style={[
+                        styles.submitButton,
+                        isButtonDisabled && styles.submitButtonDisabled
+                    ]}
                     onPress={handleSubmit(onSubmit)}
-                    disabled={isSubmitting || Object.keys(errors).length > 0}
+                    disabled={isButtonDisabled}
                 >
                     {isSubmitting ? (
-                        <ActivityIndicator color="#ffffff" />
+                        <ActivityIndicator color={colors.textOnPrimary} />
                     ) : (
-                        <Text className="text-white font-bold text-base">{t('login')}</Text>
+                        <Text style={styles.submitButtonText}>{t('login')}</Text>
                     )}
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => router.push("/register")} className="mt-4">
-                    <Text className="text-blue-400 text-xs text-center font-medium">
+                <TouchableOpacity onPress={() => router.push("/register")} style={styles.linkButton}>
+                    <Text style={styles.linkText}>
                         {t('no_account_register')}
                     </Text>
                 </TouchableOpacity>
@@ -142,3 +154,86 @@ export default function LoginView() {
         </ScrollView>
     );
 }
+
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+    scrollView: {
+        backgroundColor: colors.background,
+    },
+    scrollContent: {
+        flexGrow: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        padding: SPACING.lg,
+    },
+    card: {
+        backgroundColor: colors.card,
+        borderRadius: BORDER_RADIUS.md,
+        padding: SPACING.lg,
+        width: '100%',
+        maxWidth: 380,
+        borderWidth: 1,
+        borderColor: colors.border,
+        ...SHADOWS.lg,
+    },
+    title: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: colors.textPrimary,
+        marginBottom: SPACING.lg,
+        textAlign: 'center',
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: colors.textSecondary,
+        marginBottom: SPACING.xs,
+    },
+    labelSpacing: {
+        marginTop: SPACING.sm,
+    },
+    input: {
+        backgroundColor: colors.surface,
+        color: colors.textPrimary,
+        padding: 14,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        marginBottom: SPACING.xs,
+    },
+    inputNormal: {
+        borderColor: colors.border,
+    },
+    inputError: {
+        borderColor: colors.danger,
+    },
+    errorText: {
+        fontSize: 12,
+        color: colors.danger,
+        fontStyle: 'italic',
+        marginBottom: SPACING.sm,
+    },
+    submitButton: {
+        backgroundColor: colors.primary,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.md,
+        alignItems: 'center',
+        marginTop: SPACING.lg,
+        ...SHADOWS.sm,
+    },
+    submitButtonDisabled: {
+        opacity: 0.6,
+    },
+    submitButtonText: {
+        color: colors.textOnPrimary,
+        fontWeight: '700',
+        fontSize: 16,
+    },
+    linkButton: {
+        marginTop: SPACING.md,
+    },
+    linkText: {
+        color: colors.primaryDark,
+        fontSize: 12,
+        textAlign: 'center',
+        fontWeight: '500',
+    },
+});

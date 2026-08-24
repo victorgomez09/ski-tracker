@@ -1,9 +1,10 @@
 import { API_BASE_URL } from "constants/constants";
 import { useRouter } from "expo-router";
 import { Controller, SubmitHandler, useForm } from "react-hook-form";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
-import { useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from "react-native";
+import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 
 interface Register {
     email: string;
@@ -17,6 +18,9 @@ export default function RegisterView() {
     const { t } = useTranslation();
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
+
     const {
         control,
         handleSubmit,
@@ -53,27 +57,30 @@ export default function RegisterView() {
         }
     };
 
+    const isButtonDisabled = isSubmitting || Object.keys(errors).length > 0;
+
     return (
-        <ScrollView contentContainerStyle={{ 
-                    flexGrow: 1, 
-                    justifyContent: 'center', 
-                    alignItems: 'center' 
-                }} 
-                className="bg-slate-900 p-6">
-            <View className="bg-slate-800 rounded-md p-6 w-full max-w-sm border border-slate-700 shadow-2xl">
-                <Text className="text-2xl font-bold text-white mb-6 text-center">{t('register')}</Text>
+        <ScrollView 
+            contentContainerStyle={styles.scrollContent} 
+            style={styles.scrollView}
+        >
+            <View style={styles.card}>
+                <Text style={styles.title}>{t('register')}</Text>
 
                 {/* FIRST NAME */}
-                <Text className="text-sm font-semibold text-slate-300 mb-1">{t('first_name')}</Text>
+                <Text style={styles.label}>{t('first_name')}</Text>
                 <Controller
                     control={control}
                     name="first_name"
                     rules={{ required: t('first_name_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
-                            className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.first_name ? "border-red-500" : "border-slate-600"} mb-1`}
+                            style={[
+                                styles.input,
+                                errors.first_name ? styles.inputError : styles.inputNormal
+                            ]}
                             placeholder={t('first_name') as string}
-                            placeholderTextColor="#94a3b8"
+                            placeholderTextColor={colors.textLight}
                             onBlur={onBlur}
                             onChangeText={onChange}
                             value={value}
@@ -81,20 +88,23 @@ export default function RegisterView() {
                     )}
                 />
                 {errors.first_name && (
-                    <Text className="text-xs text-red-400 italic mb-2">{errors.first_name.message}</Text>
+                    <Text style={styles.errorText}>{errors.first_name.message}</Text>
                 )}
 
                 {/* LAST NAME */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('last_name')}</Text>
+                <Text style={[styles.label, styles.labelSpacing]}>{t('last_name')}</Text>
                 <Controller
                     control={control}
                     name="last_name"
                     rules={{ required: t('last_name_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
-                            className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.last_name ? "border-red-500" : "border-slate-600"} mb-1`}
+                            style={[
+                                styles.input,
+                                errors.last_name ? styles.inputError : styles.inputNormal
+                            ]}
                             placeholder={t('last_name') as string}
-                            placeholderTextColor="#94a3b8"
+                            placeholderTextColor={colors.textLight}
                             onBlur={onBlur}
                             onChangeText={onChange}
                             value={value}
@@ -102,20 +112,23 @@ export default function RegisterView() {
                     )}
                 />
                 {errors.last_name && (
-                    <Text className="text-xs text-red-400 italic mb-2">{errors.last_name.message}</Text>
+                    <Text style={styles.errorText}>{errors.last_name.message}</Text>
                 )}
 
                 {/* DISPLAY NAME */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('display_name')}</Text>
+                <Text style={[styles.label, styles.labelSpacing]}>{t('display_name')}</Text>
                 <Controller
                     control={control}
                     name="display_name"
                     rules={{ required: t('display_name_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
-                            className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.display_name ? "border-red-500" : "border-slate-600"} mb-1`}
+                            style={[
+                                styles.input,
+                                errors.display_name ? styles.inputError : styles.inputNormal
+                            ]}
                             placeholder={t('display_name') as string}
-                            placeholderTextColor="#94a3b8"
+                            placeholderTextColor={colors.textLight}
                             onBlur={onBlur}
                             onChangeText={onChange}
                             value={value}
@@ -123,11 +136,11 @@ export default function RegisterView() {
                     )}
                 />
                 {errors.display_name && (
-                    <Text className="text-xs text-red-400 italic mb-2">{errors.display_name.message}</Text>
+                    <Text style={styles.errorText}>{errors.display_name.message}</Text>
                 )}
 
                 {/* EMAIL */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('email')}</Text>
+                <Text style={[styles.label, styles.labelSpacing]}>{t('email')}</Text>
                 <Controller
                     control={control}
                     name="email"
@@ -140,9 +153,12 @@ export default function RegisterView() {
                     }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
-                            className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.email ? "border-red-500" : "border-slate-600"} mb-1`}
+                            style={[
+                                styles.input,
+                                errors.email ? styles.inputError : styles.inputNormal
+                            ]}
                             placeholder={t('email') as string}
-                            placeholderTextColor="#94a3b8"
+                            placeholderTextColor={colors.textLight}
                             keyboardType="email-address"
                             autoCapitalize="none"
                             onBlur={onBlur}
@@ -152,20 +168,23 @@ export default function RegisterView() {
                     )}
                 />
                 {errors.email && (
-                    <Text className="text-xs text-red-400 italic mb-2">{errors.email.message}</Text>
+                    <Text style={styles.errorText}>{errors.email.message}</Text>
                 )}
 
                 {/* PASSWORD */}
-                <Text className="text-sm font-semibold text-slate-300 mt-2 mb-1">{t('password')}</Text>
+                <Text style={[styles.label, styles.labelSpacing]}>{t('password')}</Text>
                 <Controller
                     control={control}
                     name="password"
                     rules={{ required: t('password_required') as string }}
                     render={({ field: { onChange, onBlur, value } }) => (
                         <TextInput
-                            className={`bg-slate-700 text-white p-3.5 rounded-md border ${errors.password ? "border-red-500" : "border-slate-600"} mb-1`}
+                            style={[
+                                styles.input,
+                                errors.password ? styles.inputError : styles.inputNormal
+                            ]}
                             placeholder={t('password') as string}
-                            placeholderTextColor="#94a3b8"
+                            placeholderTextColor={colors.textLight}
                             secureTextEntry
                             onBlur={onBlur}
                             onChangeText={onChange}
@@ -174,24 +193,27 @@ export default function RegisterView() {
                     )}
                 />
                 {errors.password && (
-                    <Text className="text-xs text-red-400 italic mb-2">{errors.password.message}</Text>
+                    <Text style={styles.errorText}>{errors.password.message}</Text>
                 )}
 
                 {/* SUBMIT */}
                 <TouchableOpacity
-                    className={`bg-blue-600 p-4 rounded-md items-center mt-6 shadow-md ${isSubmitting || Object.keys(errors).length > 0 ? "opacity-60" : ""}`}
+                    style={[
+                        styles.submitButton,
+                        isButtonDisabled && styles.submitButtonDisabled
+                    ]}
                     onPress={handleSubmit(onSubmit)}
-                    disabled={isSubmitting || Object.keys(errors).length > 0}
+                    disabled={isButtonDisabled}
                 >
                     {isSubmitting ? (
-                        <ActivityIndicator color="#ffffff" />
+                        <ActivityIndicator color={colors.textOnPrimary} />
                     ) : (
-                        <Text className="text-white font-bold text-base">{t('register')}</Text>
+                        <Text style={styles.submitButtonText}>{t('register')}</Text>
                     )}
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => router.push("/login")} className="mt-4">
-                    <Text className="text-blue-400 text-xs text-center font-medium">
+                <TouchableOpacity onPress={() => router.push("/login")} style={styles.linkButton}>
+                    <Text style={styles.linkText}>
                         {t('already_account_login')}
                     </Text>
                 </TouchableOpacity>
@@ -199,3 +221,86 @@ export default function RegisterView() {
         </ScrollView>
     );
 }
+
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+    scrollView: {
+        backgroundColor: colors.background,
+    },
+    scrollContent: {
+        flexGrow: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        padding: SPACING.lg,
+    },
+    card: {
+        backgroundColor: colors.card,
+        borderRadius: BORDER_RADIUS.md,
+        padding: SPACING.lg,
+        width: '100%',
+        maxWidth: 380,
+        borderWidth: 1,
+        borderColor: colors.border,
+        ...SHADOWS.lg,
+    },
+    title: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: colors.textPrimary,
+        marginBottom: SPACING.lg,
+        textAlign: 'center',
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: colors.textSecondary,
+        marginBottom: SPACING.xs,
+    },
+    labelSpacing: {
+        marginTop: SPACING.sm,
+    },
+    input: {
+        backgroundColor: colors.surface,
+        color: colors.textPrimary,
+        padding: 14,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        marginBottom: SPACING.xs,
+    },
+    inputNormal: {
+        borderColor: colors.border,
+    },
+    inputError: {
+        borderColor: colors.danger,
+    },
+    errorText: {
+        fontSize: 12,
+        color: colors.danger,
+        fontStyle: 'italic',
+        marginBottom: SPACING.sm,
+    },
+    submitButton: {
+        backgroundColor: colors.primary,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.md,
+        alignItems: 'center',
+        marginTop: SPACING.lg,
+        ...SHADOWS.sm,
+    },
+    submitButtonDisabled: {
+        opacity: 0.6,
+    },
+    submitButtonText: {
+        color: colors.textOnPrimary,
+        fontWeight: '700',
+        fontSize: 16,
+    },
+    linkButton: {
+        marginTop: SPACING.md,
+    },
+    linkText: {
+        color: colors.primaryDark,
+        fontSize: 12,
+        textAlign: 'center',
+        fontWeight: '500',
+    },
+});

@@ -10,26 +10,30 @@ import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
-import { Activity, Download, Play, Square, Upload } from 'lucide-react-native';
+import { Activity, Download, Play, Square, Upload, Camera as CameraIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
 import { API_BASE_URL } from 'constants/constants';
+import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from 'constants/theme';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
 import api from 'interceptor/api';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
 import { User } from 'models/user.model';
 import { useTranslation } from 'react-i18next';
-import { clearTrack, getAllPhotos, getAllPoints, initDB } from 'tracking/database';
+import { clearTrack, getAllPhotos, getAllPoints, initDB, savePhotoToLocalDB } from 'tracking/database';
 import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
+import { Camera } from './camera';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
     const { t } = useTranslation();
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
 
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
     const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
@@ -534,12 +538,22 @@ export default function InteractiveSkiMapNative() {
     };
 
     return (
-        <View className="w-full h-full relative flex-1 bg-slate-950">
-            {/* {takePictureMode && (
-                <View className="absolute inset-0 z-50 flex items-center justify-center w-full h-full">
-                    <Camera onClose={() => setTakePictureMode(false)} />
+        <View style={styles.container}>
+            {takePictureMode && (
+                <View style={styles.cameraOverlay}>
+                    <Camera 
+                        onClose={() => setTakePictureMode(false)} 
+                        onSavePhoto={async (uri) => {
+                            try {
+                                const db = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
+                                await savePhotoToLocalDB(uri, db);
+                            } catch (e) {
+                                console.error("Error saving photo locally:", e);
+                            }
+                        }}
+                    />
                 </View>
-            )} */}
+            )}
 
             {!takePictureMode && (
                 <>
@@ -547,21 +561,30 @@ export default function InteractiveSkiMapNative() {
                         <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
                     )}
 
-                    <View className="flex flex-row gap-1 absolute z-50 bottom-4 right-4">
+                    <View style={styles.floatingControls}>
+                        {isTracking && (
+                            <TouchableOpacity
+                                style={styles.cameraButton}
+                                onPress={() => setTakePictureMode(true)}
+                            >
+                                <CameraIcon size={20} color={colors.textOnPrimary} />
+                            </TouchableOpacity>
+                        )}
+
                         <TouchableOpacity
-                            className={`${isTracking ? 'bg-red-800' : 'bg-slate-800'} border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2`}
+                            style={[styles.trackingButton, isTracking ? styles.trackingButtonActive : styles.trackingButtonInactive]}
                             onPress={handleToggleTracking}
                         >
-                            {isTracking ? <Square size={20} color="#ffffff" /> : <Play size={20} color="#ffffff" />}
+                            {isTracking ? <Square size={20} color={colors.textOnPrimary} /> : <Play size={20} color={colors.textOnPrimary} />}
                         </TouchableOpacity>
 
                         <TouchableOpacity
                             onPress={() => setShowOfflineModal(true)}
-                            className="bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
+                            style={styles.offlineButton}
                         >
-                            <Download size={18} color="#60a5fa" />
+                            <Download size={18} color={colors.primary} />
                             {packs.length > 0 && (
-                                <View className="w-2 h-2 rounded-full bg-emerald-500" />
+                                <View style={styles.notificationDot} />
                             )}
                         </TouchableOpacity>
                     </View>
@@ -578,26 +601,38 @@ export default function InteractiveSkiMapNative() {
                         />
                     )}
 
-                    <View className="absolute bottom-4 left-4 z-40 flex flex-col items-end gap-3">
+                    <View style={styles.panelContainer}>
                         {!isTracking && hasTrackData && (
-                            <View className="bg-slate-900/95 border border-slate-800 p-4 rounded-md shadow-md w-72 flex flex-col gap-3">
-                                <View className="flex flex-col gap-0.5">
-                                    <View className="flex-row items-center gap-1.5">
-                                        <Activity size={16} color="#3b82f6" />
-                                        <Text className="font-bold text-sm text-white">{t('session_recorded')}</Text>
+                            <View style={styles.uploadPanel}>
+                                <View style={styles.panelHeader}>
+                                    <View style={styles.panelHeaderTitleRow}>
+                                        <Activity size={16} color={colors.primary} />
+                                        <Text style={styles.panelTitle}>{t('session_recorded')}</Text>
                                     </View>
-                                    <Text className="text-[11px] text-slate-400">
+                                    <Text style={styles.panelSubtitle}>
                                         {t('points_recorded', { count: trackPoints.length, resortName: resort.Name || "Sierra Nevada" })}
                                     </Text>
                                 </View>
 
+                                <View style={styles.privacyRow}>
+                                    <Text style={styles.privacyLabel}>¿Sesión pública?</Text>
+                                    <TouchableOpacity
+                                        onPress={() => setIsPublic(!isPublic)}
+                                        style={[styles.privacyButton, isPublic ? styles.privacyButtonPublic : styles.privacyButtonPrivate]}
+                                    >
+                                        <Text style={styles.privacyButtonText}>
+                                            {isPublic ? 'Pública' : 'Privada'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+
                                 <TouchableOpacity
-                                    className="bg-slate-600 p-2 rounded-md items-center flex-row justify-center gap-2"
+                                    style={styles.uploadButton}
                                     onPress={handleUploadTrack}
                                     disabled={isLoading}
                                 >
-                                    <Upload size={14} color="#ffffff" />
-                                    <Text className="text-white font-bold text-xs">
+                                    <Upload size={14} color={colors.textOnPrimary} />
+                                    <Text style={styles.uploadButtonText}>
                                         {isLoading ? t('uploading') : t('upload_track')}
                                     </Text>
                                 </TouchableOpacity>
@@ -649,3 +684,162 @@ export default function InteractiveSkiMapNative() {
         </View>
     );
 }
+
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+    container: {
+        width: '100%',
+        height: '100%',
+        position: 'relative',
+        flex: 1,
+        backgroundColor: colors.background,
+    },
+    cameraOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 50,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        height: '100%',
+    },
+    floatingControls: {
+        flexDirection: 'row',
+        gap: SPACING.xs,
+        position: 'absolute',
+        zIndex: 50,
+        bottom: 16,
+        right: 16,
+    },
+    cameraButton: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primaryDark,
+        borderWidth: 1,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.md,
+        ...SHADOWS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    trackingButton: {
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.md,
+        ...SHADOWS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    trackingButtonActive: {
+        backgroundColor: colors.danger,
+        borderColor: colors.danger,
+    },
+    trackingButtonInactive: {
+        backgroundColor: colors.card,
+    },
+    offlineButton: {
+        backgroundColor: colors.card,
+        borderColor: colors.border,
+        borderWidth: 1,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.md,
+        ...SHADOWS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    notificationDot: {
+        width: 8,
+        height: 8,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.success,
+    },
+    panelContainer: {
+        position: 'absolute',
+        bottom: 16,
+        left: 16,
+        zIndex: 40,
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 12,
+    },
+    uploadPanel: {
+        backgroundColor: colors.card,
+        borderColor: colors.border,
+        borderWidth: 1,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.md,
+        ...SHADOWS.lg,
+        width: 288,
+        flexDirection: 'column',
+        gap: 12,
+    },
+    panelHeader: {
+        flexDirection: 'column',
+        gap: 2,
+    },
+    panelHeaderTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    panelTitle: {
+        fontWeight: '700',
+        fontSize: 14,
+        color: colors.textPrimary,
+    },
+    panelSubtitle: {
+        fontSize: 11,
+        color: colors.textSecondary,
+    },
+    privacyRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+        paddingVertical: 8,
+    },
+    privacyLabel: {
+        fontSize: 11,
+        color: colors.textPrimary,
+        fontWeight: '500',
+    },
+    privacyButton: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: BORDER_RADIUS.sm,
+    },
+    privacyButtonPublic: {
+        backgroundColor: colors.success,
+    },
+    privacyButtonPrivate: {
+        backgroundColor: colors.textSecondary,
+    },
+    privacyButtonText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: colors.textOnPrimary,
+        textTransform: 'uppercase',
+    },
+    uploadButton: {
+        backgroundColor: colors.primary,
+        padding: 8,
+        borderRadius: BORDER_RADIUS.md,
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 8,
+    },
+    uploadButtonText: {
+        color: colors.textOnPrimary,
+        fontWeight: '700',
+        fontSize: 12,
+    },
+});

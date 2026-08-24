@@ -1,10 +1,11 @@
-import { View, Text } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
+import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from "../../constants/theme";
 
 export const AltitudeTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
         return (
-            <View className="bg-slate-800 p-2 border border-slate-700 rounded-md shadow-md">
-                <Text className="font-semibold text-blue-400 text-xs">
+            <View style={styles.container}>
+                <Text style={styles.text}>
                     {`${Math.round(Number(payload[0].value))}m Altitude`}
                 </Text>
             </View>
@@ -12,3 +13,19 @@ export const AltitudeTooltip = ({ active, payload }: any) => {
     }
     return null;
 };
+
+const styles = StyleSheet.create({
+    container: {
+        backgroundColor: COLORS.textPrimary,
+        padding: SPACING.sm,
+        borderWidth: 1,
+        borderColor: COLORS.textSecondary,
+        borderRadius: BORDER_RADIUS.md,
+        ...SHADOWS.md,
+    },
+    text: {
+        fontWeight: "600",
+        color: COLORS.primary,
+        fontSize: 12,
+    },
+});

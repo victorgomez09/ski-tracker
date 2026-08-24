@@ -1,12 +1,11 @@
-import '../styles/global.css';
-
 import { Slot } from 'expo-router';
 import 'i18n';
+import '../styles/global.css';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SQLite from 'expo-sqlite';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 
 import { initDB } from 'tracking/database';
 
@@ -14,9 +13,12 @@ import { UpdateModal } from 'components/updates/update-modal';
 import { AuthProvider } from 'context/auth.context';
 import { OtaProvider, useOta } from 'context/ota.context';
 import { AxiosInterceptor } from 'interceptor/axios.interceptor';
+import { useThemeColors, ThemeProvider, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from 'constants/theme';
 
 function OtaGate({ children }: { children: React.ReactNode }) {
     const { t } = useTranslation();
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const {
         phase,
         isBlocking,
@@ -30,9 +32,9 @@ function OtaGate({ children }: { children: React.ReactNode }) {
 
     if (isBlocking) {
         return (
-            <View className="flex-1 justify-center items-center bg-slate-900">
-                <ActivityIndicator size="large" color="#3b82f6" />
-                <Text className="mt-3 text-slate-300">
+            <View style={styles.container}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.message}>
                     {isDownloading ? t('downloading_update') : t('checking_version')}
                 </Text>
             </View>
@@ -68,8 +70,18 @@ function OtaGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+    return (
+        <ThemeProvider>
+            <AppContent />
+        </ThemeProvider>
+    );
+}
+
+function AppContent() {
     const { t } = useTranslation();
     const [isDbReady, setIsDbReady] = useState(false);
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
 
     useEffect(() => {
         const initDatabase = async () => {
@@ -88,9 +100,9 @@ export default function RootLayout() {
 
     if (!isDbReady) {
         return (
-            <View className="flex-1 justify-center items-center bg-slate-900">
-                <ActivityIndicator size="large" color="#3b82f6" />
-                <Text className="mt-4 text-sm font-semibold text-slate-300">
+            <View style={styles.container}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.initMessage}>
                     {t('initializing_app')}
                 </Text>
             </View>
@@ -111,3 +123,22 @@ export default function RootLayout() {
         </SafeAreaProvider>
     );
 }
+
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+    container: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: colors.background,
+    },
+    message: {
+        marginTop: SPACING.sm,
+        color: colors.textSecondary,
+    },
+    initMessage: {
+        marginTop: SPACING.md,
+        fontSize: 14,
+        fontWeight: '600',
+        color: colors.textSecondary,
+    },
+});

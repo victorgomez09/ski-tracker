@@ -28,6 +28,7 @@ func (u *skiSessionStore) List(ctx context.Context) ([]models.SkiSession, error)
 		Relation("Runs").
 		Relation("User").
 		Relation("Resort").
+		Relation("Photos").
 		Where("ss.is_public = ?", true).
 		Order("ss.created_at DESC").
 		Scan(ctx)
@@ -43,6 +44,7 @@ func (u *skiSessionStore) ListByResortID(ctx context.Context, resortID string, u
 		Model(&sessions).
 		Relation("Runs").
 		Relation("User").
+		Relation("Photos").
 		Where("resort_id = ?", resortID).
 		Where("is_public = ? OR user_id = ?", true, userID).
 		Order("start_time DESC").
@@ -59,6 +61,7 @@ func (u *skiSessionStore) ListByUserID(ctx context.Context, userID uuid.UUID) ([
 		Model(&sessions).
 		Relation("Runs").
 		Relation("User").
+		Relation("Photos").
 		Where("user_id = ?", userID).
 		Order("start_time DESC").
 		Scan(ctx)
@@ -74,6 +77,7 @@ func (u *skiSessionStore) GetByID(ctx context.Context, sessionID uuid.UUID) (*mo
 		Model(&session).
 		Relation("Runs").
 		Relation("User").
+		Relation("Photos").
 		Where("ss.id = ?", sessionID).
 		Scan(ctx)
 	if err != nil {
@@ -114,5 +118,13 @@ func (u *skiSessionStore) UpdateMetrics(ctx context.Context, sessionID uuid.UUID
 		Where("id = ?", sessionID).
 		Exec(ctx)
 
+	return err
+}
+
+func (u *skiSessionStore) AddPhotos(ctx context.Context, photos []models.SessionPhoto) error {
+	if len(photos) == 0 {
+		return nil
+	}
+	_, err := u.db.NewInsert().Model(&photos).Exec(ctx)
 	return err
 }

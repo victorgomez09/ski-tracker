@@ -68,6 +68,13 @@ export const getAllPhotos = async (db: SQLite.SQLiteDatabase) => {
 };
 
 /**
+ * Saves a photo file URI to the local SQLite database.
+ */
+export const savePhotoToLocalDB = async (fileUri: string, db: SQLite.SQLiteDatabase) => {
+  await db.runAsync('INSERT INTO photos (file_uri) VALUES (?)', [fileUri]);
+};
+
+/**
  * Clears all tracking points from the local SQLite database. This function should be called at the start of a new ski session.
  */
 export const clearTrack = async (db: SQLite.SQLiteDatabase) => {

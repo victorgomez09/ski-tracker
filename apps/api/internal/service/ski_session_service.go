@@ -137,7 +137,34 @@ func (s *SkiSessionService) AddPointsAndPhotos(ctx context.Context, points []mod
 		return fmt.Errorf("database insert failed: %w", err)
 	}
 
+	if len(uploadedObjects) > 0 {
+		var sessionPhotos []models.SessionPhoto
+		for _, obj := range uploadedObjects {
+			sessionPhotos = append(sessionPhotos, models.SessionPhoto{
+				ID:        uuid.New(),
+				SessionID: points[0].SessionID,
+				PhotoURL:  obj,
+			})
+		}
+
+		err = s.store.SkiSession().AddPhotos(ctx, sessionPhotos)
+		if err != nil {
+			s.logger.Error("failed to add photos to database, rolling back minio photos...", "error", err)
+			s.rollbackMinioUploads(ctx, bucketName, uploadedObjects)
+			return fmt.Errorf("database photos insert failed: %w", err)
+		}
+	}
+
 	return nil
+}
+
+func (s *SkiSessionService) GetPhotoReader(ctx context.Context, objectName string) (*minio.Object, error) {
+	bucketName := "ski-session-photos"
+	object, err := s.minio.GetObject(ctx, bucketName, objectName, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get photo from MinIO: %w", err)
+	}
+	return object, nil
 }
 
 func (s *SkiSessionService) FinishSession(ctx context.Context, sessionID uuid.UUID) error {

@@ -1,8 +1,6 @@
 module.exports = function (api) {
-  api.cache(true);
+  const platform = api.caller((caller) => caller?.platform);
   let plugins = [];
-
-  plugins.push('react-native-worklets/plugin');
 
   return {
     presets: ['babel-preset-expo'],

@@ -6,13 +6,15 @@ import {
 import { Image } from "expo-image";
 import { Camera as CameraIcon, RotateCcw, X } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { View, Text, TouchableOpacity, Pressable } from "react-native";
+import { View, Text, TouchableOpacity, Pressable, StyleSheet } from "react-native";
+import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from "../../constants/theme";
 
 interface CameraProps {
     onClose?: () => void;
+    onSavePhoto?: (uri: string) => void;
 }
 
-export const Camera = ({ onClose }: CameraProps) => {
+export const Camera = ({ onClose, onSavePhoto }: CameraProps) => {
     const [permission, requestPermission] = useCameraPermissions();
     const ref = useRef<CameraView>(null);
     const [uri, setUri] = useState<string | null>(null);
@@ -24,12 +26,12 @@ export const Camera = ({ onClose }: CameraProps) => {
 
     if (!permission.granted) {
         return (
-            <View className="flex-1 items-center justify-center p-6 bg-slate-900">
-                <Text className="text-lg font-semibold text-white text-center mb-4">
+            <View style={styles.permissionContainer}>
+                <Text style={styles.permissionText}>
                     We need your permission to use the camera
                 </Text>
-                <TouchableOpacity onPress={requestPermission} className="bg-blue-600 px-6 py-3 rounded-md">
-                    <Text className="text-white font-bold text-base">Grant permission</Text>
+                <TouchableOpacity onPress={requestPermission} style={styles.button}>
+                    <Text style={styles.buttonText}>Grant permission</Text>
                 </TouchableOpacity>
             </View>
         );
@@ -46,32 +48,43 @@ export const Camera = ({ onClose }: CameraProps) => {
 
     const renderPicture = (uri: string) => {
         return (
-            <View className="items-center justify-center space-y-4">
+            <View style={styles.pictureContainer}>
                 <Image
                     source={{ uri }}
                     contentFit="contain"
-                    style={{ width: 300, aspectRatio: 1, borderRadius: 16 }}
+                    style={styles.imagePreview}
                 />
-                <TouchableOpacity onPress={() => setUri(null)} className="bg-blue-600 px-6 py-3 rounded-md mt-4">
-                    <Text className="text-white font-bold text-base">Take another picture</Text>
-                </TouchableOpacity>
+                <View style={styles.actionRow}>
+                    <TouchableOpacity onPress={() => setUri(null)} style={styles.secondaryButton}>
+                        <Text style={styles.secondaryButtonText}>Repetir</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        onPress={() => {
+                            if (onSavePhoto) onSavePhoto(uri);
+                            if (onClose) onClose();
+                        }} 
+                        style={styles.button}
+                    >
+                        <Text style={styles.buttonText}>Guardar Foto</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
         );
     };
 
     const renderCamera = () => {
         return (
-            <View className="w-full h-full justify-center items-center">
+            <View style={styles.cameraWrapper}>
                 <CameraView
                     ref={ref}
-                    style={{ width: '100%', height: '80%', borderRadius: 20 }}
+                    style={styles.cameraView}
                     mode="picture"
                     facing={facing}
                     mute={false}
                     responsiveOrientationWhenOrientationLocked
                 />
-                <View className="flex-row items-center justify-center gap-8 mt-4">
-                    <Pressable onPress={takePicture} className="bg-blue-600 p-4 rounded-full">
+                <View style={styles.shutterRow}>
+                    <Pressable onPress={takePicture} style={styles.shutterButton}>
                         {({ pressed }) => (
                             <CameraIcon
                                 color="#ffffff"
@@ -82,8 +95,8 @@ export const Camera = ({ onClose }: CameraProps) => {
                             />
                         )}
                     </Pressable>
-                    <Pressable onPress={toggleFacing} className="bg-slate-800 p-4 rounded-full border border-slate-700">
-                        <RotateCcw size={28} color="#ffffff" />
+                    <Pressable onPress={toggleFacing} style={styles.switchButton}>
+                        <RotateCcw size={28} color={COLORS.textSecondary} />
                     </Pressable>
                 </View>
             </View>
@@ -91,11 +104,125 @@ export const Camera = ({ onClose }: CameraProps) => {
     };
 
     return (
-        <View className="flex-1 items-center justify-center p-4 bg-slate-950 relative">
-            <TouchableOpacity onPress={onClose} className="absolute top-6 right-6 z-50 p-2 bg-slate-800 rounded-full">
-                <X size={28} color="#ffffff" />
+        <View style={styles.container}>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <X size={28} color={COLORS.textSecondary} />
             </TouchableOpacity>
             {uri ? renderPicture(uri) : renderCamera()}
         </View>
     );
 };
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: SPACING.md,
+        backgroundColor: COLORS.background,
+        position: 'relative',
+    },
+    permissionContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: SPACING.lg,
+        backgroundColor: COLORS.background,
+    },
+    permissionText: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        textAlign: 'center',
+        marginBottom: SPACING.md,
+    },
+    button: {
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: SPACING.lg,
+        paddingVertical: 12,
+        borderRadius: BORDER_RADIUS.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...SHADOWS.md,
+    },
+    buttonText: {
+        color: COLORS.textOnPrimary,
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+    closeButton: {
+        position: 'absolute',
+        top: 24,
+        right: 24,
+        zIndex: 50,
+        padding: 8,
+        backgroundColor: COLORS.surface,
+        borderRadius: BORDER_RADIUS.round,
+        ...SHADOWS.sm,
+    },
+    pictureContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        paddingHorizontal: SPACING.lg,
+        gap: SPACING.md,
+    },
+    imagePreview: {
+        width: 300,
+        aspectRatio: 1,
+        borderRadius: BORDER_RADIUS.xl,
+    },
+    actionRow: {
+        flexDirection: 'row',
+        gap: SPACING.md,
+        marginTop: SPACING.lg,
+        width: '100%',
+        justifyContent: 'center',
+    },
+    secondaryButton: {
+        backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        paddingVertical: 12,
+        borderRadius: BORDER_RADIUS.md,
+        flex: 1,
+        alignItems: 'center',
+    },
+    secondaryButtonText: {
+        color: COLORS.textPrimary,
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+    cameraWrapper: {
+        width: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    cameraView: {
+        width: '100%',
+        height: '80%',
+        borderRadius: BORDER_RADIUS.xl,
+    },
+    shutterRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 32,
+        marginTop: SPACING.md,
+    },
+    shutterButton: {
+        backgroundColor: COLORS.primary,
+        padding: 16,
+        borderRadius: BORDER_RADIUS.round,
+        ...SHADOWS.md,
+    },
+    switchButton: {
+        backgroundColor: COLORS.surface,
+        padding: 16,
+        borderRadius: BORDER_RADIUS.round,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        ...SHADOWS.sm,
+    },
+});

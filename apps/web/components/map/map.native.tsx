@@ -13,7 +13,7 @@ import { useOfflineMaps } from 'hooks/use-offline.hook';
 import { ArrowLeft, CircleHelp, Download, MapPin, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View, StyleSheet, Platform, processColor } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { useNetworkState } from 'expo-network'
 
@@ -21,15 +21,240 @@ import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import api from 'interceptor/api';
 import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
+import { useThemeColors, COLORS, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 import { LegendDetailPanel } from './legend-detail-panel';
 import { MapDetailPanel } from './map-detail-panel';
 import { OfflineMapsModal } from './offline-maps-panel';
 import { ResortDetailPanel } from './resort-detail-panel';
 
+let LineChart: any = null;
+if (Platform.OS !== 'web') {
+    LineChart = require('react-native-charts-wrapper').LineChart;
+}
+
 const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
+
+const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((lat1 * Math.PI) / 180) *
+            Math.cos((lat2 * Math.PI) / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
+
+interface GenericChartDatum {
+    distance: number;
+    elevation: number;
+    speed: number;
+    slopePct: number;
+    slopeDeg: number;
+}
+
+const computeChartData = (points: any[]) => {
+    if (!points || points.length === 0) return [];
+    let cumulativeDistance = 0;
+    return points.map((p, idx) => {
+        if (idx > 0) {
+            const prev = points[idx - 1];
+            cumulativeDistance += getDistance(prev.lat, prev.lon, p.lat, p.lon);
+        }
+        const prevPoint = idx > 0 ? points[idx - 1] : p;
+        const elevDiff = p.altitude - prevPoint.altitude;
+        const distDiff = idx > 0 ? getDistance(prevPoint.lat, prevPoint.lon, p.lat, p.lon) * 1000 : 0; // meters
+        const slopePct = distDiff > 0.1 ? Math.round((elevDiff / distDiff) * 100 * 10) / 10 : 0;
+        const slopeDeg = Math.round(Math.atan(Math.abs(slopePct) / 100) * (180 / Math.PI));
+
+        return {
+            distance: cumulativeDistance, // in km
+            elevation: Math.round(p.altitude),
+            speed: p.speed * 3.6, // km/h
+            slopePct,
+            slopeDeg,
+        };
+    });
+};
+
+const getSlopeColor = (slopePct: number) => {
+    const absSlope = Math.abs(slopePct);
+    if (absSlope < 15) return '#00a859';
+    if (absSlope < 25) return '#0072bc';
+    if (absSlope < 40) return '#f0141e';
+    return '#000000';
+};
+
+const NativeChart: React.FC<{
+    data: GenericChartDatum[];
+    yKey: 'elevation' | 'speed';
+    height: number;
+    onSelectIndex: (index: number) => void;
+    colors: typeof LIGHT_COLORS;
+    styles: any;
+    strokeColor?: string;
+}> = ({ data, yKey, height, onSelectIndex, colors, styles, strokeColor }) => {
+    if (!LineChart || !data || data.length === 0) return null;
+
+    const chartValues = data.map(d => ({ x: d.distance, y: d[yKey] }));
+    const circleColors = data.map(d => processColor(strokeColor || getSlopeColor(d.slopePct)));
+
+    const segmentDataSets = [];
+
+    for (let i = 0; i < data.length - 1; i++) {
+        const p1 = data[i];
+        const p2 = data[i + 1];
+        const segmentColor = processColor(strokeColor || getSlopeColor(p2.slopePct));
+
+        segmentDataSets.push({
+            values: [
+                { x: p1.distance, y: p1[yKey] },
+                { x: p2.distance, y: p2[yKey] },
+            ],
+            label: `segment_${i}`,
+            config: {
+                color: segmentColor,
+                lineWidth: 2.5,
+                drawCircles: false,
+                drawValues: false,
+                drawFilled: true,
+                fillColor: segmentColor,
+                fillAlpha: yKey === 'elevation' ? 60 : 35,
+            },
+        });
+    }
+
+    segmentDataSets.push({
+        values: chartValues,
+        label: 'points_overlay',
+        config: {
+            color: processColor('transparent'),
+            lineWidth: 0,
+            drawCircles: true,
+            circleRadius: 4,
+            circleColors: circleColors,
+            circleHoleColor: processColor('#ffffff'),
+            drawCircleHole: true,
+            drawValues: false,
+            drawFilled: false,
+        },
+    });
+
+    const formatStr = yKey === 'elevation' ? "###0'm'" : "###0.0'km/h'";
+
+    return (
+        <View style={{ height }}>
+            <LineChart
+                style={{ flex: 1 }}
+                data={{
+                    dataSets: segmentDataSets,
+                }}
+                xAxis={{
+                    position: 'BOTTOM',
+                    textColor: processColor(colors.textSecondary),
+                    textSize: 9,
+                    gridColor: processColor(colors.border),
+                    gridDashedLine: { lineLength: 3, spaceLength: 3 },
+                    valueFormatter: "###0.0'km'",
+                    granularityEnabled: true,
+                    granularity: 0.1,
+                }}
+                yAxis={{
+                    left: {
+                        textColor: processColor(colors.textSecondary),
+                        textSize: 9,
+                        gridColor: processColor(colors.border),
+                        gridDashedLine: { lineLength: 3, spaceLength: 3 },
+                        valueFormatter: formatStr,
+                        spaceBottom: 15,
+                        spaceTop: 15,
+                    },
+                    right: { enabled: false },
+                }}
+                legend={{ enabled: false }}
+                chartDescription={{ text: '' }}
+                touchEnabled={true}
+                dragEnabled={true}
+                scaleEnabled={false}
+                scaleXEnabled={false}
+                scaleYEnabled={false}
+                pinchZoom={false}
+                doubleTapToZoomEnabled={false}
+                onSelect={(event: any) => {
+                    const entry = event.nativeEvent;
+                    if (entry && typeof entry.x === 'number') {
+                        const index = data.findIndex(d => Math.abs(d.distance - entry.x) < 0.1);
+                        if (index !== -1) onSelectIndex(index);
+                    }
+                }}
+            />
+        </View>
+    );
+};
+
+const AnalyserChart: React.FC<{
+    data: GenericChartDatum[];
+    yKey: 'elevation' | 'speed';
+    height?: number;
+    strokeColor?: string;
+}> = ({ data, yKey, height = 130, strokeColor }) => {
+    const { t } = useTranslation();
+    const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
+
+    useEffect(() => {
+        if (!data || data.length === 0) {
+            setSelectedIndex(null);
+            return;
+        }
+        setSelectedIndex(prev => (prev === null || prev >= data.length ? Math.floor(data.length / 2) : prev));
+    }, [data]);
+
+    if (!data || data.length === 0) return null;
+
+    const selectedDatum = selectedIndex !== null ? data[selectedIndex] : null;
+
+    return (
+        <View style={styles.chartWrapper}>
+            {selectedDatum && (
+                <View style={styles.tooltipContainer}>
+                    <Text style={styles.tooltipTextPrimary}>
+                        {yKey === 'elevation' 
+                            ? t('alt', { elevation: selectedDatum.elevation }) 
+                            : `${selectedDatum.speed.toFixed(1)} km/h`}
+                    </Text>
+                    <Text style={styles.tooltipTextSecondary}>
+                        {t('dist', { distance: selectedDatum.distance.toFixed(2) })}
+                    </Text>
+                    {yKey === 'elevation' && (
+                        <Text style={styles.tooltipTextTertiary}>
+                            {t('slope', { slopeDeg: selectedDatum.slopeDeg, slopePct: selectedDatum.slopePct })}
+                        </Text>
+                    )}
+                </View>
+            )}
+
+            <NativeChart
+                data={data}
+                yKey={yKey}
+                height={height}
+                onSelectIndex={setSelectedIndex}
+                colors={colors}
+                styles={styles}
+                strokeColor={strokeColor}
+            />
+        </View>
+    );
+};
 
 export default function InteractiveSkiMapNative() {
     const { t } = useTranslation();
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const networkState = useNetworkState();
     const searchParams = useLocalSearchParams();
     const cameraRef = useRef<CameraRef>(null);
@@ -315,7 +540,7 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
-const pisteDirectionStyle: any = {
+    const pisteDirectionStyle: any = {
         id: 'piste-directions',
         type: 'symbol',
         minzoom: 14,
@@ -686,37 +911,7 @@ const pisteDirectionStyle: any = {
         };
     }, []);
 
-    const renderSvgChart = (dataPoints: number[], strokeColor: string, fillColor: string) => {
-        if (!dataPoints || dataPoints.length < 2) return null;
-        const maxVal = Math.max(...dataPoints, 1);
-        const minVal = Math.min(...dataPoints, 0);
-        const range = maxVal - minVal || 1;
 
-        const width = 300;
-        const height = 100;
-
-        const points = dataPoints.map((val, idx) => {
-            const x = (idx / (dataPoints.length - 1)) * width;
-            const y = height - ((val - minVal) / range) * (height - 10) - 5;
-            return `${x},${y}`;
-        });
-
-        const pathD = `M ${points.join(' L ')}`;
-        const areaD = `M 0,${height} L ${points.join(' L ')} L ${width},${height} Z`;
-
-        return (
-            <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-                <Defs>
-                    <LinearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                        <Stop offset="0" stopColor={fillColor} stopOpacity="0.4" />
-                        <Stop offset="1" stopColor={fillColor} stopOpacity="0.0" />
-                    </LinearGradient>
-                </Defs>
-                <Path d={areaD} fill="url(#chartGrad)" />
-                <Path d={pathD} fill="none" stroke={strokeColor} strokeWidth="2" />
-            </Svg>
-        );
-    };
 
     const handleDownloadCurrentView = (customName: string) => {
         const delta = 0.08;
@@ -731,21 +926,21 @@ const pisteDirectionStyle: any = {
     };
 
     return (
-        <View className="flex-1 w-full h-full bg-slate-950 relative">
+        <View style={styles.container}>
             <TouchableOpacity
                 onPress={() => setSelectedLegend(true)}
-                className="absolute bottom-4 left-4 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
+                style={styles.helpButton}
             >
-                <CircleHelp size={18} color="#60a5fa" />
+                <CircleHelp size={18} color={colors.primary} />
             </TouchableOpacity>
 
             <TouchableOpacity
                 onPress={() => setShowOfflineModal(true)}
-                className="absolute bottom-4 left-16 z-50 bg-slate-800 border border-slate-700 p-3 rounded-md shadow-md flex-row items-center gap-2"
+                style={styles.downloadButton}
             >
-                <Download size={18} color="#60a5fa" />
+                <Download size={18} color={colors.primary} />
                 {packs.length > 0 && (
-                    <View className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <View style={styles.indicatorDot} />
                 )}
             </TouchableOpacity>
 
@@ -774,16 +969,16 @@ const pisteDirectionStyle: any = {
             )}
 
             {searchParams.sessionId && trackPoints.length > 0 && (
-                <View className="absolute top-4 left-4 right-4 md:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-md p-4 md:w-80 max-h-[75vh] shadow-2xl space-y-3">
-                    <View className="flex-row justify-between items-center pb-2 border-b border-slate-800">
+                <View style={styles.analyserPanel}>
+                    <View style={styles.analyserHeader}>
                         <View>
-                            <Text className="font-extrabold text-sm text-white">{t('session_analyser')}</Text>
-                            <Text className="text-[10px] text-slate-400">
+                            <Text style={styles.analyserTitle}>{t('session_analyser')}</Text>
+                            <Text style={styles.analyserSubtitle}>
                                 {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
                             </Text>
                         </View>
                         <TouchableOpacity
-                            className="p-1.5 bg-slate-800 rounded-full"
+                            style={styles.closeButton}
                             onPress={() => {
                                 setTrackPoints([]);
                                 setMatchedPisteIds([]);
@@ -792,94 +987,86 @@ const pisteDirectionStyle: any = {
                                 router.setParams({ sessionId: '' });
                             }}
                         >
-                            <X size={16} color="#94a3b8" />
+                            <X size={16} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
                     {selectedRun ? (
-                        <ScrollView className="space-y-3">
+                        <ScrollView contentContainerStyle={styles.spaceY3}>
                             <TouchableOpacity
-                                className="flex-row items-center gap-1 bg-slate-800 px-3 py-1.5 rounded-md self-start mb-2"
+                                style={styles.backButton}
                                 onPress={() => setSelectedRun(null)}
                             >
-                                <ArrowLeft size={14} color="#60a5fa" />
-                                <Text className="text-xs font-bold text-blue-400">{t('back_to_runs')}</Text>
+                                <ArrowLeft size={14} color={colors.primary} />
+                                <Text style={styles.backButtonText}>{t('back_to_runs')}</Text>
                             </TouchableOpacity>
 
-                            <View className="bg-slate-800/80 p-3 rounded-md border border-slate-700">
-                                <Text className="font-bold text-xs text-white">{t('run_details', { index: selectedRun.index })}</Text>
-                                <View className="flex-row justify-between mt-2">
-                                    <Text className="text-xs text-slate-300">{t('drop')}: {selectedRun.verticalDrop.toFixed(0)}m</Text>
-                                    <Text className="text-xs text-slate-300">{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</Text>
+                            <View style={styles.runDetailsCard}>
+                                <Text style={styles.runDetailsTitle}>{t('run_details', { index: selectedRun.index })}</Text>
+                                <View style={styles.rowBetween}>
+                                    <Text style={styles.textMuted}>{t('drop')}: {selectedRun.verticalDrop.toFixed(0)}m</Text>
+                                    <Text style={styles.textMuted}>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</Text>
                                 </View>
                             </View>
 
-                            <View className="space-y-2 mt-3">
-                                <Text className="text-[10px] font-bold text-slate-400 uppercase">{t('elevation_profile')}</Text>
-                                <View className="bg-slate-800/40 rounded-md p-2 border border-slate-700">
-                                    {renderSvgChart(selectedRun.points.map((p: any) => p.altitude), '#3b82f6', '#3b82f6')}
-                                </View>
+                            <View style={styles.spaceY2}>
+                                <Text style={styles.profileLabel}>{t('elevation_profile')}</Text>
+                                <AnalyserChart data={computeChartData(selectedRun.points)} yKey="elevation" />
 
-                                <Text className="text-[10px] font-bold text-slate-400 uppercase mt-3">{t('speed_profile')}</Text>
-                                <View className="bg-slate-800/40 rounded-md p-2 border border-slate-700">
-                                    {renderSvgChart(selectedRun.points.map((p: any) => p.speed * 3.6), '#ef4444', '#ef4444')}
-                                </View>
+                                <Text style={styles.profileLabel}>{t('speed_profile')}</Text>
+                                <AnalyserChart data={computeChartData(selectedRun.points)} yKey="speed" strokeColor={colors.danger} />
                             </View>
                         </ScrollView>
                     ) : (
-                        <View className="space-y-3">
-                            <View className="flex-row bg-slate-800 p-1 rounded-md mb-2">
+                        <View style={styles.spaceY3}>
+                            <View style={styles.tabsContainer}>
                                 <TouchableOpacity
-                                    className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'runs' ? 'bg-blue-600' : ''}`}
+                                    style={[styles.tabButton, activeTab === 'runs' && styles.tabButtonActive]}
                                     onPress={() => setActiveTab('runs')}
                                 >
-                                    <Text className={`text-xs font-bold ${activeTab === 'runs' ? 'text-white' : 'text-slate-400'}`}>{t('runs')}</Text>
+                                    <Text style={[styles.tabButtonText, activeTab === 'runs' && styles.tabButtonTextActive]}>{t('runs')}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'elevation' ? 'bg-blue-600' : ''}`}
+                                    style={[styles.tabButton, activeTab === 'elevation' && styles.tabButtonActive]}
                                     onPress={() => setActiveTab('elevation')}
                                 >
-                                    <Text className={`text-xs font-bold ${activeTab === 'elevation' ? 'text-white' : 'text-slate-400'}`}>{t('elevation')}</Text>
+                                    <Text style={[styles.tabButtonText, activeTab === 'elevation' && styles.tabButtonTextActive]}>{t('elevation')}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    className={`flex-1 py-1.5 rounded-md items-center ${activeTab === 'speed' ? 'bg-blue-600' : ''}`}
+                                    style={[styles.tabButton, activeTab === 'speed' && styles.tabButtonActive]}
                                     onPress={() => setActiveTab('speed')}
                                 >
-                                    <Text className={`text-xs font-bold ${activeTab === 'speed' ? 'text-white' : 'text-slate-400'}`}>{t('speed')}</Text>
+                                    <Text style={[styles.tabButtonText, activeTab === 'speed' && styles.tabButtonTextActive]}>{t('speed')}</Text>
                                 </TouchableOpacity>
                             </View>
 
                             {activeTab === 'runs' && (
-                                <ScrollView className="max-h-64 space-y-2">
-                                    <Text className="text-xs font-bold text-slate-400 mb-2">{t('descent_runs')} ({detectedRuns.length})</Text>
+                                <ScrollView style={styles.runsScroll} contentContainerStyle={styles.spaceY2}>
+                                    <Text style={styles.runsHeader}>{t('descent_runs')} ({detectedRuns.length})</Text>
                                     {detectedRuns.map((run) => (
                                         <TouchableOpacity
                                             key={run.id}
-                                            className="bg-slate-800 p-3 rounded-md border border-slate-700 my-1 flex-row justify-between items-center"
+                                            style={styles.runItem}
                                             onPress={() => setSelectedRun(run)}
                                         >
                                             <View>
-                                                <Text className="font-bold text-xs text-white">{t('run_title', { index: run.index })}</Text>
-                                                <Text className="text-[10px] text-slate-400 mt-0.5">
+                                                <Text style={styles.runDetailsTitle}>{t('run_title', { index: run.index })}</Text>
+                                                <Text style={styles.runItemText}>
                                                     {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
                                                 </Text>
                                             </View>
-                                            <Text className="text-xs font-bold text-blue-400">{t('charts')} →</Text>
+                                            <Text style={styles.backButtonText}>{t('charts')} →</Text>
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
                             )}
 
                             {activeTab === 'elevation' && (
-                                <View className="bg-slate-800/40 p-2 rounded-md border border-slate-700">
-                                    {renderSvgChart(trackPoints.map(p => p.altitude), '#3b82f6', '#3b82f6')}
-                                </View>
+                                <AnalyserChart data={computeChartData(trackPoints)} yKey="elevation" />
                             )}
 
                             {activeTab === 'speed' && (
-                                <View className="bg-slate-800/40 p-2 rounded-md border border-slate-700">
-                                    {renderSvgChart(trackPoints.map(p => p.speed * 3.6), '#ef4444', '#ef4444')}
-                                </View>
+                                <AnalyserChart data={computeChartData(trackPoints)} yKey="speed" strokeColor={colors.danger} />
                             )}
                         </View>
                     )}
@@ -887,7 +1074,7 @@ const pisteDirectionStyle: any = {
             )}
 
             <NativeMap
-                style={{ flex: 1, width: '100%', height: '100%' }}
+                style={styles.flex1}
                 mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
                 onRegionDidChange={handleNativeRegionDidChange}
                 onPress={handleNativeMapPress}
@@ -912,14 +1099,14 @@ const pisteDirectionStyle: any = {
                         <TouchableOpacity
                             activeOpacity={0.8}
                             onPress={() => setSelectedResort(resort)}
-                            className="flex flex-col items-center justify-center"
+                            style={styles.markerContainer}
                         >
                             {(viewState.zoom >= 10 || hoveredResortId === resort.ID || selectedResort?.ID === resort.ID) && (
                                 <Text style={{
                                     fontSize: 11,
                                     fontWeight: 'bold',
-                                    color: selectedResort?.ID === resort.ID ? '#3b82f6' : '#ffffff',
-                                    textShadowColor: '#000000',
+                                    color: selectedResort?.ID === resort.ID ? colors.primary : colors.textPrimary,
+                                    textShadowColor: '#ffffff',
                                     textShadowOffset: { width: 0, height: 0 },
                                     textShadowRadius: 3,
                                     marginBottom: 2
@@ -927,7 +1114,7 @@ const pisteDirectionStyle: any = {
                                     {resort.Name}
                                 </Text>
                             )}
-                            <View className="w-6 h-6 rounded-full flex items-center justify-center bg-blue-600 border-2 border-white shadow-lg">
+                            <View style={styles.markerPin}>
                                 <MapPin size={14} color="#ffffff" />
                             </View>
                         </TouchableOpacity>
@@ -969,3 +1156,247 @@ const pisteDirectionStyle: any = {
         </View>
     );
 }
+
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+    container: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+        backgroundColor: colors.background,
+        position: 'relative',
+    },
+    flex1: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+    },
+    helpButton: {
+        position: 'absolute',
+        bottom: 16,
+        left: 16,
+        zIndex: 50,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        ...SHADOWS.md,
+    },
+    downloadButton: {
+        position: 'absolute',
+        bottom: 16,
+        left: 64,
+        zIndex: 50,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        ...SHADOWS.md,
+    },
+    indicatorDot: {
+        width: 8,
+        height: 8,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.success,
+    },
+    analyserPanel: {
+        position: 'absolute',
+        bottom: 20,
+        left: 16,
+        right: 16,
+        zIndex: 40,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: BORDER_RADIUS.xl,
+        padding: SPACING.md,
+        maxHeight: '45%',
+        ...SHADOWS.lg,
+    },
+    analyserHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingBottom: SPACING.sm,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+        marginBottom: SPACING.sm,
+    },
+    analyserTitle: {
+        fontWeight: '800',
+        fontSize: 14,
+        color: colors.textPrimary,
+    },
+    analyserSubtitle: {
+        fontSize: 10,
+        color: colors.textSecondary,
+    },
+    closeButton: {
+        padding: 6,
+        backgroundColor: colors.surface,
+        borderRadius: BORDER_RADIUS.round,
+    },
+    backButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: colors.surface,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: BORDER_RADIUS.sm,
+        alignSelf: 'flex-start',
+        marginBottom: 8,
+    },
+    backButtonText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: colors.primary,
+    },
+    runDetailsCard: {
+        backgroundColor: colors.surface,
+        padding: SPACING.sm,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginBottom: SPACING.sm,
+    },
+    runDetailsTitle: {
+        fontWeight: 'bold',
+        fontSize: 12,
+        color: colors.textPrimary,
+    },
+    rowBetween: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 8,
+    },
+    textMuted: {
+        fontSize: 12,
+        color: colors.textSecondary,
+    },
+    profileLabel: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        color: colors.textLight,
+        textTransform: 'uppercase',
+        marginTop: SPACING.sm,
+        marginBottom: 4,
+    },
+    chartContainer: {
+        backgroundColor: colors.surface,
+        borderRadius: BORDER_RADIUS.sm,
+        padding: 8,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    tabsContainer: {
+        flexDirection: 'row',
+        backgroundColor: colors.surface,
+        padding: 4,
+        borderRadius: BORDER_RADIUS.md,
+        marginBottom: SPACING.sm,
+    },
+    tabButton: {
+        flex: 1,
+        paddingVertical: 6,
+        borderRadius: BORDER_RADIUS.sm,
+        alignItems: 'center',
+    },
+    tabButtonActive: {
+        backgroundColor: colors.primary,
+    },
+    tabButtonText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: colors.textSecondary,
+    },
+    tabButtonTextActive: {
+        color: colors.textOnPrimary,
+    },
+    runsScroll: {
+        maxHeight: 256,
+    },
+    runsHeader: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: colors.textSecondary,
+        marginBottom: 8,
+    },
+    runItem: {
+        backgroundColor: colors.surface,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.sm,
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginVertical: 4,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    runItemText: {
+        fontSize: 10,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    markerContainer: {
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    markerPin: {
+        width: 24,
+        height: 24,
+        borderRadius: BORDER_RADIUS.round,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.primary,
+        borderWidth: 2,
+        borderColor: '#FFFFFF',
+        ...SHADOWS.md,
+    },
+    spaceY3: {
+        gap: SPACING.sm,
+    },
+    spaceY2: {
+        gap: 6,
+    },
+    chartWrapper: {
+        backgroundColor: colors.surface,
+        padding: SPACING.sm,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    tooltipContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: SPACING.sm,
+        paddingVertical: 6,
+        marginBottom: SPACING.sm,
+        borderRadius: BORDER_RADIUS.sm,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        ...SHADOWS.sm,
+    },
+    tooltipTextPrimary: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: colors.textPrimary,
+    },
+    tooltipTextSecondary: {
+        fontSize: 10,
+        color: colors.textSecondary,
+    },
+    tooltipTextTertiary: {
+        fontSize: 10,
+        color: colors.textLight,
+    },
+});

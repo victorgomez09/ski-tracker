@@ -1,32 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import BottomTabs from 'components/navigation/bottom-tabs';
-import { API_BASE_URL } from 'constants/constants';
+import { LIGHT_COLORS, SPACING, useThemeColors } from 'constants/theme';
 import { useAuth } from 'context/auth.context';
-import { useVersionCheck } from 'hooks/use-version.hook';
-import { UpdateModal } from 'components/updates/update-modal';
 
 export default function RootLayout() {
   const { token, isLoading } = useAuth();
   const { t } = useTranslation();
-  // const { downloadingOta, updateInfo, modalVisible, dismissModal, applyUpdate } = useVersionCheck(API_BASE_URL);
-
-  // if (downloadingOta) {
-  //   return (
-  //     <View className="flex-1 justify-center items-center bg-slate-900">
-  //       <ActivityIndicator size="large" color="#3b82f6" />
-  //       <Text className="mt-3 text-slate-300">{t("downloading_update")}</Text>
-  //     </View>
-  //   );
-  // }
+  const colors = useThemeColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   if (isLoading) {
     return (
-      <View className="flex-1 justify-center items-center bg-slate-900">
-        <ActivityIndicator size="large" color="#3b82f6" />
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -34,18 +25,6 @@ export default function RootLayout() {
   if (!token) {
     return <Redirect href="/login" />;
   }
-
-  // if (updateInfo?.forceUpdate) {
-  //   return (
-  //     <UpdateModal
-  //       forceUpdate
-  //       latestVersion={updateInfo.latestVersion}
-  //       changelog={updateInfo.changelog}
-  //       onUpdate={applyUpdate}
-  //       onDismiss={() => {}}
-  //     />
-  //   );
-  // }
 
   return (
     <>
@@ -86,16 +65,19 @@ export default function RootLayout() {
           }}
         />
       </Tabs>
-
-      {/* {(updateInfo && modalVisible) && (
-        <UpdateModal
-          forceUpdate={updateInfo.forceUpdate}
-          latestVersion={updateInfo.latestVersion}
-          changelog={updateInfo.changelog}
-          onUpdate={applyUpdate}
-          onDismiss={dismissModal}
-        />
-      )} */}
     </>
   );
 }
+
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  message: {
+    marginTop: SPACING.sm,
+    color: colors.textSecondary,
+  },
+});

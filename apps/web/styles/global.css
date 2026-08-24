@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "nativewind/theme";
 
+@source "../app/**/*.{ts,tsx,js,jsx}";
+@source "../components/**/*.{ts,tsx,js,jsx}";
+
 .recharts-wrapper *:focus,
 .recharts-surface:focus,
 svg:focus {

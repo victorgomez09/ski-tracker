@@ -96,6 +96,7 @@ type SkiSessionStore interface {
 	Create(ctx context.Context, skiSession *models.SkiSession) (*models.SkiSession, error)
 	Update(ctx context.Context, sessionID uuid.UUID, now time.Time) error
 	UpdateMetrics(ctx context.Context, sessionID uuid.UUID, totalDistance, maxSpeed, verticalDrop float64) error
+	AddPhotos(ctx context.Context, photos []models.SessionPhoto) error
 }
 
 type SessionPointStore interface {

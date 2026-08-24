@@ -16,6 +16,14 @@ export interface Session {
     user: User;
     runs: SessionRun[];
     resort: Resort;
+    photos?: SessionPhoto[];
+}
+
+export interface SessionPhoto {
+    id: string;
+    session_id: string;
+    photo_url: string;
+    created_at: string;
 }
 
 export interface SessionRun {

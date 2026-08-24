@@ -208,3 +208,27 @@ func (h *SkiSessionHandler) GetSession(c *gin.Context) {
 
 	httputil.RespondOK(c, session)
 }
+
+func (h *SkiSessionHandler) GetPhoto(c *gin.Context) {
+	objectName := c.Param("path")
+	if objectName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing path parameter"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	object, err := h.svc.GetPhotoReader(ctx, objectName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Photo not found"})
+		return
+	}
+	defer object.Close()
+
+	stat, err := object.Stat()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve photo metadata"})
+		return
+	}
+
+	c.DataFromReader(http.StatusOK, stat.Size, stat.ContentType, object, nil)
+}

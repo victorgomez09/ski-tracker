@@ -3,10 +3,11 @@ const { getDefaultConfig } = require('expo/metro-config');
 const { withNativewind } = require('nativewind/metro');
 
 /** @type {import('expo/metro-config').MetroConfig} */
-const config = getDefaultConfig(__dirname);
+const config = getDefaultConfig(__dirname, { isCSSEnabled: true });
 
 // Add wasm asset support
 config.resolver.assetExts.push('wasm');
+config.resolver.unstable_enableSymlinks = true;
  
 // Add COEP and COOP headers to support SharedArrayBuffer
 config.server.enhanceMiddleware = (middleware) => {
@@ -17,4 +18,4 @@ config.server.enhanceMiddleware = (middleware) => {
   };
 };
 
-module.exports = withNativewind(config, { input: './styles/global.css' });
+module.exports = withNativewind(config);

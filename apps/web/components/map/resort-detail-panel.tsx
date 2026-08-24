@@ -1,8 +1,9 @@
-import { Resort, ResortDetail, Piste, Lift } from 'models/ski-resort.model';
+import { Resort, ResortDetail, Piste } from 'models/ski-resort.model';
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Linking, Platform, StyleSheet } from 'react-native';
 import { X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
+import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 
 interface ResortDetailPanelProps {
     resort: Resort | ResortDetail;
@@ -12,16 +13,17 @@ interface ResortDetailPanelProps {
 const getDifficultyMeta = (difficulty: string) => {
     switch (difficulty?.toLowerCase()) {
         case 'novice':
-            return { labelKey: 'novice', bg: 'bg-[#00a859]', hex: '#00a859' };
+            return { labelKey: 'novice', hex: '#00a859' };
         case 'easy':
-            return { labelKey: 'easy', bg: 'bg-[#0072bc]', hex: '#0072bc' };
+            return { labelKey: 'easy', hex: '#0072bc' };
         case 'intermediate':
-            return { labelKey: 'intermediate', bg: 'bg-[#f0141e]', hex: '#f0141e' };
+            return { labelKey: 'intermediate', hex: '#f0141e' };
         case 'advanced':
+            return { labelKey: 'expert', hex: '#000000' };
         case 'expert':
-            return { labelKey: 'expert', bg: 'bg-black', hex: '#000000' };
+            return { labelKey: 'expert', hex: '#000000' };
         default:
-            return { labelKey: 'other', bg: 'bg-gray-400', hex: '#9ca3af' };
+            return { labelKey: 'other', hex: '#9ca3af' };
     }
 };
 
@@ -65,6 +67,10 @@ const parseLiftType = (liftType: string, t: any) => {
 
 export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, onClose }) => {
     const { t } = useTranslation();
+    const isWeb = Platform.OS === 'web';
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
+
     const stats = useMemo(() => {
         const pistes = resort?.pistes || [];
         const lifts = resort?.lifts || [];
@@ -202,27 +208,27 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
     if (!resort) return null;
 
     return (
-        <View className="absolute inset-0 flex items-center justify-center bg-black/50 z-50">
-            <View className="absolute z-50 bg-slate-900/95 border border-slate-700 shadow-md p-4 rounded-md w-11/12 h-11/12">
-                <ScrollView className="space-y-4">
-                    <View className="flex-row justify-between items-start">
-                        <Text className="text-xs text-slate-400 font-medium">
+        <View style={styles.overlay} pointerEvents="box-none">
+            <View style={[styles.modalContainer, isWeb ? styles.panelWeb : styles.panelMobile]}>
+                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                    <View style={styles.header}>
+                        <Text style={styles.breadcrumbText}>
                             {resort.Country || t('ski_resort')}
                         </Text>
-                        <TouchableOpacity onPress={onClose} className="p-1.5 rounded-full bg-slate-800">
-                            <X size={18} color="#94a3b8" />
+                        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                            <X size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
-                    <View className="flex-row items-center gap-3">
-                        <View className="w-10 h-10 rounded-full bg-blue-900/60 items-center justify-center border border-blue-700">
-                            <Text className="text-xl">🏔️</Text>
+                    <View style={styles.titleRow}>
+                        <View style={styles.avatarCircle}>
+                            <Text style={styles.avatarEmoji}>🏔️</Text>
                         </View>
-                        <View className="flex-1">
-                            <Text className="text-2xl font-bold text-white leading-tight">{resort.Name}</Text>
+                        <View style={styles.titleInfo}>
+                            <Text style={styles.titleText}>{resort.Name}</Text>
                             {resort.Website && (
                                 <TouchableOpacity onPress={() => Linking.openURL(resort.Website!)}>
-                                    <Text className="text-xs font-semibold text-blue-400 text-right underline" numberOfLines={1}>
+                                    <Text style={styles.websiteText} numberOfLines={1}>
                                         {resort.Website.replace(/^https?:\/\//, '')}
                                     </Text>
                                 </TouchableOpacity>
@@ -230,34 +236,37 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                         </View>
                     </View>
 
-                    <View className="flex-row justify-between border-t border-b border-slate-800 py-3 my-2">
-                        <View className="items-center">
-                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('total_slopes')}</Text>
-                            <Text className="text-sm font-bold text-white mt-0.5">{stats.totalPistes} ({formattedPisteLength} {t('km')})</Text>
+                    <View style={styles.statsContainer}>
+                        <View style={styles.statBox}>
+                            <Text style={styles.statLabel}>{t('total_slopes')}</Text>
+                            <Text style={styles.statValue}>{stats.totalPistes} ({formattedPisteLength} {t('km')})</Text>
                         </View>
-                        <View className="items-center">
-                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('lifts')}</Text>
-                            <Text className="text-sm font-bold text-white mt-0.5">{stats.totalLifts}</Text>
+                        <View style={styles.statBox}>
+                            <Text style={styles.statLabel}>{t('lifts')}</Text>
+                            <Text style={styles.statValue}>{stats.totalLifts}</Text>
                         </View>
-                        <View className="items-center">
-                            <Text className="text-[10px] text-slate-400 uppercase font-semibold">{t('elevation')}</Text>
-                            <Text className="text-sm font-bold text-white mt-0.5">
+                        <View style={styles.statBox}>
+                            <Text style={styles.statLabel}>{t('elevation')}</Text>
+                            <Text style={styles.statValue}>
                                 {stats.minElev && stats.maxElev ? `${stats.minElev}m - ${stats.maxElev}m` : t('n_a')}
                             </Text>
                         </View>
                     </View>
 
                     {difficultyDistribution.length > 0 && (
-                        <View className="my-2">
-                            <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">{t('difficulty_breakdown')}</Text>
-                            <View className="w-full h-3 rounded-full overflow-hidden flex-row bg-slate-800">
+                        <View style={styles.section}>
+                            <Text style={styles.sectionHeader}>{t('difficulty_breakdown')}</Text>
+                            <View style={styles.barContainer}>
                                 {difficultyDistribution.map(item => {
                                     const meta = getDifficultyMeta(item.key);
                                     return (
                                         <View
                                             key={item.key}
-                                            style={{ width: `${item.pct}%` }}
-                                            className={`${meta.bg} h-full`}
+                                            style={{
+                                                width: `${item.pct}%`,
+                                                backgroundColor: meta.hex,
+                                                height: '100%',
+                                            }}
                                         />
                                     );
                                 })}
@@ -265,19 +274,19 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                         </View>
                     )}
 
-                    <View className="my-2">
-                        <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">{t('pistes')}</Text>
-                        <View className="flex-row flex-wrap gap-2">
+                    <View style={styles.section}>
+                        <Text style={styles.sectionHeader}>{t('pistes')}</Text>
+                        <View style={styles.pistesGrid}>
                             {Object.entries(stats.difficultyCounts).map(([diff, count]) => {
                                 if (count === 0 && diff === 'other') return null;
                                 const meta = getDifficultyMeta(diff);
                                 const len = stats.difficultyLengths[diff as keyof typeof stats.difficultyLengths] || 0;
                                 return (
-                                    <View key={diff} className="flex-row items-center bg-slate-800 rounded-md p-2.5 border border-slate-700 w-[48%]">
-                                        <View className={`w-3 h-3 rounded-full ${meta.bg} mr-2`} />
+                                    <View key={diff} style={styles.pisteCard}>
+                                        <View style={[styles.colorDot, { backgroundColor: meta.hex }]} />
                                         <View>
-                                            <Text className="text-xs font-bold text-white">{count} <Text className="font-normal text-slate-300">{t(meta.labelKey)}</Text></Text>
-                                            <Text className="text-[10px] text-slate-400">{(len / 1000).toFixed(1)} {t('km')}</Text>
+                                            <Text style={styles.pisteCardTitle}>{count} <Text style={styles.pisteCardSubtitle}>{t(meta.labelKey)}</Text></Text>
+                                            <Text style={styles.pisteCardLen}>{(len / 1000).toFixed(1)} {t('km')}</Text>
                                         </View>
                                     </View>
                                 );
@@ -286,20 +295,20 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                     </View>
 
                     {stats.totalLifts > 0 && (
-                        <View className="my-2">
-                            <Text className="text-xs text-slate-400 uppercase font-semibold mb-2">{t('lifts_capacity')}</Text>
+                        <View style={styles.section}>
+                            <Text style={styles.sectionHeader}>{t('lifts_capacity')}</Text>
                             {stats.totalCapacity > 0 && (
-                                <View className="flex-row justify-between border-b border-slate-800 pb-2 mb-2">
-                                    <Text className="text-xs text-slate-400">{t('hourly_capacity')}</Text>
-                                    <Text className="text-xs font-semibold text-white">
+                                <View style={styles.hourlyContainer}>
+                                    <Text style={styles.hourlyLabel}>{t('hourly_capacity')}</Text>
+                                    <Text style={styles.hourlyValue}>
                                         {stats.totalHourlyCapacity ? t('person_per_hour', { count: stats.totalHourlyCapacity }) : t('n_a')}
                                     </Text>
                                 </View>
                             )}
-                            <View className="flex-row flex-wrap gap-1.5">
+                            <View style={styles.liftsBadgeContainer}>
                                 {Object.entries(stats.liftTypeCounts).map(([type, count]) => (
-                                    <View key={type} className="px-2.5 py-1 bg-blue-950/80 border border-blue-800/60 rounded-md">
-                                        <Text className="text-[10px] text-blue-300 font-semibold uppercase">
+                                    <View key={type} style={styles.liftBadge}>
+                                        <Text style={styles.liftBadgeText}>
                                             {count}x {parseLiftType(type, t)}
                                         </Text>
                                     </View>
@@ -313,3 +322,206 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
     );
 };
 
+const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+    overlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'transparent',
+        zIndex: 50,
+    },
+    modalContainer: {
+        position: 'absolute',
+        zIndex: 50,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.xl,
+        ...SHADOWS.lg,
+    },
+    panelWeb: {
+        left: 20,
+        top: 16,
+        bottom: 16,
+        width: 380,
+        height: 'auto',
+    },
+    panelMobile: {
+        bottom: 16,
+        left: 16,
+        right: 16,
+        maxHeight: '45%',
+    },
+    scrollContent: {
+        flexDirection: 'column',
+        gap: SPACING.md,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    },
+    breadcrumbText: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        fontWeight: '500',
+    },
+    closeButton: {
+        padding: 6,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.surface,
+    },
+    titleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+    },
+    avatarCircle: {
+        width: 40,
+        height: 40,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.primaryLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: colors.primary,
+        ...SHADOWS.sm,
+    },
+    avatarEmoji: {
+        fontSize: 20,
+    },
+    titleInfo: {
+        flex: 1,
+    },
+    titleText: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+        lineHeight: 28,
+    },
+    websiteText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: colors.primary,
+        textDecorationLine: 'underline',
+        textAlign: 'left',
+        marginTop: 2,
+    },
+    statsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+        paddingVertical: 12,
+        marginVertical: 4,
+    },
+    statBox: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    statLabel: {
+        fontSize: 10,
+        color: colors.textSecondary,
+        textTransform: 'uppercase',
+        fontWeight: '600',
+    },
+    statValue: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+        marginTop: 2,
+    },
+    section: {
+        marginVertical: 4,
+    },
+    sectionHeader: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        textTransform: 'uppercase',
+        fontWeight: '600',
+        marginBottom: 8,
+    },
+    barContainer: {
+        width: '100%',
+        height: 12,
+        borderRadius: BORDER_RADIUS.round,
+        overflow: 'hidden',
+        flexDirection: 'row',
+        backgroundColor: colors.surface,
+    },
+    pistesGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    pisteCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.surface,
+        borderRadius: BORDER_RADIUS.md,
+        padding: 10,
+        borderWidth: 1,
+        borderColor: colors.border,
+        width: '48%',
+    },
+    colorDot: {
+        width: 12,
+        height: 12,
+        borderRadius: BORDER_RADIUS.round,
+        marginRight: 8,
+    },
+    pisteCardTitle: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+    },
+    pisteCardSubtitle: {
+        fontWeight: '500',
+        color: colors.textSecondary,
+    },
+    pisteCardLen: {
+        fontSize: 10,
+        color: colors.textLight,
+        marginTop: 2,
+    },
+    hourlyContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+        paddingBottom: 8,
+        marginBottom: 8,
+    },
+    hourlyLabel: {
+        fontSize: 12,
+        color: colors.textSecondary,
+    },
+    hourlyValue: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: colors.textPrimary,
+    },
+    liftsBadgeContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+    },
+    liftBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        backgroundColor: colors.primaryLight,
+        borderWidth: 1,
+        borderColor: colors.primary,
+        borderRadius: BORDER_RADIUS.md,
+    },
+    liftBadgeText: {
+        fontSize: 10,
+        color: colors.primaryDark,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+    },
+});
