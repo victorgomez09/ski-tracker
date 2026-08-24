@@ -67,6 +67,7 @@ export default function ResortsView() {
     const [isLoadingResorts, setIsLoadingResorts] = useState(false);
     const [isLoadingSessions, setIsLoadingSessions] = useState(false);
     const [weatherData, setWeatherData] = useState<WeatherForecast | null>(null);
+    const [inputFocused, setInputFocused] = useState(false);
 
     // Cache sync helpers
     const setResortsWithCache = (val: Resort[]) => {
@@ -490,7 +491,7 @@ export default function ResortsView() {
                 {/* Search Header Container */}
                 <View style={styles.searchHeader}>
                     <Text style={styles.title}>{t('ski_resorts')}</Text>
-                    <View style={styles.searchBar}>
+                    <View style={[styles.searchBar, inputFocused ? { borderColor: colors.primary } : {}]}>
                         {isLoadingResorts ? (
                             <ActivityIndicator size="small" color={colors.primary} />
                         ) : (
@@ -502,6 +503,7 @@ export default function ResortsView() {
                             placeholderTextColor={colors.textLight}
                             value={searchTerm}
                             onChangeText={handleSearch}
+                            onFocus={() => setInputFocused(true)}
                         />
                     </View>
                 </View>

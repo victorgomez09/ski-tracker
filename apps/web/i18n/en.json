@@ -210,5 +210,8 @@
   "update": "Update",
   "later": "Later",
   "ota_available_badge": "Update available",
-  "initializing_app": "Initializing application..."
+  "initializing_app": "Initializing application...",
+  "personal_info": "Personal Information",
+  "edit_profile": "Edit Profile",
+  "settings": "Settings"
 }

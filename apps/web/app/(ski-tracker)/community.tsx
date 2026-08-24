@@ -1,24 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
-  Image,
   LayoutAnimation,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   UIManager,
-  View
+  View,
+  Modal,
+  Linking
 } from 'react-native';
 import { useTranslation } from "react-i18next";
+import { Image } from 'expo-image';
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Activity, Calendar, ChevronDown, ChevronUp, MapIcon, Ruler, TrendingDown, Users, Zap } from "lucide-react-native";
 
 import { API_BASE_URL } from "constants/constants";
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 import { useRouter } from "expo-router";
 import api from "interceptor/api";
-import { Activity, Calendar, ChevronDown, ChevronUp, MapIcon, Ruler, TrendingDown, Users, Zap } from "lucide-react-native";
 import { Session } from "models/session.model";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "context/auth.context";
 
@@ -169,6 +171,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
   const router = useRouter();
   const { token } = useAuth();
   const [expanded, setExpanded] = useState(false);
+  const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
   const colors = useThemeColors();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -270,21 +273,33 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
       {/* PHOTOS THUMBNAILS (UP TO 5) */}
       {session.photos && session.photos.length > 0 && (
         <View style={styles.photosRow}>
-          {session.photos.slice(0, 5).map((photo) => (
-            <Image
-              key={photo.id}
-              source={{
-                uri: `${API_BASE_URL}/ski-sessions/photos/${photo.photo_url}`,
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-              }}
-              style={styles.photoThumbnail}
-              resizeMode="cover"
-            />
-          ))}
+          {session.photos.slice(0, 5).map((photo) => {
+            const imageUrl = `${API_BASE_URL}/ski-sessions/photos/${photo.photo_url}`;
+            return (
+              <TouchableOpacity
+                key={photo.id}
+                onPress={() => setSelectedPhotoUrl(imageUrl)}
+                activeOpacity={0.8}
+              >
+                <Image
+                  source={{
+                    uri: imageUrl,
+                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                  }}
+                  style={styles.photoThumbnail}
+                  contentFit="cover"
+                />
+              </TouchableOpacity>
+            );
+          })}
           {session.photos.length > 5 && (
-            <View style={styles.morePhotosBadge}>
+            <TouchableOpacity
+              style={styles.morePhotosBadge}
+              onPress={toggleExpand}
+              activeOpacity={0.8}
+            >
               <Text style={styles.morePhotosText}>+{session.photos.length - 5}</Text>
-            </View>
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -317,17 +332,25 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
                 <View style={{ marginBottom: 16, paddingTop: 8 }}>
                   <Text style={styles.runsPhotosHeader}>Fotos de la Sesión</Text>
                   <View style={styles.runsPhotosList}>
-                    {session.photos.map((photo) => (
-                      <Image
-                        key={photo.id}
-                        source={{
-                          uri: `${API_BASE_URL}/ski-sessions/photos/${photo.photo_url}`,
-                          headers: token ? { Authorization: `Bearer ${token}` } : undefined
-                        }}
-                        style={{ width: 72, height: 72, borderRadius: BORDER_RADIUS.sm }}
-                        resizeMode="cover"
-                      />
-                    ))}
+                    {session.photos.map((photo) => {
+                      const imageUrl = `${API_BASE_URL}/ski-sessions/photos/${photo.photo_url}`;
+                      return (
+                        <TouchableOpacity
+                          key={photo.id}
+                          onPress={() => setSelectedPhotoUrl(imageUrl)}
+                          activeOpacity={0.8}
+                        >
+                          <Image
+                            source={{
+                              uri: imageUrl,
+                              headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                            }}
+                            style={{ width: 72, height: 72, borderRadius: BORDER_RADIUS.sm }}
+                            resizeMode="cover"
+                          />
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
               )}
@@ -380,6 +403,72 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
           )}
         </View>
       )}
+
+      {/* Fullscreen Photo Modal */}
+      <Modal
+        visible={selectedPhotoUrl !== null}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedPhotoUrl(null)}
+      >
+        <View style={styles.modalBackground}>
+          <TouchableOpacity
+            style={styles.modalCloseOverlay}
+            activeOpacity={1}
+            onPress={() => setSelectedPhotoUrl(null)}
+          />
+          <View style={styles.modalContent}>
+            {selectedPhotoUrl && (
+              <Image
+                source={{
+                  uri: selectedPhotoUrl,
+                  headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                }}
+                style={styles.fullscreenImage}
+                resizeMode="contain"
+              />
+            )}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.downloadButton]}
+                onPress={async () => {
+                  if (!selectedPhotoUrl) return;
+                  if (Platform.OS === 'web') {
+                    try {
+                      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+                      const response = await fetch(selectedPhotoUrl, { headers });
+                      const blob = await response.blob();
+                      const blobUrl = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = blobUrl;
+                      link.download = selectedPhotoUrl.split('/').pop() || 'photo.png';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(blobUrl);
+                    } catch (error) {
+                      console.error("Failed to download image on web:", error);
+                      window.open(selectedPhotoUrl, '_blank');
+                    }
+                  } else {
+                    Linking.openURL(selectedPhotoUrl);
+                  }
+                }}
+              >
+                <Text style={styles.modalButtonText}>Descargar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.closeButton]}
+                onPress={() => setSelectedPhotoUrl(null)}
+              >
+                <Text style={styles.modalButtonText}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -593,13 +682,13 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     marginBottom: 4,
   },
   photoThumbnail: {
-    width: 44,
-    height: 44,
+    width: 30,
+    height: 30,
     borderRadius: BORDER_RADIUS.sm,
   },
   morePhotosBadge: {
-    width: 44,
-    height: 44,
+    width: 30,
+    height: 30,
     borderRadius: BORDER_RADIUS.sm,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -699,5 +788,52 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.textSecondary,
+  },
+  modalBackground: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCloseOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  modalContent: {
+    width: '90%',
+    height: '80%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 20,
+  },
+  modalButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: BORDER_RADIUS.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 100,
+  },
+  downloadButton: {
+    backgroundColor: colors.primary,
+  },
+  closeButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  modalButtonText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });

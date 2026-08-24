@@ -1307,7 +1307,7 @@ const getStyles = (colors: typeof LIGHT_COLORS) => ({
         display: 'flex',
         flexDirection: 'column' as const,
         gap: '8px',
-        maxHeight: '288px',
+        // maxHeight: '288px',
         overflowY: 'auto' as const,
         paddingRight: '4px',
     },

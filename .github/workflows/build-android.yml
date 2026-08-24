@@ -213,7 +213,7 @@ jobs:
           files: |
             ./apps/web/app-dev.apk
             ./apps/web/app-prod.apk
-          body_path: changelog.md
+          body_path: ./apps/web/changelog.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: 📦 Upload build artifacts to GitHub
