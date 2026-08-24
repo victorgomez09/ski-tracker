@@ -208,5 +208,6 @@
   "changelogs": "Registro de cambios",
   "update": "Actualizar",
   "later": "Más tarde",
-  "ota_available_badge": "Actualización disponible"
+  "ota_available_badge": "Actualización disponible",
+  "initializing_app": "Iniciando aplicación..."
 }

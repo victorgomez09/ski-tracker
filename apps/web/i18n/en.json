@@ -208,5 +208,6 @@
   "changelogs": "Changelogs",
   "update": "Update",
   "later": "Later",
-  "ota_available_badge": "Update available"
+  "ota_available_badge": "Update available",
+  "initializing_app": "Initializing application..."
 }

@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SQLite from 'expo-sqlite';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { initDB } from 'tracking/database';
 
@@ -68,15 +68,34 @@ function OtaGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+    const { t } = useTranslation();
+    const [isDbReady, setIsDbReady] = useState(false);
+
     useEffect(() => {
         const initDatabase = async () => {
-          const database = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
-    
-          await initDB(database);
+            try {
+                const database = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
+                await initDB(database);
+            } catch (error) {
+                console.error('Failed to initialize local database:', error);
+            } finally {
+                setIsDbReady(true);
+            }
         };
     
         initDatabase();
-      }, []);
+    }, []);
+
+    if (!isDbReady) {
+        return (
+            <View className="flex-1 justify-center items-center bg-slate-900">
+                <ActivityIndicator size="large" color="#3b82f6" />
+                <Text className="mt-4 text-sm font-semibold text-slate-300">
+                    {t('initializing_app')}
+                </Text>
+            </View>
+        );
+    }
 
     return (
         <SafeAreaProvider>

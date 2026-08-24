@@ -252,7 +252,10 @@ const NativeChart: React.FC<{
                 touchEnabled={true}
                 dragEnabled={true}
                 scaleEnabled={false}
+                scaleXEnabled={false}
+                scaleYEnabled={false}
                 pinchZoom={false}
+                doubleTapToZoomEnabled={false}
                 onSelect={(event: any) => {
                     const entry = event.nativeEvent;
                     if (entry && typeof entry.x === 'number') {
