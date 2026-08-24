@@ -41,7 +41,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "pnpm"
 
       - name: 📦 Get pnpm cache directory path
         id: pnpm-cache-dir-path
@@ -90,7 +89,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "pnpm"
 
       - name: 📦 Get pnpm cache directory path
         id: pnpm-cache-dir-path
