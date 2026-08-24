@@ -39,18 +39,8 @@ func (u *sessionPointStore) Bulk(ctx context.Context, points *[]models.SessionPo
 		return nil
 	}
 
-	for _, p := range *points {
-		_, err := u.db.NewInsert().
-			Model(&p).
-			Value("geom", "ST_GeomFromText(?, 4326)", p.Geom).
-			Exec(ctx)
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	_, err := u.db.NewInsert().Model(points).Exec(ctx)
+	return err
 }
 
 func (u *sessionPointStore) Delete(ctx context.Context, id uuid.UUID) error {

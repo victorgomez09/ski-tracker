@@ -30,6 +30,35 @@ services:
       - "9223:9001"
     command: [ "server", "--console-address", ":9001", "/data" ]
 
+  api:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    container_name: ski_tracker-api
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8082}:8080"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - DATABASE_URL=postgres://ski_tracker:ski_tracker@postgres:5432/ski_tracker?sslmode=disable
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=ski_tracker
+      - MINIO_SECRET_KEY=ski_tracker
+      - MINIO_USE_SSL=false
+      - JWT_SECRET=${JWT_SECRET:-change-me-to-a-random-string}
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - API_PUBLIC_URL=${API_PUBLIC_URL:-http://localhost:8082}
+      - OTA_UPDATES_DIR=/app/updates
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - ota_tracker:/app/updates
+
 volumes:
   minio_tracker:
   pgdata_tracker:
+  ota_tracker:

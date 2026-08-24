@@ -95,21 +95,22 @@ export default function CommunityView() {
   const styles = useMemo(() => getStyles(colors), [colors]);
 
   useEffect(() => {
-    const fetchCommunityData = async () => {
-      try {
-        const sessionsRequest = await api.get<{ sessions: Session[] }>(`${API_BASE_URL}/ski-sessions`);
-
-        if (sessionsRequest.status === 200) {
-          setCommunityData(sessionsRequest.data.sessions || []);
-        }
-      } catch (error) {
-        console.error("Failed to fetch community data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchCommunityData();
   }, []);
+
+  const fetchCommunityData = async () => {
+    try {
+      const sessionsRequest = await api.get<{ sessions: Session[] }>(`${API_BASE_URL}/ski-sessions`);
+
+      if (sessionsRequest.status === 200) {
+        setCommunityData(sessionsRequest.data.sessions || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch community data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading || communityData.length === 0) {
     return (
@@ -160,6 +161,8 @@ export default function CommunityView() {
           renderItem={({ item }) => <SkiSessionCard session={item} />}
           contentContainerStyle={{ paddingBottom: 24 }}
           showsVerticalScrollIndicator={false}
+          refreshing={loading}
+          onRefresh={fetchCommunityData}
         />
       </View>
     </SafeAreaView>
@@ -511,7 +514,9 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
+    gap: '8',
     justifyContent: 'space-between',
     marginBottom: SPACING.md,
   },

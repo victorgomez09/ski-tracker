@@ -159,8 +159,8 @@ export default function ResortsView() {
 
     const handleSessionClick = (session: any) => {
         if (!selectedResort) return;
-        router.push(`/map?sessionId=${session.id}&lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=14`);
-        setSelectedResortWithCache(null);
+        router.navigate({ pathname: '/map', params: { sessionId: session.id, lat: selectedResort.Latitude, lng: selectedResort.Longitude, zoom: 14 } });
+        setTimeout(() => setSelectedResortWithCache(null), 100);
     };
 
     const handleDownloadCurrentView = (customName: string) => {
@@ -437,8 +437,8 @@ export default function ResortsView() {
                         <TouchableOpacity
                             style={styles.actionButton}
                             onPress={() => {
-                                router.push(`/map?lat=${selectedResort.Latitude}&lon=${selectedResort.Longitude}&zoom=12`);
-                                setSelectedResortWithCache(null);
+                                router.navigate({ pathname: '/map', params: { lat: selectedResort.Latitude, lon: selectedResort.Longitude, zoom: 12 } });
+                                setTimeout(() => setSelectedResortWithCache(null), 100);
                             }}
                         >
                             <MapIcon size={18} color={colors.textOnPrimary} />
@@ -449,8 +449,8 @@ export default function ResortsView() {
                                 <TouchableOpacity
                                     style={styles.actionButton}
                                     onPress={() => {
-                                        router.push(`/tracking?lat=${selectedResort.Latitude}&lng=${selectedResort.Longitude}&zoom=12`);
-                                        setSelectedResortWithCache(null);
+                                        router.navigate({ pathname: '/tracking', params: { lat: selectedResort.Latitude, lng: selectedResort.Longitude, zoom: 12 } });
+                                        setTimeout(() => setSelectedResortWithCache(null), 100);
                                     }}
                                 >
                                     <Navigation size={18} color={colors.textOnPrimary} />
@@ -841,6 +841,7 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         borderRadius: BORDER_RADIUS.round,
     },
     breakdownLabel: {
+        display: 'flex',
         fontSize: 10,
         color: colors.textSecondary,
         textTransform: 'uppercase',

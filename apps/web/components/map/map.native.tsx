@@ -40,9 +40,9 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
     const a =
         Math.sin(dLat / 2) * Math.sin(dLat / 2) +
         Math.cos((lat1 * Math.PI) / 180) *
-            Math.cos((lat2 * Math.PI) / 180) *
-            Math.sin(dLon / 2) *
-            Math.sin(dLon / 2);
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
 };
@@ -222,8 +222,8 @@ const AnalyserChart: React.FC<{
             {selectedDatum && (
                 <View style={styles.tooltipContainer}>
                     <Text style={styles.tooltipTextPrimary}>
-                        {yKey === 'elevation' 
-                            ? t('alt', { elevation: selectedDatum.elevation }) 
+                        {yKey === 'elevation'
+                            ? t('alt', { elevation: selectedDatum.elevation })
                             : `${selectedDatum.speed.toFixed(1)} km/h`}
                     </Text>
                     <Text style={styles.tooltipTextSecondary}>
@@ -926,22 +926,26 @@ export default function InteractiveSkiMapNative() {
 
     return (
         <View style={styles.container}>
-            <TouchableOpacity
-                onPress={() => setSelectedLegend(true)}
-                style={styles.helpButton}
-            >
-                <CircleHelp size={18} color={colors.primary} />
-            </TouchableOpacity>
+            {!searchParams.sessionId && (
+                <>
+                    <TouchableOpacity
+                        onPress={() => setSelectedLegend(true)}
+                        style={styles.helpButton}
+                    >
+                        <CircleHelp size={18} color={colors.primary} />
+                    </TouchableOpacity>
 
-            <TouchableOpacity
-                onPress={() => setShowOfflineModal(true)}
-                style={styles.downloadButton}
-            >
-                <Download size={18} color={colors.primary} />
-                {packs.length > 0 && (
-                    <View style={styles.indicatorDot} />
-                )}
-            </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => setShowOfflineModal(true)}
+                        style={styles.downloadButton}
+                    >
+                        <Download size={18} color={colors.primary} />
+                        {packs.length > 0 && (
+                            <View style={styles.indicatorDot} />
+                        )}
+                    </TouchableOpacity>
+                </>
+            )}
 
             {selectedLegend && (
                 <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
@@ -1319,7 +1323,7 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         color: colors.textOnPrimary,
     },
     runsScroll: {
-        maxHeight: 256,
+        maxHeight: 200,
     },
     runsHeader: {
         fontSize: 12,

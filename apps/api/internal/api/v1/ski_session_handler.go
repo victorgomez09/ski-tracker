@@ -127,7 +127,7 @@ func (h *SkiSessionHandler) AddPoints(c *gin.Context) {
 
 	var points []models.SessionPoint
 	for _, p := range req.Points {
-		geomWKT := fmt.Sprintf("POINT(%f %f)", p.Lon, p.Lat)
+		geomWKT := fmt.Sprintf("SRID=4326;POINT(%f %f)", p.Lon, p.Lat)
 
 		points = append(points, models.SessionPoint{
 			SessionID: sessionIDInt,
