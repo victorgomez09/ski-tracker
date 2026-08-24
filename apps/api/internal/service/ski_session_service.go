@@ -188,19 +188,25 @@ func (s *SkiSessionService) FinishSession(ctx context.Context, sessionID uuid.UU
 func (s *SkiSessionService) processSkiRunsAsync(ctx context.Context, sessionID uuid.UUID) error {
 	s.logger.Info("starting ski runs processing", "session_id", sessionID)
 
-	// 1. Get all points for the session
+	// 1. Get the session details to know the activity type
+	session, err := s.store.SkiSession().GetByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session details: %w", err)
+	}
+
+	// 2. Get all points for the session
 	points, err := s.store.SessionPoint().GetBySessionID(ctx, sessionID)
 	if err != nil || len(points) == 0 {
 		return fmt.Errorf("no points found for session: %w", err)
 	}
 
-	// 2. Apply noise filter (Simple Moving Average)
+	// 3. Apply noise filter (Simple Moving Average)
 	smoothedPoints := s.applyMovingAverage(points, 3)
 
-	// 3. Segment the track into Lifts, Runs, or Pauses
-	segments := s.segmentTrack(smoothedPoints)
+	// 4. Segment the track into Lifts, Runs, or Pauses
+	segments := s.segmentTrack(smoothedPoints, session.ActivityType)
 
-	// 4. Save the detected runs in the database
+	// 5. Save the detected runs in the database
 	for _, seg := range segments {
 		if seg.Type == "run" && len(seg.Points) > 10 {
 			if err := s.processRunEnrichment(ctx, sessionID, seg.Points); err != nil {
@@ -209,7 +215,7 @@ func (s *SkiSessionService) processSkiRunsAsync(ctx context.Context, sessionID u
 		}
 	}
 
-	// 5. Calculate and save session-wide metrics
+	// 6. Calculate and save session-wide metrics
 	sessionMetrics := s.calculatePhysicalMetrics(smoothedPoints)
 	if err := s.store.SkiSession().UpdateMetrics(ctx, sessionID, sessionMetrics.TotalDistance, sessionMetrics.MaxSpeed, sessionMetrics.VerticalDrop); err != nil {
 		s.logger.Error("failed to update session metrics", "session_id", sessionID, "error", err)
@@ -244,7 +250,7 @@ type TrackSegment struct {
 	Points []models.SessionPoint
 }
 
-func (s *SkiSessionService) segmentTrack(points []models.SessionPoint) []TrackSegment {
+func (s *SkiSessionService) segmentTrack(points []models.SessionPoint, activityType string) []TrackSegment {
 	var segments []TrackSegment
 	if len(points) == 0 {
 		return segments
@@ -253,15 +259,22 @@ func (s *SkiSessionService) segmentTrack(points []models.SessionPoint) []TrackSe
 	currentType := "unknown"
 	var currentPoints []models.SessionPoint
 
-	const minSpeedInactive = 0.5 // m/s
-	const inactivityDuration = 2 * time.Minute
+	minSpeedInactive := 0.5 // m/s
+	inactivityDuration := 2 * time.Minute
+	runMinSpeed := 1.0 // m/s
+
+	if activityType == "snow" {
+		minSpeedInactive = 0.3
+		inactivityDuration = 4 * time.Minute
+		runMinSpeed = 0.4
+	}
 
 	for i := 0; i < len(points); i++ {
 		p := points[i]
 
 		// Check for prolonged stops
 		if p.Speed < minSpeedInactive {
-			if s.isProlongedStop(points, i, inactivityDuration) {
+			if s.isProlongedStop(points, i, inactivityDuration, runMinSpeed) {
 				if len(currentPoints) > 0 {
 					segments = append(segments, TrackSegment{Type: currentType, Points: currentPoints})
 					currentPoints = []models.SessionPoint{}
@@ -282,7 +295,7 @@ func (s *SkiSessionService) segmentTrack(points []models.SessionPoint) []TrackSe
 			altDiff := p.Altitude - points[i-1].Altitude
 			if altDiff > 0.8 {
 				pointType = "lift"
-			} else if altDiff < -0.8 && p.Speed > 1.0 {
+			} else if altDiff < -0.8 && p.Speed > runMinSpeed {
 				pointType = "run"
 			}
 		}
@@ -309,10 +322,10 @@ func (s *SkiSessionService) segmentTrack(points []models.SessionPoint) []TrackSe
 	return segments
 }
 
-func (s *SkiSessionService) isProlongedStop(points []models.SessionPoint, currentIndex int, threshold time.Duration) bool {
+func (s *SkiSessionService) isProlongedStop(points []models.SessionPoint, currentIndex int, threshold time.Duration, runMinSpeed float64) bool {
 	startTime := points[currentIndex].Timestamp
 	for j := currentIndex; j < len(points); j++ {
-		if points[j].Speed > 1.0 {
+		if points[j].Speed > runMinSpeed {
 			return points[j].Timestamp.Sub(startTime) >= threshold
 		}
 	}

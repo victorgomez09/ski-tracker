@@ -1,16 +1,18 @@
 import { Sun, Cloud, CloudRain, Snowflake, Wind, Compass, Droplets, Flame, Gauge, Umbrella, Eye } from 'lucide-react-native';
 import { WeatherForecast } from 'models/weather.model';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
+import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 
 interface WeatherWidgetProps {
     data: WeatherForecast;
 }
 
 export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) => {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
+    const colors = useThemeColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const [activeTab, setActiveTab] = useState<'current' | 'hourly' | 'daily'>('current');
 
     const current = data.current;
@@ -32,16 +34,16 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
             case 1:
             case 2:
             case 3:
-                return { label: t('partly_cloudy'), icon: <Cloud size={24} color={COLORS.primary} /> };
+                return { label: t('partly_cloudy'), icon: <Cloud size={24} color={colors.primary} /> };
             case 45:
             case 48:
-                return { label: t('foggy'), icon: <Cloud size={24} color={COLORS.textLight} /> };
+                return { label: t('foggy'), icon: <Cloud size={24} color={colors.textSecondary} /> };
             case 51:
             case 53:
             case 55:
             case 61:
             case 63:
-                return { label: t('rain_showers'), icon: <CloudRain size={24} color={COLORS.primary} /> };
+                return { label: t('rain_showers'), icon: <CloudRain size={24} color={colors.primary} /> };
             case 71:
             case 73:
             case 75:
@@ -50,9 +52,9 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
             case 95:
             case 96:
             case 99:
-                return { label: t('thunderstorm'), icon: <CloudRain size={24} color={COLORS.danger} /> };
+                return { label: t('thunderstorm'), icon: <CloudRain size={24} color={colors.danger} /> };
             default:
-                return { label: t('variable'), icon: <Cloud size={24} color={COLORS.textLight} /> };
+                return { label: t('variable'), icon: <Cloud size={24} color={colors.textSecondary} /> };
         }
     };
 
@@ -107,7 +109,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                         </View>
                         <View style={styles.conditionRight}>
                             <Text style={styles.tempText}>{current.temperature_2m}{currentUnits.temperature_2m}</Text>
-                            <Text style={styles.feelsLikeText}>{t('feels_like')}: {current.apparent_temperature}{currentUnits.temperature_2m}</Text>
+                            <Text style={styles.feelsLikeText}>{t('feels_like', { temp: `${current.apparent_temperature}${currentUnits.temperature_2m}` })}</Text>
                         </View>
                     </View>
 
@@ -146,7 +148,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                         </View>
 
                         <View style={styles.metricCard}>
-                            <Droplets size={16} color={COLORS.primary} />
+                            <Droplets size={16} color={colors.primary} />
                             <View>
                                 <Text style={styles.gridMetricLabel}>{t('humidity')}</Text>
                                 <Text style={styles.gridMetricValue}>{current.relative_humidity_2m}{currentUnits.relative_humidity_2m}</Text>
@@ -188,7 +190,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                                             </View>
                                         ) : prob > 0 ? (
                                             <View style={styles.rainBadge}>
-                                                <Umbrella size={10} color={COLORS.primaryDark} />
+                                                <Umbrella size={10} color={colors.primaryDark} />
                                                 <Text style={styles.rainBadgeText}>{prob}%</Text>
                                             </View>
                                         ) : (
@@ -197,7 +199,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                                     </View>
                                     
                                     <View style={styles.hourlyWind}>
-                                        <Wind size={10} color={COLORS.textLight} />
+                                        <Wind size={10} color={colors.textSecondary} />
                                         <Text style={styles.hourlyWindText}>{windSpeed} {hourlyUnits.wind_speed_10m}</Text>
                                     </View>
                                     
@@ -216,7 +218,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                     <View style={styles.dailyContainer}>
                         {data.daily.time.map((dayStr, index) => {
                             const dateObj = new Date(dayStr);
-                            const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                            const dayName = dateObj.toLocaleDateString(i18n.language, { weekday: 'short', month: 'short', day: 'numeric' });
                             const maxTemp = data.daily?.temperature_2m_max[index];
                             const minTemp = data.daily?.temperature_2m_min[index];
                             const snowfallSum = data.daily?.snowfall_sum ? data.daily.snowfall_sum[index] : 0;
@@ -247,7 +249,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
     );
 };
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flexDirection: 'column',
         gap: SPACING.sm,
@@ -263,11 +265,11 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         textTransform: 'uppercase',
         letterSpacing: 1,
-        color: COLORS.textSecondary,
+        color: colors.textSecondary,
     },
     tabsWrapper: {
         flexDirection: 'row',
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.background,
         padding: 4,
         borderRadius: BORDER_RADIUS.md,
     },
@@ -277,20 +279,20 @@ const styles = StyleSheet.create({
         borderRadius: BORDER_RADIUS.sm,
     },
     tabButtonActive: {
-        backgroundColor: COLORS.primary,
+        backgroundColor: colors.primary,
     },
     tabText: {
         fontSize: 12,
         fontWeight: '600',
-        color: COLORS.textSecondary,
+        color: colors.textSecondary,
     },
     tabTextActive: {
-        color: COLORS.textOnPrimary,
+        color: colors.textOnPrimary,
     },
     bodyCard: {
-        backgroundColor: COLORS.card,
+        backgroundColor: colors.card,
         borderWidth: 1,
-        borderColor: COLORS.border,
+        borderColor: colors.border,
         padding: SPACING.md,
         borderRadius: BORDER_RADIUS.lg,
         flexDirection: 'column',
@@ -310,37 +312,37 @@ const styles = StyleSheet.create({
     iconCircle: {
         padding: 10,
         borderRadius: BORDER_RADIUS.md,
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.background,
         borderWidth: 1,
-        borderColor: COLORS.border,
+        borderColor: colors.border,
     },
     metricLabel: {
         fontSize: 10,
-        color: COLORS.textLight,
+        color: colors.textSecondary,
         fontWeight: '600',
         textTransform: 'uppercase',
     },
     conditionText: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: COLORS.textPrimary,
+        color: colors.textPrimary,
     },
     timeText: {
         fontSize: 10,
-        color: COLORS.textSecondary,
+        color: colors.textSecondary,
         marginTop: 2,
     },
     conditionRight: {
-        alignItems: 'end',
+        alignItems: 'flex-end',
     },
     tempText: {
         fontSize: 30,
         fontWeight: '800',
-        color: COLORS.textPrimary,
+        color: colors.textPrimary,
     },
     feelsLikeText: {
         fontSize: 11,
-        color: COLORS.textSecondary,
+        color: colors.textSecondary,
     },
     metricsGrid: {
         flexDirection: 'row',
@@ -348,12 +350,12 @@ const styles = StyleSheet.create({
         gap: 8,
         paddingTop: SPACING.md,
         borderTopWidth: 1,
-        borderColor: COLORS.border,
+        borderColor: colors.border,
     },
     metricCard: {
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.background,
         borderWidth: 1,
-        borderColor: COLORS.border,
+        borderColor: colors.border,
         borderRadius: BORDER_RADIUS.md,
         padding: 10,
         flexDirection: 'row',
@@ -364,18 +366,18 @@ const styles = StyleSheet.create({
     },
     gridMetricLabel: {
         fontSize: 9,
-        color: COLORS.textLight,
+        color: colors.textSecondary,
         textTransform: 'uppercase',
         fontWeight: '600',
     },
     gridMetricValue: {
         fontSize: 12,
         fontWeight: 'bold',
-        color: COLORS.textPrimary,
+        color: colors.textPrimary,
     },
     sectionHeader: {
         fontSize: 10,
-        color: COLORS.textLight,
+        color: colors.textSecondary,
         fontWeight: '600',
         textTransform: 'uppercase',
         marginBottom: 4,
@@ -384,7 +386,7 @@ const styles = StyleSheet.create({
         height: 280,
     },
     hourlyItem: {
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.background,
         borderRadius: BORDER_RADIUS.md,
         padding: 12,
         flexDirection: 'row',
@@ -392,12 +394,12 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginVertical: 4,
         borderWidth: 1,
-        borderColor: COLORS.border,
+        borderColor: colors.border,
     },
     hourText: {
         fontSize: 12,
         fontWeight: '600',
-        color: COLORS.textPrimary,
+        color: colors.textPrimary,
         width: 56,
     },
     hourlyBadgeContainer: {
@@ -422,7 +424,7 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     rainBadge: {
-        backgroundColor: COLORS.primaryLight,
+        backgroundColor: '#e0f2fe',
         paddingHorizontal: 8,
         paddingVertical: 2,
         borderRadius: BORDER_RADIUS.round,
@@ -432,12 +434,12 @@ const styles = StyleSheet.create({
     },
     rainBadgeText: {
         fontSize: 10,
-        color: COLORS.primaryDark,
+        color: '#0369a1',
         fontWeight: 'bold',
     },
     noPrecipText: {
         fontSize: 10,
-        color: COLORS.textLight,
+        color: colors.textSecondary,
     },
     hourlyWind: {
         flexDirection: 'row',
@@ -448,12 +450,12 @@ const styles = StyleSheet.create({
     },
     hourlyWindText: {
         fontSize: 10,
-        color: COLORS.textSecondary,
+        color: colors.textSecondary,
     },
     hourlyTempText: {
         fontSize: 14,
         fontWeight: 'bold',
-        color: COLORS.textPrimary,
+        color: colors.textPrimary,
         width: 48,
         textAlign: 'right',
     },
@@ -463,7 +465,7 @@ const styles = StyleSheet.create({
     dayNameText: {
         fontSize: 12,
         fontWeight: '600',
-        color: COLORS.textPrimary,
+        color: colors.textPrimary,
         width: 112,
     },
     dailyTempRange: {
@@ -474,15 +476,15 @@ const styles = StyleSheet.create({
     dailyMaxText: {
         fontSize: 12,
         fontWeight: 'bold',
-        color: COLORS.danger,
+        color: colors.danger,
     },
     dailySlashText: {
         fontSize: 12,
-        color: COLORS.textLight,
+        color: colors.textSecondary,
     },
     dailyMinText: {
         fontSize: 12,
         fontWeight: 'bold',
-        color: COLORS.primary,
+        color: colors.primary,
     },
 });

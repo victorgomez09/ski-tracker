@@ -47,17 +47,10 @@ func (s *SkiResortService) GetByID(ctx context.Context, id string) (ResortDetail
 		return ResortDetailDTO{}, err
 	}
 
-	// calculate total distance of pistes for the resort, filter only by pistes with name
+	// calculate total distance of pistes for the resort, including nameless trails
 	pistes = mergeContiguousPistes(pistes)
-	filterPistes := make([]models.SkiPiste, 0, len(pistes))
-	for _, piste := range pistes {
-		if piste.Name != "" {
-			filterPistes = append(filterPistes, piste)
-		}
-	}
-	result.TotalPistes = len(filterPistes)
 	totalKmOfPistes := 0.0
-	for _, piste := range filterPistes {
+	for _, piste := range pistes {
 		coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{})
 		if !ok || len(coords) < 2 {
 			continue
@@ -85,13 +78,22 @@ func (s *SkiResortService) GetByID(ctx context.Context, id string) (ResortDetail
 	}
 	result.DistanceKM = totalKmOfPistes
 
+	// Filter pistes with name for listing / display
+	filterPistes := make([]models.SkiPiste, 0, len(pistes))
+	for _, piste := range pistes {
+		if piste.Name != "" {
+			filterPistes = append(filterPistes, piste)
+		}
+	}
+	result.TotalPistes = len(filterPistes)
+
 	lifts, err := s.store.SkiLift().GetByResortID(ctx, resort.ID)
 	if err != nil {
 		s.logger.Error("failed to get lifts for resort", "resort_id", resort.ID, "error", err)
 		return ResortDetailDTO{}, err
 	}
 	result.TotalLifts = len(lifts)
-	result.Pistes = filterPistes
+	result.Pistes = pistes
 	result.Lifts = lifts
 
 	return result, nil
@@ -119,17 +121,10 @@ func (s *SkiResortService) ListByName(ctx context.Context, name string) ([]Resor
 			continue
 		}
 
-		// calculate total distance of pistes for the resort, filter only by pistes with name
+		// calculate total distance of pistes for the resort, including nameless trails
 		pistes = mergeContiguousPistes(pistes)
-		filterPistes := make([]models.SkiPiste, 0, len(pistes))
-		for _, piste := range pistes {
-			if piste.Name != "" {
-				filterPistes = append(filterPistes, piste)
-			}
-		}
-		result[i].TotalPistes = len(filterPistes)
 		totalKmOfPistes := 0.0
-		for _, piste := range filterPistes {
+		for _, piste := range pistes {
 			coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{})
 			if !ok || len(coords) < 2 {
 				continue
@@ -157,13 +152,22 @@ func (s *SkiResortService) ListByName(ctx context.Context, name string) ([]Resor
 		}
 		result[i].DistanceKM = totalKmOfPistes
 
+		// Filter pistes with name for listing / display
+		filterPistes := make([]models.SkiPiste, 0, len(pistes))
+		for _, piste := range pistes {
+			if piste.Name != "" {
+				filterPistes = append(filterPistes, piste)
+			}
+		}
+		result[i].TotalPistes = len(filterPistes)
+
 		lifts, err := s.store.SkiLift().GetByResortID(ctx, resort.ID)
 		if err != nil {
 			s.logger.Error("failed to get lifts for resort", "resort_id", resort.ID, "error", err)
 			continue
 		}
 		result[i].TotalLifts = len(lifts)
-		result[i].Pistes = filterPistes
+		result[i].Pistes = pistes
 		result[i].Lifts = lifts
 	}
 

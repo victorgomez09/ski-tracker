@@ -7,21 +7,20 @@ import {
     Marker as NativeMarker,
     type CameraRef,
 } from '@maplibre/maplibre-react-native';
+import { useNetworkState } from 'expo-network';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
 import { ArrowLeft, CircleHelp, Download, MapPin, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, Text, TouchableOpacity, View, StyleSheet, Platform, processColor } from 'react-native';
-import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
-import { useNetworkState } from 'expo-network'
+import { Platform, processColor, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import api from 'interceptor/api';
 import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
-import { useThemeColors, COLORS, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
+import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from '../../constants/theme';
 import { LegendDetailPanel } from './legend-detail-panel';
 import { MapDetailPanel } from './map-detail-panel';
 import { OfflineMapsModal } from './offline-maps-panel';

@@ -10,7 +10,7 @@ import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
-import { Activity, Download, Play, Square, Upload, Camera as CameraIcon } from 'lucide-react-native';
+import { Activity, Download, Play, Square, Upload, Camera as CameraIcon, Pause } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -45,6 +45,7 @@ export default function InteractiveSkiMapNative() {
 
     // --- Tracking status ---
     const [isTracking, setIsTracking] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);
     const [hasTrackData, setHasTrackData] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
@@ -97,13 +98,13 @@ export default function InteractiveSkiMapNative() {
     // --- Polling to refresh track points in real-time while recording ---
     useEffect(() => {
         let interval: number;
-        if (isTracking) {
+        if (isTracking && !isPaused) {
             interval = setInterval(() => {
                 loadTrackPoints();
             }, 5000);
         }
         return () => clearInterval(interval);
-    }, [isTracking]);
+    }, [isTracking, isPaused]);
 
     const setupDatabaseAndCheckStatus = async () => {
         try {
@@ -179,6 +180,7 @@ export default function InteractiveSkiMapNative() {
         if (isTracking) {
             await stopTracking();
             setIsTracking(false);
+            setIsPaused(false);
             await loadTrackPoints();
         } else {
             let trackingTime = 5000;
@@ -204,6 +206,7 @@ export default function InteractiveSkiMapNative() {
                     return;
                 }
                 setIsTracking(true);
+                setIsPaused(false);
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 if (message.startsWith('FOREGROUND_SERVICE_MISSING')) {
@@ -212,6 +215,34 @@ export default function InteractiveSkiMapNative() {
                     alert(t('tracking_start_failed'));
                 }
             }
+        }
+    };
+
+    const handleTogglePause = async () => {
+        if (!isTracking) return;
+
+        if (isPaused) {
+            // Resume tracking updates
+            let trackingTime = 5000;
+            const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
+            if (cachedTime) {
+                trackingTime = parseInt(cachedTime);
+            }
+            const resortIdToUse = resort.ID || "sierra-nevada";
+            try {
+                const started = await startTracking(resortIdToUse, trackingTime);
+                if (started) {
+                    setIsPaused(false);
+                } else {
+                    alert(t('tracking_resume_failed'));
+                }
+            } catch (err) {
+                alert(t('tracking_resume_failed'));
+            }
+        } else {
+            // Pause background location tasks to save battery
+            await stopTracking();
+            setIsPaused(true);
         }
     };
 
@@ -577,6 +608,15 @@ export default function InteractiveSkiMapNative() {
                         >
                             {isTracking ? <Square size={20} color={colors.textOnPrimary} /> : <Play size={20} color={colors.textOnPrimary} />}
                         </TouchableOpacity>
+
+                        {isTracking && (
+                            <TouchableOpacity
+                                style={[styles.trackingButton, { backgroundColor: isPaused ? colors.success : colors.warning, borderColor: isPaused ? colors.success : colors.warning }]}
+                                onPress={handleTogglePause}
+                            >
+                                {isPaused ? <Play size={20} color={colors.textOnPrimary} /> : <Pause size={20} color={colors.textOnPrimary} />}
+                            </TouchableOpacity>
+                        )}
 
                         <TouchableOpacity
                             onPress={() => setShowOfflineModal(true)}

@@ -924,9 +924,8 @@ export default function InteractiveSkiMap() {
                         onClick={() => {
                             setSelectedLegend(true);
                         }}
-                        style={styles.helpButton}
                     >
-                        <CircleQuestionMark style={{ width: '16px', height: '16px' }} />
+                        <CircleQuestionMark className="size-4" />
                     </button>
                 </div>
                 {resorts?.map(resort => (

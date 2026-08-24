@@ -242,11 +242,6 @@ export default function ResortsView() {
                             </View>
 
                             <View style={styles.metricCard}>
-                                <Text style={styles.metricLabel}>{t('pistes')}</Text>
-                                <Text style={styles.metricValue}>{selectedResortSummary?.pistes}</Text>
-                            </View>
-
-                            <View style={styles.metricCard}>
                                 <Text style={styles.metricLabel}>{t('distance')}</Text>
                                 <Text style={styles.metricValue}>
                                     {selectedResortSummary?.distance.toFixed(1)} <Text style={{ fontSize: 12, color: colors.textSecondary }}>{t('km')}</Text>
@@ -541,8 +536,6 @@ export default function ResortsView() {
                                             </View>
 
                                             <View style={styles.resortCardFooter}>
-                                                <Text style={styles.resortCardFooterText}>{t('pistes_count', { count: resort.total_pistes ?? 0 })}</Text>
-                                                <Text style={styles.resortCardFooterText}>•</Text>
                                                 <Text style={styles.resortCardFooterText}>{t('km_runs', { distance: resort.distance_km?.toFixed(1) ?? "0.0" })}</Text>
                                             </View>
                                         </TouchableOpacity>

@@ -238,8 +238,8 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
 
                     <View style={styles.statsContainer}>
                         <View style={styles.statBox}>
-                            <Text style={styles.statLabel}>{t('total_slopes')}</Text>
-                            <Text style={styles.statValue}>{stats.totalPistes} ({formattedPisteLength} {t('km')})</Text>
+                            <Text style={styles.statLabel}>{t('distance')}</Text>
+                            <Text style={styles.statValue}>{formattedPisteLength} {t('km')}</Text>
                         </View>
                         <View style={styles.statBox}>
                             <Text style={styles.statLabel}>{t('lifts')}</Text>
