@@ -205,24 +205,22 @@ jobs:
           fi
 
       - name: 📝 Create GitHub Release
-        working-directory: apps/web
         uses: softprops/action-gh-release@v1
         with:
           draft: true
           name: "Release v${{ steps.build-info.outputs.version }}-${{ steps.build-info.outputs.build_number }}"
           tag_name: "v${{ steps.build-info.outputs.version }}-${{ steps.build-info.outputs.build_number }}"
           files: |
-            ./app-dev.apk
-            ./app-prod.apk
+            ./apps/web/app-dev.apk
+            ./apps/web/app-prod.apk
           body_path: changelog.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: 📦 Upload build artifacts to GitHub
-        working-directory: apps/web
         uses: actions/upload-artifact@v4
         with:
           name: app-builds
           path: |
-            ./app-dev.apk
-            ./app-prod.apk
+            ./apps/web/app-dev.apk
+            ./apps/web/app-prod.apk
           retention-days: 7
