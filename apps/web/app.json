@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Ski tracker",
-    "slug": "sktracker",
+    "slug": "ski-tracker",
     "version": "0.0.1",
     "runtimeVersion": {
       "policy": "appVersion"
