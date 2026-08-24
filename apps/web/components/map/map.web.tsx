@@ -978,13 +978,13 @@ export default function InteractiveSkiMap() {
 
                 {viewState.zoom >= 10 && (
                     <>
-                        <Source id="pistes-source" type="geojson" data={pistesGeoJSON}>
+                        <Source id="pistes-source" type="geojson" data={pistesGeoJSON as any}>
                             <Layer {...pisteLineStyle} />
                             <Layer {...pisteLabelStyle} />
                             <Layer {...pisteDirectionStyle} />
                         </Source>
 
-                        <Source id="lifts-source" type="geojson" data={liftsGeoJSON}>
+                        <Source id="lifts-source" type="geojson" data={liftsGeoJSON as any}>
                             <Layer {...liftLineStyle} />
                             <Layer {...liftLabelStyle} />
                         </Source>
