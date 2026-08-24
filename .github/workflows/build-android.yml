@@ -32,19 +32,16 @@ jobs:
 
       - name: 🏗 Setup Node.js
         uses: actions/setup-node@v4
-        working-directory: apps/web
         with:
           node-version: "20"
           cache: "pnpm"
 
       - name: 📦 Get pnpm cache directory path
         id: pnpm-cache-dir-path
-        working-directory: apps/web
         run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
 
       - name: 📦 Setup pnpm cache
         uses: actions/cache@v3
-        working-directory: apps/web
         with:
           path: ${{ steps.pnpm-cache-dir-path.outputs.dir }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -73,24 +70,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 🏗 Checkout repository
-        working-directory: apps/web
         uses: actions/checkout@v4
 
       - name: 🏗 Setup Node.js
         uses: actions/setup-node@v4
-        working-directory: apps/web
         with:
           node-version: "20"
           cache: "pnpm"
 
       - name: 📦 Get pnpm cache directory path
         id: pnpm-cache-dir-path
-        working-directory: apps/web
         run: echo "dir=$(pnpm store path)" >> $GITHUB_OUTPUT
 
       - name: 📦 Setup pnpm cache
         uses: actions/cache@v3
-        working-directory: apps/web
         with:
           path: ${{ steps.pnpm-cache-dir-path.outputs.dir }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
