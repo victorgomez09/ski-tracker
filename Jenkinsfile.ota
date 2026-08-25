@@ -10,8 +10,8 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 dir("${WEB_DIR}") {
-                    echo 'Installing dependencies using pnpm...'
-                    sh 'pnpm install'
+                    echo 'Installing dependencies using npx pnpm...'
+                    sh 'npx --yes pnpm install'
                 }
             }
         }
@@ -20,7 +20,7 @@ pipeline {
             steps {
                 dir("${WEB_DIR}") {
                     echo 'Exporting Expo OTA bundle...'
-                    sh 'pnpm run export:ota'
+                    sh 'npx --yes pnpm run export:ota'
                 }
             }
         }
