@@ -2,6 +2,7 @@ package server
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/gin-contrib/cache/persistence"
 	"github.com/gin-gonic/gin"
@@ -14,14 +15,15 @@ import (
 
 // RouterDeps holds dependencies required by the router.
 type RouterDeps struct {
-	Services     *service.Container
-	JWTManager   *auth.JWTManager
-	Store        store.Store
-	AppURL       string
-	SetupSecret  string
-	Logger       *slog.Logger
-	Cache        *persistence.InMemoryStore
-	APIPublicURL string
+	Services         *service.Container
+	JWTManager       *auth.JWTManager
+	Store            store.Store
+	AppURL           string
+	SetupSecret      string
+	OTAPublishSecret string
+	Logger           *slog.Logger
+	Cache            *persistence.InMemoryStore
+	APIPublicURL     string
 }
 
 // NewRouter creates and configures the Gin engine with all routes.
@@ -56,6 +58,23 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		apiV1.GET("/ota/manifest", otaHandler.Manifest)
 		apiV1.GET("/ota/assets", otaHandler.Assets)
 
+		// OTA publish route - supports both static API Key (for CI/CD) and JWT
+		otaPublishAuth := func(c *gin.Context) {
+			header := c.GetHeader("Authorization")
+			if header != "" {
+				parts := strings.SplitN(header, " ", 2)
+				if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+					token := parts[1]
+					if deps.OTAPublishSecret != "" && token == deps.OTAPublishSecret {
+						c.Next()
+						return
+					}
+				}
+			}
+			middleware.Auth(deps.JWTManager)(c)
+		}
+		apiV1.POST("/ota/publish", otaPublishAuth, otaHandler.Publish)
+
 		protected := apiV1.Group("")
 		protected.Use(middleware.Auth(deps.JWTManager))
 		{
@@ -63,7 +82,6 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			versionManifestHandler := v1.NewVersionManifestHandler(deps.Services.VersionManifest, deps.Store)
 			protected.GET("/manifest", versionManifestHandler.ListAll)
 			protected.GET("/manifest/check-version", versionManifestHandler.CheckVersion)
-			protected.POST("/ota/publish", otaHandler.Publish)
 
 			// Resort routes
 			skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)

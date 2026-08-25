@@ -41,10 +41,11 @@ type K8sConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret     string
-	TokenExpiry   time.Duration
-	RefreshExpiry time.Duration
-	SetupSecret   string // Required for unauthenticated setup operations (e.g. restore)
+	JWTSecret        string
+	TokenExpiry      time.Duration
+	RefreshExpiry    time.Duration
+	SetupSecret      string // Required for unauthenticated setup operations (e.g. restore)
+	OTAPublishSecret string // Secret key to publish OTA updates from CI/CD
 }
 
 type MinioConfig struct {
@@ -75,10 +76,11 @@ func Load() (*Config, error) {
 			ConnMaxLifetime: envDuration("DATABASE_CONN_MAX_LIFETIME", 5*time.Minute),
 		},
 		Auth: AuthConfig{
-			JWTSecret:     envStr("JWT_SECRET", "ski-tracker-secret"),
-			TokenExpiry:   envDuration("JWT_TOKEN_EXPIRY", 24*time.Hour),
-			RefreshExpiry: envDuration("JWT_REFRESH_EXPIRY", 7*24*time.Hour),
-			SetupSecret:   envStr("SETUP_SECRET", ""),
+			JWTSecret:        envStr("JWT_SECRET", "ski-tracker-secret"),
+			TokenExpiry:      envDuration("JWT_TOKEN_EXPIRY", 24*time.Hour),
+			RefreshExpiry:    envDuration("JWT_REFRESH_EXPIRY", 7*24*time.Hour),
+			SetupSecret:      envStr("SETUP_SECRET", ""),
+			OTAPublishSecret: envStr("OTA_PUBLISH_SECRET", "ota-publish-secret-dev"),
 		},
 		Minio: MinioConfig{
 			Endpoint:  envStr("MINIO_ENDPOINT", "localhost:9000"),

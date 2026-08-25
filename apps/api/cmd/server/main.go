@@ -108,14 +108,15 @@ func main() {
 	// Router
 	cache := persistence.NewInMemoryStore(1 * time.Hour)
 	router := server.NewRouter(&server.RouterDeps{
-		Services:     services,
-		JWTManager:   jwtManager,
-		Store:        store,
-		AppURL:       cfg.Server.AppURL,
-		SetupSecret:  cfg.Auth.SetupSecret,
-		Logger:       logger,
-		Cache:        cache,
-		APIPublicURL: cfg.Server.APIPublicURL,
+		Services:         services,
+		JWTManager:       jwtManager,
+		Store:            store,
+		AppURL:           cfg.Server.AppURL,
+		SetupSecret:      cfg.Auth.SetupSecret,
+		OTAPublishSecret: cfg.Auth.OTAPublishSecret,
+		Logger:           logger,
+		Cache:            cache,
+		APIPublicURL:     cfg.Server.APIPublicURL,
 	})
 
 	// Scheduler / Cron Job

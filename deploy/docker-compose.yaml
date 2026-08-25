@@ -51,6 +51,7 @@ services:
       - API_PUBLIC_URL=${API_PUBLIC_URL:-http://localhost:8082}
       - OTA_UPDATES_DIR=/app/updates
       - APP_ENV=production              
+      - OTA_PUBLISH_SECRET=${OTA_PUBLISH_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
