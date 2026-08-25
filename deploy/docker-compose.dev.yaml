@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgis/postgis:18-master
+    container_name: ski_tracker-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: ski_tracker
+      POSTGRES_USER: ski_tracker
+      POSTGRES_PASSWORD: ski_tracker
+    volumes:
+      - pgdata_tracker:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ski_tracker"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  
+  minio:
+    image: minio/minio
+    environment:
+      - MINIO_ROOT_USER=ski_tracker
+      - MINIO_ROOT_PASSWORD=ski_tracker
+      - MINIO_DEFAULT_BUCKETS=bucket
+    volumes:
+      - minio_tracker:/data
+    ports:
+      - "9222:9000"
+      - "9223:9001"
+    command: [ "server", "--console-address", ":9001", "/data" ]
+
+volumes:
+  minio_tracker:
+  pgdata_tracker:

@@ -12,22 +12,6 @@
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
-    "build": {
-      "development": {
-        "developmentClient": true,
-        "distribution": "internal"
-      },
-      "production-apk": {
-        "android": {
-          "buildType": "apk"
-        }
-      },
-      "production": {
-        "android": {
-          "buildType": "app-bundle"
-        }
-      }
-    },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
@@ -40,6 +24,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash.png",
+          "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
       ],
@@ -87,7 +72,14 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.vira.skitracker"
+      "bundleIdentifier": "com.vira.skitracker",
+      "infoPlist": {
+        "CFBundleAllowMixedLocalizations": true
+      }
+    },
+    "locales": {
+      "es": "./i18n/es.json",
+      "en": "./i18n/en.json"
     },
     "android": {
       "adaptiveIcon": {
@@ -100,13 +92,8 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_BACKGROUND_LOCATION",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_LOCATION",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "CAMERA",
+        "RECORD_AUDIO"
       ],
       "package": "com.vira.skitracker"
     },

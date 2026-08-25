@@ -14,12 +14,14 @@ import (
 	"github.com/gin-contrib/cache/persistence"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/robfig/cron/v3"
 	"github.com/uptrace/bun/migrate"
 	"github.com/victorgomez09/ski-tracker/internal/api/auth"
 	"github.com/victorgomez09/ski-tracker/internal/config"
 	"github.com/victorgomez09/ski-tracker/internal/server"
 	"github.com/victorgomez09/ski-tracker/internal/service"
 	"github.com/victorgomez09/ski-tracker/internal/store/pg"
+	"github.com/victorgomez09/ski-tracker/internal/sync"
 	"github.com/victorgomez09/ski-tracker/migrations"
 )
 
@@ -116,6 +118,31 @@ func main() {
 		APIPublicURL: cfg.Server.APIPublicURL,
 	})
 
+	// Scheduler / Cron Job
+	logger.Info("starting cron job for daily sync of ski resorts, pistes, and lifts...")
+	c := cron.New()
+	_, err = c.AddFunc("@daily", func() {
+		logger.Info("running scheduled daily sync for ski resorts, pistes, and lifts...")
+		if err := sync.SyncPistesData(context.Background(), store.DB(), logger); err != nil {
+			logger.Error("failed to run scheduled sync", slog.Any("error", err))
+		}
+	})
+	if err != nil {
+		logger.Error("failed to register cron job", slog.Any("error", err))
+		os.Exit(1)
+	}
+	c.Start()
+
+	// Initial sync on startup (only in non-development envs to avoid restart spamming)
+	if cfg.Server.Env != "development" {
+		go func() {
+			logger.Info("running initial pistes sync on startup...")
+			if err := sync.SyncPistesData(context.Background(), store.DB(), logger); err != nil {
+				logger.Error("failed to run initial startup sync", slog.Any("error", err))
+			}
+		}()
+	}
+
 	// HTTP server
 	srv := &http.Server{
 		Addr:    cfg.ListenAddr(),
@@ -136,6 +163,7 @@ func main() {
 	<-quit
 
 	logger.Info("shutting down server...")
+	c.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 

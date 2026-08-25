@@ -29,6 +29,46 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
     return R * c;
 };
 
+const getOrientedDownhillSegments = (geometry: any): any[] => {
+    if (!geometry || !geometry.coordinates) return [];
+    
+    const segments: any[] = [];
+    const createSegmentFeature = (coords: any[]) => {
+        if (coords.length < 2) return null;
+        const first = coords[0];
+        const last = coords[1];
+        let finalCoords = coords;
+        if (first && last && first.length >= 3 && last.length >= 3) {
+            const startElev = first[2];
+            const endElev = last[2];
+            if (typeof startElev === 'number' && typeof endElev === 'number' && endElev > startElev) {
+                finalCoords = [last, first];
+            }
+        }
+        return {
+            type: 'LineString',
+            coordinates: finalCoords
+        };
+    };
+
+    if (geometry.type === 'LineString') {
+        const coords = geometry.coordinates;
+        for (let i = 0; i < coords.length - 1; i++) {
+            const segment = createSegmentFeature([coords[i], coords[i + 1]]);
+            if (segment) segments.push(segment);
+        }
+    } else if (geometry.type === 'MultiLineString') {
+        const lines = geometry.coordinates;
+        for (const line of lines) {
+            for (let i = 0; i < line.length - 1; i++) {
+                const segment = createSegmentFeature([line[i], line[i + 1]]);
+                if (segment) segments.push(segment);
+            }
+        }
+    }
+    return segments;
+};
+
 interface GenericChartDatum {
     distance: number;
     elevation: number;
@@ -163,8 +203,8 @@ const WebChart: React.FC<{
                             cx={p.x}
                             cy={p.y}
                             r={selectedIndex === idx ? 6 : 4}
-                            fill="#ffffff"
-                            stroke={strokeColor || getSlopeColor(p.slopePct)}
+                            fill={selectedIndex === idx ? "#ffffff" : "transparent"}
+                            stroke={selectedIndex === idx ? (strokeColor || getSlopeColor(p.slopePct)) : "transparent"}
                             strokeWidth="2"
                             style={{ cursor: 'pointer' }}
                             onClick={() => onSelectIndex(idx)}
@@ -443,11 +483,11 @@ export default function InteractiveSkiMap() {
         paint: {
             'line-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#00e676',
-                'easy', '#2979ff',
-                'intermediate', '#ff1744',
-                'advanced', '#212121',
-                '#9e9e9e'
+                'novice', '#81c784',
+                'easy', '#90caf9',
+                'intermediate', '#ef9a9a',
+                'advanced', '#757575',
+                '#cccccc'
             ],
             'line-dasharray': [
                 'case',
@@ -509,9 +549,8 @@ export default function InteractiveSkiMap() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#1a052e',
-            'line-width': 10,
-            'line-opacity': 0.8
+            'line-color': '#000000',
+            'line-width': 12
         }
     };
 
@@ -521,8 +560,7 @@ export default function InteractiveSkiMap() {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
             'line-color': '#e67e22',
-            'line-width': 5,
-            'line-opacity': 1.0
+            'line-width': 8
         }
     };
 
@@ -560,11 +598,11 @@ export default function InteractiveSkiMap() {
         paint: {
             'text-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#00e676',
-                'easy', '#2979ff',
-                'intermediate', '#ff1744',
-                'advanced', '#212121',
-                '#9e9e9e'
+                'novice', '#81c784',
+                'easy', '#90caf9',
+                'intermediate', '#ef9a9a',
+                'advanced', '#757575',
+                '#cccccc'
             ],
             'text-halo-color': '#ffffff',
             'text-halo-width': 1.5
@@ -615,19 +653,22 @@ export default function InteractiveSkiMap() {
                     const geomType = p.GeometryGeoJSON?.type;
                     return geomType && geomType !== 'Polygon' && geomType !== 'MultiPolygon';
                 })
-                .map(p => ({
-                    type: 'Feature' as const,
-                    properties: {
-                        id: p.ID,
-                        difficulty: p.Difficulty,
-                        pisteType: p.PisteType,
-                        grooming: p.Tags?.grooming,
-                        name: p.Name || `Piste #${p.ID.slice(0, 4)}`,
-                        resortName: r.Name,
-                        resortId: r.ID
-                    },
-                    geometry: p.GeometryGeoJSON
-                }));
+                .flatMap(p => {
+                    const segments = getOrientedDownhillSegments(p.GeometryGeoJSON);
+                    return segments.map(segGeom => ({
+                        type: 'Feature' as const,
+                        properties: {
+                            id: p.ID,
+                            difficulty: p.Difficulty,
+                            pisteType: p.PisteType,
+                            grooming: p.Tags?.grooming,
+                            name: p.Name || `Piste #${p.ID.slice(0, 4)}`,
+                            resortName: r.Name,
+                            resortId: r.ID
+                        },
+                        geometry: segGeom
+                    }));
+                });
         });
         return { type: 'FeatureCollection' as const, features: pistesFeatures };
     }, [resorts]);
@@ -951,7 +992,8 @@ export default function InteractiveSkiMap() {
                                     backgroundColor: 'transparent',
                                     fontSize: '11px',
                                     fontWeight: 'bold',
-                                    color: selectedResort?.ID === resort.ID ? colors.primary : colors.textPrimary,
+                                    // color: selectedResort?.ID === resort.ID ? colors.primary : colors.textPrimary,
+                                    color: colors.primary,
                                     textShadow: '0 0 3px #ffffff, 0 0 3px #ffffff, 0 0 3px #ffffff',
                                     whiteSpace: 'nowrap',
                                     marginBottom: '2px',

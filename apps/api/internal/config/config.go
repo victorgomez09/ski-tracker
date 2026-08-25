@@ -25,6 +25,7 @@ type ServerConfig struct {
 	AppURL          string // Public URL of the Ski Tracker instance (e.g. https://ski-tracker.example.com)
 	APIPublicURL    string // Public API URL used in Expo Updates asset URLs
 	OTAUpdatesDir   string // Directory that stores Expo Updates bundles
+	Env             string // e.g. "development", "production"
 }
 
 type DatabaseConfig struct {
@@ -65,6 +66,7 @@ func Load() (*Config, error) {
 			AppURL:          envStr("APP_URL", "http://localhost:3000"),
 			APIPublicURL:    envStr("API_PUBLIC_URL", ""),
 			OTAUpdatesDir:   envStr("OTA_UPDATES_DIR", "./updates"),
+			Env:             envStr("APP_ENV", envStr("ENV", "development")),
 		},
 		Database: DatabaseConfig{
 			URL:             envStr("DATABASE_URL", "postgres://ski_tracker:ski_tracker@localhost:5433/ski_tracker?sslmode=disable"),

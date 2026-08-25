@@ -47,6 +47,46 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
     return R * c;
 };
 
+const getOrientedDownhillSegments = (geometry: any): any[] => {
+    if (!geometry || !geometry.coordinates) return [];
+    
+    const segments: any[] = [];
+    const createSegmentFeature = (coords: any[]) => {
+        if (coords.length < 2) return null;
+        const first = coords[0];
+        const last = coords[1];
+        let finalCoords = coords;
+        if (first && last && first.length >= 3 && last.length >= 3) {
+            const startElev = first[2];
+            const endElev = last[2];
+            if (typeof startElev === 'number' && typeof endElev === 'number' && endElev > startElev) {
+                finalCoords = [last, first];
+            }
+        }
+        return {
+            type: 'LineString',
+            coordinates: finalCoords
+        };
+    };
+
+    if (geometry.type === 'LineString') {
+        const coords = geometry.coordinates;
+        for (let i = 0; i < coords.length - 1; i++) {
+            const segment = createSegmentFeature([coords[i], coords[i + 1]]);
+            if (segment) segments.push(segment);
+        }
+    } else if (geometry.type === 'MultiLineString') {
+        const lines = geometry.coordinates;
+        for (const line of lines) {
+            for (let i = 0; i < line.length - 1; i++) {
+                const segment = createSegmentFeature([line[i], line[i + 1]]);
+                if (segment) segments.push(segment);
+            }
+        }
+    }
+    return segments;
+};
+
 interface GenericChartDatum {
     distance: number;
     elevation: number;
@@ -132,7 +172,7 @@ const NativeChart: React.FC<{
         config: {
             color: processColor('transparent'),
             lineWidth: 0,
-            drawCircles: true,
+            drawCircles: false,
             circleRadius: 4,
             circleColors: circleColors,
             circleHoleColor: processColor('#ffffff'),
@@ -491,11 +531,11 @@ export default function InteractiveSkiMapNative() {
         paint: {
             'line-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#00e676',
-                'easy', '#2979ff',
-                'intermediate', '#ff1744',
-                'advanced', '#212121',
-                '#9e9e9e'
+                'novice', '#81c784',
+                'easy', '#90caf9',
+                'intermediate', '#ef9a9a',
+                'advanced', '#757575',
+                '#cccccc'
             ],
             'line-dasharray': [1, 0],
             'line-width': [
@@ -528,11 +568,11 @@ export default function InteractiveSkiMapNative() {
         paint: {
             'line-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#00e676',
-                'easy', '#2979ff',
-                'intermediate', '#ff1744',
-                'advanced', '#212121',
-                '#9e9e9e'
+                'novice', '#81c784',
+                'easy', '#90caf9',
+                'intermediate', '#ef9a9a',
+                'advanced', '#757575',
+                '#cccccc'
             ],
             'text-halo-color': '#ffffff',
             'text-halo-width': 1
@@ -556,11 +596,11 @@ export default function InteractiveSkiMapNative() {
         paint: {
             'text-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#00e676',
-                'easy', '#2979ff',
-                'intermediate', '#ff1744',
-                'advanced', '#212121',
-                '#9e9e9e'
+                'novice', '#81c784',
+                'easy', '#90caf9',
+                'intermediate', '#ef9a9a',
+                'advanced', '#757575',
+                '#cccccc'
             ],
             'text-halo-color': '#ffffff',
             'text-halo-width': 1.5
@@ -624,7 +664,7 @@ export default function InteractiveSkiMapNative() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#ff9100',
+            'line-color': '#8e44ad',
             'line-width': 5
         }
     };
@@ -646,7 +686,7 @@ export default function InteractiveSkiMapNative() {
             'text-offset': [0, -0.25]
         },
         paint: {
-            'text-color': '#ff9100',
+            'text-color': '#8e44ad',
             'text-halo-color': '#000000',
             'text-halo-width': 1.2,
             'text-opacity': 0.95
@@ -659,7 +699,7 @@ export default function InteractiveSkiMapNative() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#00e5ff',
+            'line-color': '#e67e22',
             'line-width': 8
         }
     };
@@ -711,9 +751,10 @@ export default function InteractiveSkiMapNative() {
     const pistesGeoJSON = useMemo(() => {
         const features = resorts.flatMap(resort =>
             (resort.pistes || []).flatMap(piste => {
-                const geometry = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
-                if (!geometry) return [];
-                return [{
+                const baseGeom = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
+                if (!baseGeom) return [];
+                const segments = getOrientedDownhillSegments(baseGeom);
+                return segments.map(segGeom => ({
                     type: 'Feature' as const,
                     properties: {
                         id: piste.ID,
@@ -723,8 +764,8 @@ export default function InteractiveSkiMapNative() {
                         pisteType: piste.PisteType?.toLowerCase() || 'downhill',
                         grooming: piste.Grooming?.toLowerCase() || 'classic'
                     },
-                    geometry
-                }];
+                    geometry: segGeom
+                }));
             })
         );
         return { type: 'FeatureCollection' as const, features: features as any };

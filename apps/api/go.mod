@@ -12,6 +12,8 @@ require (
 	github.com/uptrace/bun/driver/pgdriver v1.2.18
 )
 
+require github.com/robfig/cron/v3 v3.0.1 // indirect
+
 require (
 	github.com/bradfitz/gomemcache v0.0.0-20250403215159-8d39553ac7cf // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect

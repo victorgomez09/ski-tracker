@@ -213,5 +213,11 @@
   "initializing_app": "Initializing application...",
   "personal_info": "Personal Information",
   "edit_profile": "Edit Profile",
-  "settings": "Settings"
+  "settings": "Settings",
+  "ios": {
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Ski Tracker to use your location to record your runs.",
+    "NSLocationWhenInUseUsageDescription": "Allow Ski Tracker to use your location to record your runs.",
+    "NSCameraUsageDescription": "Allow Ski Tracker to access your camera to take photos.",
+    "NSMicrophoneUsageDescription": "Allow Ski Tracker to access your microphone to record audio."
+  }
 }

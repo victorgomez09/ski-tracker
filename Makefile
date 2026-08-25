@@ -79,13 +79,13 @@ test-api: ## Run Go tests only
 # Docker (local dev infrastructure)
 # ============================================================================
 docker-up: ## Start dev infrastructure (PG)
-	docker compose -f deploy/docker-compose.yaml up -d
+	docker compose -f deploy/docker-compose.dev.yaml up -d
 
 docker-down: ## Stop dev infrastructure
-	docker compose -f deploy/docker-compose.yaml down
+	docker compose -f deploy/docker-compose.dev.yaml down
 
 docker-destroy: ## Destroy dev infrastructure and volumes
-	docker compose -f deploy/docker-compose.yaml down -v
+	docker compose -f deploy/docker-compose.dev.yaml down -v
 
 # ============================================================================
 # Clean
