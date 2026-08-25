@@ -18,6 +18,7 @@ import { Platform, processColor, ScrollView, StyleSheet, Text, TouchableOpacity,
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
+import { useToast } from 'context/toast.context';
 import api from 'interceptor/api';
 import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from '../../constants/theme';
@@ -292,6 +293,7 @@ const AnalyserChart: React.FC<{
 
 export default function InteractiveSkiMapNative() {
     const { t } = useTranslation();
+    const { showToast } = useToast();
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
     const networkState = useNetworkState();
@@ -479,6 +481,7 @@ export default function InteractiveSkiMapNative() {
                     }
                 } catch (error) {
                     console.error("Error loading session track on map:", error);
+                    showToast(t('failed_load_session'), 'error');
                 }
             }
         };

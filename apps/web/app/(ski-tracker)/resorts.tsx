@@ -24,6 +24,7 @@ import { WeatherForecastDetails } from "components/resorts/weather-forecast";
 import { API_BASE_URL } from "constants/constants";
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 import { useAuth } from "context/auth.context";
+import { useToast } from "context/toast.context";
 import api from "interceptor/api";
 import { Resort } from "models/ski-resort.model";
 import { WeatherForecast } from "models/weather.model";
@@ -49,6 +50,7 @@ export default function ResortsView() {
     const { t } = useTranslation();
     const router = useRouter();
     const { token } = useAuth();
+    const { showToast } = useToast();
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
     const {
@@ -114,9 +116,11 @@ export default function ResortsView() {
                     lastFetchedSearchTerm = searchTerm;
                 } else {
                     console.error("Error fetching resorts:", response.statusText);
+                    showToast(t('failed_fetch_resorts'), 'error');
                 }
             } catch (error) {
                 console.error("Error fetching resorts:", error);
+                showToast(t('failed_fetch_resorts'), 'error');
                 setResortsWithCache([]);
             } finally {
                 setIsLoadingResorts(false);
@@ -151,6 +155,7 @@ export default function ResortsView() {
             }
         } catch (err) {
             console.error("Error fetching sessions:", err);
+            showToast(t('failed_fetch_sessions'), 'error');
             setSessionsWithCache([]);
         } finally {
             setIsLoadingSessions(false);

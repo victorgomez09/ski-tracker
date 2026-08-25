@@ -12,6 +12,7 @@ import { initDB } from 'tracking/database';
 import { UpdateModal } from 'components/updates/update-modal';
 import { AuthProvider } from 'context/auth.context';
 import { OtaProvider, useOta } from 'context/ota.context';
+import { ToastProvider } from 'context/toast.context';
 import { AxiosInterceptor } from 'interceptor/axios.interceptor';
 import { useThemeColors, ThemeProvider, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from 'constants/theme';
 
@@ -113,11 +114,13 @@ function AppContent() {
         <SafeAreaProvider>
             <OtaProvider>
                 <AuthProvider>
-                    <AxiosInterceptor>
-                        <OtaGate>
-                            <Slot />
-                        </OtaGate>
-                    </AxiosInterceptor>
+                    <ToastProvider>
+                        <AxiosInterceptor>
+                            <OtaGate>
+                                <Slot />
+                            </OtaGate>
+                        </AxiosInterceptor>
+                    </ToastProvider>
                 </AuthProvider>
             </OtaProvider>
         </SafeAreaProvider>

@@ -214,6 +214,13 @@
   "personal_info": "Información Personal",
   "edit_profile": "Editar Perfil",
   "settings": "Ajustes",
+  "login_failed": "Error al iniciar sesión. Por favor, comprueba tus credenciales.",
+  "register_failed": "Error al registrarse. Por favor, inténtelo de nuevo.",
+  "generic_error": "Ha ocurrido un error inesperado.",
+  "failed_fetch_community_data": "No se pudo cargar la actividad de la comunidad.",
+  "failed_fetch_resorts": "Error al buscar estaciones de esquí.",
+  "failed_fetch_sessions": "Error al cargar las sesiones o el tiempo de la estación.",
+  "failed_load_session": "No se pudo cargar la sesión en el mapa.",
   "ios": {
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Permite que Ski Tracker use tu ubicación para registrar tus bajadas.",
     "NSLocationWhenInUseUsageDescription": "Permite que Ski Tracker use tu ubicación para registrar tus bajadas.",

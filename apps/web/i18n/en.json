@@ -214,6 +214,13 @@
   "personal_info": "Personal Information",
   "edit_profile": "Edit Profile",
   "settings": "Settings",
+  "login_failed": "Login failed. Please check your credentials.",
+  "register_failed": "Registration failed. Please try again.",
+  "generic_error": "An unexpected error occurred.",
+  "failed_fetch_community_data": "Could not load community activity.",
+  "failed_fetch_resorts": "Error searching for ski resorts.",
+  "failed_fetch_sessions": "Error loading resort sessions or weather.",
+  "failed_load_session": "Could not load session on map.",
   "ios": {
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Ski Tracker to use your location to record your runs.",
     "NSLocationWhenInUseUsageDescription": "Allow Ski Tracker to use your location to record your runs.",

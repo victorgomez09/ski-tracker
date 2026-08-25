@@ -23,6 +23,7 @@ import { useOfflineMaps } from 'hooks/use-offline.hook';
 import api from 'interceptor/api';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
 import { User } from 'models/user.model';
+import { useToast } from 'context/toast.context';
 import { clearTrack, getAllPhotos, getAllPoints, initDB, savePhotoToLocalDB } from 'tracking/database';
 import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
 import { Camera } from './camera';
@@ -32,6 +33,7 @@ const LOCATION_TASK_NAME = 'ski-background-location-task';
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
     const { t } = useTranslation();
+    const { showToast } = useToast();
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -216,7 +218,7 @@ export default function InteractiveSkiMapNative() {
             try {
                 const started = await startTracking(resortIdToUse, trackingTime);
                 if (!started) {
-                    alert(t('tracking_start_permission_denied'));
+                    showToast(t('tracking_start_permission_denied'), 'error');
                     return;
                 }
                 setIsTracking(true);
@@ -224,9 +226,9 @@ export default function InteractiveSkiMapNative() {
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 if (message.startsWith('FOREGROUND_SERVICE_MISSING')) {
-                    alert(t('tracking_start_foreground_service_required'));
+                    showToast(t('tracking_start_foreground_service_required'), 'error');
                 } else {
-                    alert(t('tracking_start_failed'));
+                    showToast(t('tracking_start_failed'), 'error');
                 }
             }
         }
@@ -248,10 +250,10 @@ export default function InteractiveSkiMapNative() {
                 if (started) {
                     setIsPaused(false);
                 } else {
-                    alert(t('tracking_resume_failed'));
+                    showToast(t('tracking_resume_failed'), 'error');
                 }
             } catch (err) {
-                alert(t('tracking_resume_failed'));
+                showToast(t('tracking_resume_failed'), 'error');
             }
         } else {
             // Pause background location tasks to save battery
@@ -269,7 +271,7 @@ export default function InteractiveSkiMapNative() {
             const photos = await getAllPhotos(db);
 
             if (points.length === 0) {
-                alert(t('no_tracking_data'));
+                showToast(t('no_tracking_data'), 'info');
                 setIsLoading(false);
                 return;
             }
@@ -324,7 +326,7 @@ export default function InteractiveSkiMapNative() {
             const finishResponse = await api.post(`${API_BASE_URL}/ski-sessions/${sessionId}/finish`, {});
 
             if (finishResponse.status === 200 || finishResponse.status === 201) {
-                alert(t('track_uploaded_success'));
+                showToast(t('track_uploaded_success'), 'success');
                 await clearTrack(db);
                 setTrackPoints([]);
                 setHasTrackData(false);
@@ -332,7 +334,7 @@ export default function InteractiveSkiMapNative() {
             }
         } catch (error) {
             console.error("Error uploading track:", error);
-            alert(t('error_uploading_track'));
+            showToast(t('error_uploading_track'), 'error');
         } finally {
             setIsLoading(false);
         }

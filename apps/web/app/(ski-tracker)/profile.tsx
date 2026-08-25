@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { API_BASE_URL } from "constants/constants";
 import { useTheme, useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 import { useAuth } from "context/auth.context";
+import { useToast } from "context/toast.context";
 import api from "interceptor/api";
 import type { User as UserType } from "models/user.model";
 
@@ -25,6 +26,7 @@ export type ProfileFormValues = {
 export default function ProfileView() {
     const { t } = useTranslation();
     const { token, signOut } = useAuth();
+    const { showToast } = useToast();
     const [user, setUser] = useState<UserType | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -114,7 +116,7 @@ export default function ProfileView() {
     const handlePickImage = async () => {
         const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!permissionResult.granted) {
-            Alert.alert(t('permission_denied'), t('permission_denied_gallery'));
+            showToast(t('permission_denied_gallery'), 'error');
             return;
         }
 
@@ -146,9 +148,9 @@ export default function ProfileView() {
 
             setUser(response.data);
             setIsEditing(false);
-            Alert.alert(t('success'), t('profile_updated'));
+            showToast(t('profile_updated'), 'success');
         } catch (error) {
-            Alert.alert(t('error'), t('failed_save_changes'));
+            showToast(t('failed_save_changes'), 'error');
         } finally {
             setSaving(false);
         }
@@ -405,12 +407,12 @@ export default function ProfileView() {
                             rules={{
                                 required: t('time_tracking_required') as string,
                             }}
-                            render={({ field: { value } }) => (
+                            render={({ field: { onChange, value } }) => (
                                 <View style={styles.trackingContainer}>
                                     <View style={styles.trackingPillSelector}>
                                         <TouchableOpacity
                                             style={[styles.trackingPill, value === 1000 && styles.trackingPillActive]}
-                                            onPress={() => isEditing && setValue('time_tracking', 1000, { shouldDirty: true })}
+                                            onPress={() => isEditing && onChange(1000)}
                                             disabled={!isEditing}
                                             activeOpacity={0.8}
                                         >
@@ -419,7 +421,7 @@ export default function ProfileView() {
                                         
                                         <TouchableOpacity
                                             style={[styles.trackingPill, value === 3000 && styles.trackingPillActive]}
-                                            onPress={() => isEditing && setValue('time_tracking', 3000, { shouldDirty: true })}
+                                            onPress={() => isEditing && onChange(3000)}
                                             disabled={!isEditing}
                                             activeOpacity={0.8}
                                         >
@@ -428,7 +430,7 @@ export default function ProfileView() {
 
                                         <TouchableOpacity
                                             style={[styles.trackingPill, value === 5000 && styles.trackingPillActive]}
-                                            onPress={() => isEditing && setValue('time_tracking', 5000, { shouldDirty: true })}
+                                            onPress={() => isEditing && onChange(5000)}
                                             disabled={!isEditing}
                                             activeOpacity={0.8}
                                         >

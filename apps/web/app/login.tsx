@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { API_BASE_URL } from "constants/constants";
 import { useAuth } from "context/auth.context";
+import { useToast } from "context/toast.context";
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 
 interface Login {
@@ -23,6 +24,7 @@ export default function LoginView() {
     const { t } = useTranslation();
     const router = useRouter();
     const { signIn } = useAuth();
+    const { showToast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
@@ -54,9 +56,11 @@ export default function LoginView() {
                 router.push("/resorts");
             } else {
                 console.error("Login failed:", request.status, request.statusText);
+                showToast(t('login_failed'), 'error');
             }
         } catch (err) {
             console.log("Login error:", err);
+            showToast(t('login_failed'), 'error');
         } finally {
             setIsSubmitting(false);
         }

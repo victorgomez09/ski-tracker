@@ -4,6 +4,7 @@ import { Controller, SubmitHandler, useForm } from "react-hook-form";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from "react-native";
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { useToast } from "context/toast.context";
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 
 interface Register {
@@ -17,6 +18,7 @@ interface Register {
 export default function RegisterView() {
     const { t } = useTranslation();
     const router = useRouter();
+    const { showToast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
@@ -48,10 +50,14 @@ export default function RegisterView() {
             });
 
             if (request.ok) {
+                showToast(t('success'), 'success');
                 router.push("/login");
+            } else {
+                showToast(t('register_failed'), 'error');
             }
         } catch (err) {
             console.error("Register error:", err);
+            showToast(t('register_failed'), 'error');
         } finally {
             setIsSubmitting(false);
         }

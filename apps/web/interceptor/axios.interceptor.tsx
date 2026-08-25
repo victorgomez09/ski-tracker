@@ -3,18 +3,22 @@ import { useRouter } from 'expo-router';
 
 import api from './api';
 import { useAuth } from 'context/auth.context';
+import { useToast } from 'context/toast.context';
 
 export function AxiosInterceptor({ children }: { children: React.ReactNode }) {
   const { signOut } = useAuth();
   const router = useRouter();
+  const { showToast } = useToast();
 
   const signOutRef = useRef(signOut);
   const routerRef = useRef(router);
+  const showToastRef = useRef(showToast);
 
   useEffect(() => {
     signOutRef.current = signOut;
     routerRef.current = router;
-  }, [signOut, router]);
+    showToastRef.current = showToast;
+  }, [signOut, router, showToast]);
 
   useEffect(() => {
     console.log('🟢 [AxiosInterceptor] Interceptor registrado');
@@ -27,6 +31,19 @@ export function AxiosInterceptor({ children }: { children: React.ReactNode }) {
           status: error.response?.status,
           hasResponse: !!error.response,
         });
+
+        // Determine error message
+        let errorMessage = 'Ha ocurrido un error inesperado';
+        if (error.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        } else if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+
+        // Show toast notification
+        showToastRef.current(errorMessage, 'error');
 
         if (error.response?.status === 401) {
           console.log('🔒 [AxiosInterceptor] 401 Detectado - Cerrando sesión...');

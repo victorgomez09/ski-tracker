@@ -21,6 +21,7 @@ import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "c
 import { useRouter } from "expo-router";
 import api from "interceptor/api";
 import { Session } from "models/session.model";
+import { useToast } from "context/toast.context";
 
 import { useAuth } from "context/auth.context";
 
@@ -89,6 +90,7 @@ const formatDate = (dateString: string): string => {
 
 export default function CommunityView() {
   const { t } = useTranslation();
+  const { showToast } = useToast();
   const [communityData, setCommunityData] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const colors = useThemeColors();
@@ -107,6 +109,7 @@ export default function CommunityView() {
       }
     } catch (error) {
       console.error("Failed to fetch community data:", error);
+      showToast(t('failed_fetch_community_data'), 'error');
     } finally {
       setLoading(false);
     }
