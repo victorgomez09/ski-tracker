@@ -7,16 +7,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 
 	"github.com/uptrace/bun"
 	"github.com/victorgomez09/ski-tracker/internal/models"
 )
-
-type GeoJSONFeatureCollection struct {
-	Type     string           `json:"type"`
-	Features []GeoJSONFeature `json:"features"`
-}
 
 type GeoJSONFeature struct {
 	Type       string                 `json:"type"`
@@ -47,91 +44,304 @@ func SyncPistesDataIfEmpty(ctx context.Context, db *bun.DB, logger *slog.Logger)
 	return SyncPistesData(ctx, db, logger)
 }
 
-// SyncPistesData downloads global resort, piste, and lift data and updates the database
+// SyncPistesData downloads global resort, piste, and lift data and updates the database using streaming
 func SyncPistesData(ctx context.Context, db *bun.DB, logger *slog.Logger) error {
 	logger.Info("starting global pistes data synchronization")
+
+	// Dynamic memory tuning for ARM / constrained environments (e.g. Raspberry Pi)
+	if runtime.GOARCH == "arm" || runtime.GOARCH == "arm64" {
+		logger.Info("detected ARM architecture - applying memory optimizations for sync",
+			slog.String("arch", runtime.GOARCH),
+		)
+		oldGC := debug.SetGCPercent(50)
+		defer func() {
+			debug.SetGCPercent(oldGC)
+			runtime.GC()
+			debug.FreeOSMemory()
+		}()
+	} else {
+		defer func() {
+			runtime.GC()
+			debug.FreeOSMemory()
+		}()
+	}
 
 	pistesURL := "https://tiles.openskimap.org/geojson/runs.geojson"
 	liftsURL := "https://tiles.openskimap.org/geojson/lifts.geojson"
 	resortsURL := "https://tiles.openskimap.org/geojson/ski_areas.geojson"
 
-	// Process Resorts
-	logger.Info("downloading resorts data...")
-	resorts, err := downloadAndParseResorts(resortsURL)
-	if err != nil {
-		return fmt.Errorf("failed to download and parse resorts: %w", err)
-	}
-	if err := saveResorts(ctx, db, resorts, logger); err != nil {
-		return fmt.Errorf("failed to save resorts: %w", err)
+	// Process Resorts (Streaming)
+	logger.Info("downloading and streaming resorts data...")
+	if err := syncResortsStream(ctx, db, resortsURL, logger); err != nil {
+		return fmt.Errorf("failed to sync resorts: %w", err)
 	}
 
-	// Process Pistes
-	logger.Info("downloading pistes data...")
-	pistes, err := downloadAndParsePistes(pistesURL)
-	if err != nil {
-		return fmt.Errorf("failed to download and parse pistes: %w", err)
-	}
-	if err := savePistes(ctx, db, pistes, logger); err != nil {
-		return fmt.Errorf("failed to save pistes: %w", err)
+	// Process Pistes (Streaming)
+	logger.Info("downloading and streaming pistes data...")
+	if err := syncPistesStream(ctx, db, pistesURL, logger); err != nil {
+		return fmt.Errorf("failed to sync pistes: %w", err)
 	}
 
-	// Process Lifts
-	logger.Info("downloading lifts data...")
-	lifts, err := downloadAndParseLifts(liftsURL)
-	if err != nil {
-		return fmt.Errorf("failed to download and parse lifts: %w", err)
-	}
-	if err := saveLifts(ctx, db, lifts, logger); err != nil {
-		return fmt.Errorf("failed to save lifts: %w", err)
+	// Process Lifts (Streaming)
+	logger.Info("downloading and streaming lifts data...")
+	if err := syncLiftsStream(ctx, db, liftsURL, logger); err != nil {
+		return fmt.Errorf("failed to sync lifts: %w", err)
 	}
 
 	logger.Info("global synchronization completed successfully")
 	return nil
 }
 
-// --- PROCESSORS AND DOWNLOADERS ---
-func downloadAndParseResorts(url string) ([]models.SkiResort, error) {
+// --- STREAMING PARSER ENGINE ---
+
+// streamGeoJSONFeatures reads a GeoJSON FeatureCollection stream from an io.Reader and invokes handleFeature for each feature
+func streamGeoJSONFeatures(r io.Reader, handleFeature func(f GeoJSONFeature) error) error {
+	dec := json.NewDecoder(r)
+
+	// Expect start of JSON object '{'
+	tok, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("failed to read JSON start: %w", err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
+		return fmt.Errorf("expected '{' at beginning of GeoJSON, got %v", tok)
+	}
+
+	// Seek to the "features" key
+	foundFeatures := false
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("error reading JSON key: %w", err)
+		}
+		key, ok := tok.(string)
+		if !ok {
+			continue
+		}
+		if key == "features" {
+			foundFeatures = true
+			break
+		}
+		// Skip values for other keys (e.g. "type": "FeatureCollection")
+		var dummy json.RawMessage
+		if err := dec.Decode(&dummy); err != nil {
+			return fmt.Errorf("error skipping property %s: %w", key, err)
+		}
+	}
+
+	if !foundFeatures {
+		return fmt.Errorf("could not find 'features' array in GeoJSON")
+	}
+
+	// Expect start of features array '['
+	tok, err = dec.Token()
+	if err != nil {
+		return fmt.Errorf("failed to read features array start: %w", err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '[' {
+		return fmt.Errorf("expected '[' for features array, got %v", tok)
+	}
+
+	// Stream decode each feature individually
+	for dec.More() {
+		var f GeoJSONFeature
+		if err := dec.Decode(&f); err != nil {
+			return fmt.Errorf("failed to decode GeoJSON feature: %w", err)
+		}
+		if err := handleFeature(f); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// --- STREAMING PROCESSORS ---
+
+const batchSize = 1000
+
+func syncResortsStream(ctx context.Context, db *bun.DB, url string, logger *slog.Logger) error {
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var fc GeoJSONFeatureCollection
-	if err := json.Unmarshal(body, &fc); err != nil {
-		return nil, err
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected HTTP status: %d", resp.StatusCode)
 	}
 
-	var resorts []models.SkiResort
-	for _, f := range fc.Features {
-		id, _ := f.Properties["id"].(string)
-		if id == "" {
-			if idFloat, ok := f.Properties["id"].(float64); ok {
-				id = fmt.Sprintf("%.0f", idFloat)
-			} else {
-				continue
+	batch := make([]models.SkiResort, 0, batchSize)
+	total := 0
+
+	err = streamGeoJSONFeatures(resp.Body, func(f GeoJSONFeature) error {
+		resort, ok := parseResortFeature(f)
+		if !ok {
+			return nil
+		}
+		batch = append(batch, *resort)
+		total++
+
+		if len(batch) >= batchSize {
+			if err := saveResortsBatch(ctx, db, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if len(batch) > 0 {
+		if err := saveResortsBatch(ctx, db, batch); err != nil {
+			return err
+		}
+	}
+
+	logger.Info("ski resorts saved/updated successfully", slog.Int("total", total))
+	return nil
+}
+
+func syncPistesStream(ctx context.Context, db *bun.DB, url string, logger *slog.Logger) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected HTTP status: %d", resp.StatusCode)
+	}
+
+	batch := make([]models.SkiPiste, 0, batchSize)
+	total := 0
+
+	err = streamGeoJSONFeatures(resp.Body, func(f GeoJSONFeature) error {
+		piste, ok := parsePisteFeature(f)
+		if !ok {
+			return nil
+		}
+		batch = append(batch, *piste)
+		total++
+
+		if len(batch) >= batchSize {
+			if err := savePistesBatch(ctx, db, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+			if total%10000 == 0 {
+				logger.Info(fmt.Sprintf("synced %d pistes...", total))
 			}
 		}
+		return nil
+	})
 
-		name, _ := f.Properties["name"].(string)
-		if name == "" {
-			name = "No name"
+	if err != nil {
+		return err
+	}
+
+	if len(batch) > 0 {
+		if err := savePistesBatch(ctx, db, batch); err != nil {
+			return err
 		}
+	}
 
-		var lat, lon float64
-		if geomType, ok := f.Geometry["type"].(string); ok {
-			switch geomType {
-			case "Point":
-				if coords, ok := f.Geometry["coordinates"].([]interface{}); ok && len(coords) == 2 {
-					lon, _ = coords[0].(float64)
-					lat, _ = coords[1].(float64)
+	logger.Info("pistes saved/updated successfully", slog.Int("total", total))
+	return nil
+}
+
+func syncLiftsStream(ctx context.Context, db *bun.DB, url string, logger *slog.Logger) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected HTTP status: %d", resp.StatusCode)
+	}
+
+	batch := make([]models.SkiLift, 0, batchSize)
+	total := 0
+
+	err = streamGeoJSONFeatures(resp.Body, func(f GeoJSONFeature) error {
+		lift, ok := parseLiftFeature(f)
+		if !ok {
+			return nil
+		}
+		batch = append(batch, *lift)
+		total++
+
+		if len(batch) >= batchSize {
+			if err := saveLiftsBatch(ctx, db, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+			if total%10000 == 0 {
+				logger.Info(fmt.Sprintf("synced %d lifts...", total))
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	if len(batch) > 0 {
+		if err := saveLiftsBatch(ctx, db, batch); err != nil {
+			return err
+		}
+	}
+
+	logger.Info("lifts saved/updated successfully", slog.Int("total", total))
+	return nil
+}
+
+// --- FEATURE PARSERS ---
+
+func parseResortFeature(f GeoJSONFeature) (*models.SkiResort, bool) {
+	if f.Properties == nil {
+		return nil, false
+	}
+
+	id, _ := f.Properties["id"].(string)
+	if id == "" {
+		if idFloat, ok := f.Properties["id"].(float64); ok {
+			id = fmt.Sprintf("%.0f", idFloat)
+		} else {
+			return nil, false
+		}
+	}
+
+	name, _ := f.Properties["name"].(string)
+	if name == "" {
+		name = "No name"
+	}
+
+	var lat, lon float64
+	if geomType, ok := f.Geometry["type"].(string); ok {
+		switch geomType {
+		case "Point":
+			if coords, ok := f.Geometry["coordinates"].([]interface{}); ok && len(coords) == 2 {
+				lon, _ = coords[0].(float64)
+				lat, _ = coords[1].(float64)
+			}
+		case "Polygon":
+			if rings, ok := f.Geometry["coordinates"].([]interface{}); ok && len(rings) > 0 {
+				if ring, ok := rings[0].([]interface{}); ok && len(ring) > 0 {
+					if coords, ok := ring[0].([]interface{}); ok && len(coords) == 2 {
+						lon, _ = coords[0].(float64)
+						lat, _ = coords[1].(float64)
+					}
 				}
-			case "Polygon":
-				if rings, ok := f.Geometry["coordinates"].([]interface{}); ok && len(rings) > 0 {
+			}
+		case "MultiPolygon":
+			if polys, ok := f.Geometry["coordinates"].([]interface{}); ok && len(polys) > 0 {
+				if rings, ok := polys[0].([]interface{}); ok && len(rings) > 0 {
 					if ring, ok := rings[0].([]interface{}); ok && len(ring) > 0 {
 						if coords, ok := ring[0].([]interface{}); ok && len(coords) == 2 {
 							lon, _ = coords[0].(float64)
@@ -139,348 +349,260 @@ func downloadAndParseResorts(url string) ([]models.SkiResort, error) {
 						}
 					}
 				}
-			case "MultiPolygon":
-				if polys, ok := f.Geometry["coordinates"].([]interface{}); ok && len(polys) > 0 {
-					if rings, ok := polys[0].([]interface{}); ok && len(rings) > 0 {
-						if ring, ok := rings[0].([]interface{}); ok && len(ring) > 0 {
-							if coords, ok := ring[0].([]interface{}); ok && len(coords) == 2 {
-								lon, _ = coords[0].(float64)
-								lat, _ = coords[1].(float64)
-							}
-						}
-					}
-				}
 			}
 		}
-
-		if lat == 0 && lon == 0 {
-			if viewport, ok := f.Properties["viewportHint"].(map[string]interface{}); ok {
-				if center, ok := viewport["center"].([]interface{}); ok && len(center) == 2 {
-					lon, _ = center[0].(float64)
-					lat, _ = center[1].(float64)
-				}
-			}
-		}
-
-		country := "Unknown"
-		if places, ok := f.Properties["places"].([]interface{}); ok && len(places) > 0 {
-			if firstPlace, ok := places[0].(map[string]interface{}); ok {
-				if countryCode, ok := firstPlace["iso3166_1Alpha2"].(string); ok && countryCode != "" {
-					country = countryCode
-				}
-
-				if localized, ok := firstPlace["localized"].(map[string]interface{}); ok {
-					if en, ok := localized["en"].(map[string]interface{}); ok {
-						if countryName, ok := en["country"].(string); ok && countryName != "" {
-							country = countryName
-						}
-					}
-				}
-
-			}
-		}
-
-		website := ""
-		if websites, ok := f.Properties["websites"].([]interface{}); ok && len(websites) > 0 {
-			if firstWeb, ok := websites[0].(string); ok {
-				website = firstWeb
-			}
-		}
-
-		resorts = append(resorts, models.SkiResort{
-			ID:        id,
-			Name:      name,
-			Country:   country,
-			Latitude:  lat,
-			Longitude: lon,
-			Website:   website,
-			Tags:      f.Properties,
-		})
 	}
-	return resorts, nil
+
+	if lat == 0 && lon == 0 {
+		if viewport, ok := f.Properties["viewportHint"].(map[string]interface{}); ok {
+			if center, ok := viewport["center"].([]interface{}); ok && len(center) == 2 {
+				lon, _ = center[0].(float64)
+				lat, _ = center[1].(float64)
+			}
+		}
+	}
+
+	country := "Unknown"
+	if places, ok := f.Properties["places"].([]interface{}); ok && len(places) > 0 {
+		if firstPlace, ok := places[0].(map[string]interface{}); ok {
+			if countryCode, ok := firstPlace["iso3166_1Alpha2"].(string); ok && countryCode != "" {
+				country = countryCode
+			}
+
+			if localized, ok := firstPlace["localized"].(map[string]interface{}); ok {
+				if en, ok := localized["en"].(map[string]interface{}); ok {
+					if countryName, ok := en["country"].(string); ok && countryName != "" {
+						country = countryName
+					}
+				}
+			}
+		}
+	}
+
+	website := ""
+	if websites, ok := f.Properties["websites"].([]interface{}); ok && len(websites) > 0 {
+		if firstWeb, ok := websites[0].(string); ok {
+			website = firstWeb
+		}
+	}
+
+	return &models.SkiResort{
+		ID:        id,
+		Name:      name,
+		Country:   country,
+		Latitude:  lat,
+		Longitude: lon,
+		Website:   website,
+		Tags:      f.Properties,
+	}, true
 }
 
-func downloadAndParsePistes(url string) ([]models.SkiPiste, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var fc GeoJSONFeatureCollection
-	if err := json.Unmarshal(body, &fc); err != nil {
-		return nil, err
+func parsePisteFeature(f GeoJSONFeature) (*models.SkiPiste, bool) {
+	if f.Properties == nil {
+		return nil, false
 	}
 
-	var pistes []models.SkiPiste
-	for _, f := range fc.Features {
-		id, _ := f.Properties["id"].(string)
-		if id == "" {
-			if idFloat, ok := f.Properties["id"].(float64); ok {
-				id = fmt.Sprintf("%.0f", idFloat)
-			} else {
-				continue
+	id, _ := f.Properties["id"].(string)
+	if id == "" {
+		if idFloat, ok := f.Properties["id"].(float64); ok {
+			id = fmt.Sprintf("%.0f", idFloat)
+		} else {
+			return nil, false
+		}
+	}
+
+	name, _ := f.Properties["name"].(string)
+
+	pType, _ := f.Properties["type"].(string)
+	if pType == "" {
+		pType, _ = f.Properties["piste:type"].(string)
+	}
+
+	if pType == "run" {
+		if uses, ok := f.Properties["uses"].([]interface{}); ok && len(uses) > 0 {
+			if firstUse, ok := uses[0].(string); ok {
+				pType = firstUse
 			}
 		}
+	}
 
-		name, _ := f.Properties["name"].(string)
+	difficulty, _ := f.Properties["difficulty"].(string)
+	if difficulty == "" {
+		difficulty, _ = f.Properties["piste:difficulty"].(string)
+	}
 
-		pType, _ := f.Properties["type"].(string)
-		if pType == "" {
-			pType, _ = f.Properties["piste:type"].(string)
+	var lit bool
+	if litVal := f.Properties["lit"]; litVal != nil {
+		if litBool, ok := litVal.(bool); ok {
+			lit = litBool
+		} else if litStr, ok := litVal.(string); ok {
+			lit = (litStr == "yes" || litStr == "true")
 		}
+	} else if pisteLitVal := f.Properties["piste:lit"]; pisteLitVal != nil {
+		if litBool, ok := pisteLitVal.(bool); ok {
+			lit = litBool
+		} else if litStr, ok := pisteLitVal.(string); ok {
+			lit = (litStr == "yes" || litStr == "true")
+		}
+	}
 
-		if pType == "run" {
-			if uses, ok := f.Properties["uses"].([]interface{}); ok && len(uses) > 0 {
-				if firstUse, ok := uses[0].(string); ok {
-					pType = firstUse
+	var resortID *string
+	if skiAreas, ok := f.Properties["skiAreas"].([]interface{}); ok && len(skiAreas) > 0 {
+		if firstArea, ok := skiAreas[0].(map[string]interface{}); ok {
+			if properties, ok := firstArea["properties"].(map[string]interface{}); ok {
+				if skiAreaID, ok := properties["id"].(string); ok && skiAreaID != "" {
+					resortID = &skiAreaID
 				}
 			}
 		}
-
-		difficulty, _ := f.Properties["difficulty"].(string)
-		if difficulty == "" {
-			difficulty, _ = f.Properties["piste:difficulty"].(string)
-		}
-
-		var lit bool
-		if litVal := f.Properties["lit"]; litVal != nil {
-			if litBool, ok := litVal.(bool); ok {
-				lit = litBool
-			} else if litStr, ok := litVal.(string); ok {
-				lit = (litStr == "yes" || litStr == "true")
-			}
-		} else if pisteLitVal := f.Properties["piste:lit"]; pisteLitVal != nil {
-			if litBool, ok := pisteLitVal.(bool); ok {
-				lit = litBool
-			} else if litStr, ok := pisteLitVal.(string); ok {
-				lit = (litStr == "yes" || litStr == "true")
-			}
-		}
-
-		var resortID *string
-		if skiAreas, ok := f.Properties["skiAreas"].([]interface{}); ok && len(skiAreas) > 0 {
-			if firstArea, ok := skiAreas[0].(map[string]interface{}); ok {
-				if properties, ok := firstArea["properties"].(map[string]interface{}); ok {
-					if skiAreaID, ok := properties["id"].(string); ok && skiAreaID != "" {
-						resortID = &skiAreaID
-					}
-				}
-			}
-		}
-
-		pistes = append(pistes, models.SkiPiste{
-			ID:              id,
-			ResortID:        resortID,
-			Name:            name,
-			PisteType:       pType,
-			Difficulty:      difficulty,
-			Lit:             lit,
-			GeometryGeoJSON: f.Geometry,
-			Tags:            f.Properties,
-		})
 	}
-	return pistes, nil
+
+	return &models.SkiPiste{
+		ID:              id,
+		ResortID:        resortID,
+		Name:            name,
+		PisteType:       pType,
+		Difficulty:      difficulty,
+		Lit:             lit,
+		GeometryGeoJSON: f.Geometry,
+		Tags:            f.Properties,
+	}, true
 }
 
-func downloadAndParseLifts(url string) ([]models.SkiLift, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var fc GeoJSONFeatureCollection
-	if err := json.Unmarshal(body, &fc); err != nil {
-		return nil, err
+func parseLiftFeature(f GeoJSONFeature) (*models.SkiLift, bool) {
+	if f.Properties == nil {
+		return nil, false
 	}
 
-	var lifts []models.SkiLift
-	for _, f := range fc.Features {
-		id, _ := f.Properties["id"].(string)
-		if id == "" {
-			if idFloat, ok := f.Properties["id"].(float64); ok {
-				id = fmt.Sprintf("%.0f", idFloat)
-			} else {
-				continue
+	id, _ := f.Properties["id"].(string)
+	if id == "" {
+		if idFloat, ok := f.Properties["id"].(float64); ok {
+			id = fmt.Sprintf("%.0f", idFloat)
+		} else {
+			return nil, false
+		}
+	}
+
+	name, _ := f.Properties["name"].(string)
+
+	lType, _ := f.Properties["liftType"].(string)
+	if lType == "" {
+		lType, _ = f.Properties["type"].(string)
+	}
+	if lType == "" {
+		lType, _ = f.Properties["aerialway"].(string)
+	}
+
+	capacity := 1
+	if capVal := f.Properties["capacity"]; capVal != nil {
+		if capFloat, ok := capVal.(float64); ok {
+			capacity = int(capFloat)
+		} else if capStr, ok := capVal.(string); ok {
+			if parsedCap, err := strconv.Atoi(capStr); err == nil {
+				capacity = parsedCap
 			}
 		}
+	}
 
-		name, _ := f.Properties["name"].(string)
-
-		lType, _ := f.Properties["liftType"].(string)
-		if lType == "" {
-			lType, _ = f.Properties["type"].(string)
+	occupancy := 1
+	if occVal := f.Properties["occupancy"]; occVal != nil {
+		if occFloat, ok := occVal.(float64); ok {
+			occupancy = int(occFloat)
+		} else if occStr, ok := occVal.(string); ok {
+			if parsedOcc, err := strconv.Atoi(occStr); err == nil {
+				occupancy = parsedOcc
+			}
 		}
-		if lType == "" {
-			lType, _ = f.Properties["aerialway"].(string)
-		}
+	}
 
-		capacity := 1
-		if capVal := f.Properties["capacity"]; capVal != nil {
-			if capFloat, ok := capVal.(float64); ok {
-				capacity = int(capFloat)
-			} else if capStr, ok := capVal.(string); ok {
-				if parsedCap, err := strconv.Atoi(capStr); err == nil {
-					capacity = parsedCap
+	var resortID *string
+	if skiAreas, ok := f.Properties["skiAreas"].([]interface{}); ok && len(skiAreas) > 0 {
+		if firstArea, ok := skiAreas[0].(map[string]interface{}); ok {
+			if properties, ok := firstArea["properties"].(map[string]interface{}); ok {
+				if skiAreaID, ok := properties["id"].(string); ok && skiAreaID != "" {
+					resortID = &skiAreaID
 				}
 			}
 		}
-
-		occupancy := 1
-		if occVal := f.Properties["occupancy"]; occVal != nil {
-			if occFloat, ok := occVal.(float64); ok {
-				occupancy = int(occFloat)
-			} else if occStr, ok := occVal.(string); ok {
-				if parsedOcc, err := strconv.Atoi(occStr); err == nil {
-					occupancy = parsedOcc
-				}
-			}
-		}
-
-		var resortID *string
-		if skiAreas, ok := f.Properties["skiAreas"].([]interface{}); ok && len(skiAreas) > 0 {
-			if firstArea, ok := skiAreas[0].(map[string]interface{}); ok {
-				if properties, ok := firstArea["properties"].(map[string]interface{}); ok {
-					if skiAreaID, ok := properties["id"].(string); ok && skiAreaID != "" {
-						resortID = &skiAreaID
-					}
-				}
-			}
-		}
-
-		if resortID == nil {
-			if saID, ok := f.Properties["ski_area_id"].(string); ok && saID != "" {
-				resortID = &saID
-			} else if saFloat, ok := f.Properties["ski_area_id"].(float64); ok {
-				strID := fmt.Sprintf("%.0f", saFloat)
-				resortID = &strID
-			}
-		}
-
-		lifts = append(lifts, models.SkiLift{
-			ID:              id,
-			ResortID:        resortID,
-			Name:            name,
-			LiftType:        lType,
-			Capacity:        occupancy,
-			CapacityHourly:  capacity,
-			GeometryGeoJSON: f.Geometry,
-			Tags:            f.Properties,
-		})
 	}
-	return lifts, nil
+
+	if resortID == nil {
+		if saID, ok := f.Properties["ski_area_id"].(string); ok && saID != "" {
+			resortID = &saID
+		} else if saFloat, ok := f.Properties["ski_area_id"].(float64); ok {
+			strID := fmt.Sprintf("%.0f", saFloat)
+			resortID = &strID
+		}
+	}
+
+	return &models.SkiLift{
+		ID:              id,
+		ResortID:        resortID,
+		Name:            name,
+		LiftType:        lType,
+		Capacity:        occupancy,
+		CapacityHourly:  capacity,
+		GeometryGeoJSON: f.Geometry,
+		Tags:            f.Properties,
+	}, true
 }
 
-// --- DATABASE OPERATIONS ---
-func saveResorts(ctx context.Context, db *bun.DB, resorts []models.SkiResort, logger *slog.Logger) error {
-	if len(resorts) == 0 {
-		logger.Warn("no ski resorts to save")
+// --- DATABASE BATCH INSERTS ---
+
+func saveResortsBatch(ctx context.Context, db *bun.DB, batch []models.SkiResort) error {
+	if len(batch) == 0 {
 		return nil
 	}
-	logger.Info(fmt.Sprintf("saving/updating %d ski resorts...", len(resorts)))
 
-	batchSize := 1000
-	for i := 0; i < len(resorts); i += batchSize {
-		end := i + batchSize
-		if end > len(resorts) {
-			end = len(resorts)
-		}
-		batch := resorts[i:end]
+	_, err := db.NewInsert().
+		Model(&batch).
+		On("CONFLICT (id) DO UPDATE").
+		Set("name = EXCLUDED.name").
+		Set("country = EXCLUDED.country").
+		Set("website = EXCLUDED.website").
+		Set("latitude = EXCLUDED.latitude").
+		Set("longitude = EXCLUDED.longitude").
+		Set("tags = EXCLUDED.tags").
+		Exec(ctx)
 
-		_, err := db.NewInsert().
-			Model(&batch).
-			On("CONFLICT (id) DO UPDATE").
-			Set("name = EXCLUDED.name").
-			Set("country = EXCLUDED.country").
-			Set("website = EXCLUDED.website").
-			Set("latitude = EXCLUDED.latitude").
-			Set("longitude = EXCLUDED.longitude").
-			Set("tags = EXCLUDED.tags").
-			Exec(ctx)
-
-		if err != nil {
-			return err
-		}
-	}
-
-	logger.Info("ski resorts saved/updated successfully")
-	return nil
+	return err
 }
 
-func savePistes(ctx context.Context, db *bun.DB, pistes []models.SkiPiste, logger *slog.Logger) error {
-	if len(pistes) == 0 {
-		logger.Warn("no pistes to save")
+func savePistesBatch(ctx context.Context, db *bun.DB, batch []models.SkiPiste) error {
+	if len(batch) == 0 {
 		return nil
 	}
-	logger.Info(fmt.Sprintf("saving/updating %d pistes...", len(pistes)))
 
-	batchSize := 1000
-	for i := 0; i < len(pistes); i += batchSize {
-		end := i + batchSize
-		if end > len(pistes) {
-			end = len(pistes)
-		}
-		batch := pistes[i:end]
+	_, err := db.NewInsert().
+		Model(&batch).
+		On("CONFLICT (id) DO UPDATE").
+		Set("resort_id = EXCLUDED.resort_id").
+		Set("name = EXCLUDED.name").
+		Set("piste_type = EXCLUDED.piste_type").
+		Set("difficulty = EXCLUDED.difficulty").
+		Set("lit = EXCLUDED.lit").
+		Set("geometry_geojson = EXCLUDED.geometry_geojson").
+		Set("tags = EXCLUDED.tags").
+		Exec(ctx)
 
-		_, err := db.NewInsert().
-			Model(&batch).
-			On("CONFLICT (id) DO UPDATE").
-			Set("resort_id = EXCLUDED.resort_id").
-			Set("name = EXCLUDED.name").
-			Set("piste_type = EXCLUDED.piste_type").
-			Set("difficulty = EXCLUDED.difficulty").
-			Set("lit = EXCLUDED.lit").
-			Set("geometry_geojson = EXCLUDED.geometry_geojson").
-			Set("tags = EXCLUDED.tags").
-			Exec(ctx)
-
-		if err != nil {
-			return err
-		}
-	}
-	logger.Info("pistes saved/updated successfully")
-	return nil
+	return err
 }
 
-func saveLifts(ctx context.Context, db *bun.DB, lifts []models.SkiLift, logger *slog.Logger) error {
-	if len(lifts) == 0 {
-		logger.Warn("no lifts to save")
+func saveLiftsBatch(ctx context.Context, db *bun.DB, batch []models.SkiLift) error {
+	if len(batch) == 0 {
 		return nil
 	}
-	logger.Info(fmt.Sprintf("saving/updating %d lifts...", len(lifts)))
 
-	batchSize := 1000
-	for i := 0; i < len(lifts); i += batchSize {
-		end := i + batchSize
-		if end > len(lifts) {
-			end = len(lifts)
-		}
-		batch := lifts[i:end]
+	_, err := db.NewInsert().
+		Model(&batch).
+		On("CONFLICT (id) DO UPDATE").
+		Set("resort_id = EXCLUDED.resort_id").
+		Set("name = EXCLUDED.name").
+		Set("lift_type = EXCLUDED.lift_type").
+		Set("capacity = EXCLUDED.capacity").
+		Set("geometry_geojson = EXCLUDED.geometry_geojson").
+		Set("tags = EXCLUDED.tags").
+		Exec(ctx)
 
-		_, err := db.NewInsert().
-			Model(&batch).
-			On("CONFLICT (id) DO UPDATE").
-			Set("resort_id = EXCLUDED.resort_id").
-			Set("name = EXCLUDED.name").
-			Set("lift_type = EXCLUDED.lift_type").
-			Set("capacity = EXCLUDED.capacity").
-			Set("geometry_geojson = EXCLUDED.geometry_geojson").
-			Set("tags = EXCLUDED.tags").
-			Exec(ctx)
-
-		if err != nil {
-			return err
-		}
-	}
-	logger.Info("lifts saved/updated successfully")
-	return nil
+	return err
 }
