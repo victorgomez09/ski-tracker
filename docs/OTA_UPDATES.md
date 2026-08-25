@@ -54,7 +54,61 @@ This hook abstracts the complexity of the `expo-updates` API and manages the upd
 2. **Read Metadata:** If an update exists, it reads `manifest.extra` to extract `forceUpdate`, `version`, and `changelog`. It filters the changelog based on the active language (`i18n.language`).
 3. **Action:**
    - If `forceUpdate` is true, it immediately calls `Updates.fetchUpdateAsync()` and `Updates.reloadAsync()`.
-   - If false, it transitions to the `optional` phase, allowing the UI to show an update modal and call `applyUpdate()` when the user accepts.
+    - If false, it transitions to the `optional` phase, allowing the UI to show an update modal and call `applyUpdate()` when the user accepts.
+
+## Local Testing Guide
+
+By default, the OTA update checks are disabled in development mode (`__DEV__ = true`). To test the OTA update pipeline end-to-end on your local environment, follow these steps:
+
+### 1. Run the Backend & Storage
+Ensure your Golang API server (usually running on port `8082`) and MinIO instance are up and running.
+
+### 2. Configure the OTA Update URL
+In [`app.json`](file:///home/development/projects/ski-tracker/apps/web/app.json), make sure the `updates.url` points to your machine's accessible IP or localhost:
+- **iOS Simulator / Machine Hosting API:** `"http://localhost:8082/api/v1/ota/manifest"`
+- **Android Emulator:** `"http://10.0.2.2:8082/api/v1/ota/manifest"` (since `localhost` refers to the emulator itself)
+- **Physical Device:** Use your local machine's IP address (e.g., `"http://192.168.1.50:8082/api/v1/ota/manifest"`).
+
+### 3. Build & Publish Version A (Initial Build)
+1. Export the initial production bundle:
+   ```bash
+   npm run export:ota
+   ```
+2. Compress the contents of the generated `dist-ota/` folder into a ZIP file (e.g., `dist-ota.zip`).
+3. Publish this initial version to the local API:
+   ```bash
+   curl -X POST http://localhost:8082/api/v1/ota/publish \
+     -F "bundle=@dist-ota.zip" \
+     -F "runtime_version=0.0.1" \
+     -F "version=0.0.1" \
+     -F "force_update=false" \
+     -F "changelog={\"en\":[\"Initial version\"],\"es\":[\"Versión inicial\"]}"
+   ```
+4. Build and run the app in **Release** mode so that `__DEV__` is set to `false`:
+   - **Android:** `npx expo run:android --variant release`
+   - **iOS:** `npx expo run:ios --configuration Release`
+
+### 4. Build & Publish Version B (The Update)
+1. Make a visible change in the app code (e.g., modify text or color).
+2. Re-export the bundle:
+   ```bash
+   npm run export:ota
+   ```
+3. Re-zip the updated `dist-ota/` folder.
+4. Publish the update with a new version number and changelog:
+   ```bash
+   curl -X POST http://localhost:8082/api/v1/ota/publish \
+     -F "bundle=@dist-ota.zip" \
+     -F "runtime_version=0.0.1" \
+     -F "version=0.0.2" \
+     -F "force_update=false" \
+     -F "changelog={\"en\":[\"New features!\"],\"es\":[\"¡Nuevas funciones!\"]}"
+   ```
+
+### 5. Verify the Update Flow
+Open the installed release app. It will query the local API for the manifest:
+- If `force_update=false`, the custom OTA UI modal will show up, presenting the changelog in the device's language and allowing the user to trigger the update.
+- If `force_update=true`, the app will automatically download and apply the update upon restarting.
 
 ## Performance & Improvement Considerations
 
