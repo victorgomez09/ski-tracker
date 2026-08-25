@@ -6,7 +6,7 @@
     "ios": "expo run:ios",
     "start": "expo start",
     "prebuild": "expo prebuild",
-    "export:ota": "expo export --output-dir dist-ota && node -e \"const fs=require('fs'); const app=require('./app.json'); fs.writeFileSync('dist-ota/expoConfig.json', JSON.stringify(app.expo, null, 2));\"",
+    "export:ota": "expo export --output-dir dist-ota --platform android --platform ios && node -e \"const fs=require('fs'); const app=require('./app.json'); fs.writeFileSync('dist-ota/expoConfig.json', JSON.stringify(app.expo, null, 2));\"",
     "build:eas-android": "NODE_ENV=production eas build --platform android --profile preview --local",
     "build:eas-ios": "NODE_ENV=production eas build --platform ios --profile preview --local",
     "lint": "eslint \"**/*.{js,jsx,ts,tsx}\" && prettier -c \"**/*.{js,jsx,ts,tsx,json}\"",
