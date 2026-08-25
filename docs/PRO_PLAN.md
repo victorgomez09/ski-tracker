@@ -175,3 +175,12 @@ Since skiing happens in the mountains with limited or no connectivity:
     };
     ```
 3.  **Local Buffering:** If the user is PRO and uploads a photo offline, queue the upload in SQLite and sync it when connection is restored, verifying the token then.
+
+
+## 6. Features included in PRO plan
+
+1. Add photos to ski session
+2. Offline maps?
+3. Detailed weather reports
+4. Zoom details?
+5. Priority updates
