@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgis/postgis:18-master
+    image: imresamu/postgis:15-3.6.1-alpine3.22
     container_name: ski_tracker-postgres
     restart: unless-stopped
     ports:

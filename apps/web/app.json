@@ -7,7 +7,7 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://api-ski-tracker.vititech.es/api/v1/ota/manifest",
+      "url": "https://api-ski-tracker.viti-tech.es/api/v1/ota/manifest",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
