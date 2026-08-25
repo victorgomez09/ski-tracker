@@ -366,19 +366,28 @@ func saveResorts(ctx context.Context, db *bun.DB, resorts []models.SkiResort, lo
 	}
 	logger.Info(fmt.Sprintf("saving/updating %d ski resorts...", len(resorts)))
 
-	_, err := db.NewInsert().
-		Model(&resorts).
-		On("CONFLICT (id) DO UPDATE").
-		Set("name = EXCLUDED.name").
-		Set("country = EXCLUDED.country").
-		Set("website = EXCLUDED.website").
-		Set("latitude = EXCLUDED.latitude").
-		Set("longitude = EXCLUDED.longitude").
-		Set("tags = EXCLUDED.tags").
-		Exec(ctx)
+	batchSize := 1000
+	for i := 0; i < len(resorts); i += batchSize {
+		end := i + batchSize
+		if end > len(resorts) {
+			end = len(resorts)
+		}
+		batch := resorts[i:end]
 
-	if err != nil {
-		return err
+		_, err := db.NewInsert().
+			Model(&batch).
+			On("CONFLICT (id) DO UPDATE").
+			Set("name = EXCLUDED.name").
+			Set("country = EXCLUDED.country").
+			Set("website = EXCLUDED.website").
+			Set("latitude = EXCLUDED.latitude").
+			Set("longitude = EXCLUDED.longitude").
+			Set("tags = EXCLUDED.tags").
+			Exec(ctx)
+
+		if err != nil {
+			return err
+		}
 	}
 
 	logger.Info("ski resorts saved/updated successfully")
