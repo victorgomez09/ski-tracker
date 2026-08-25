@@ -119,26 +119,31 @@ func main() {
 		APIPublicURL:     cfg.Server.APIPublicURL,
 	})
 
-	// Scheduler / Cron Job
-	logger.Info("starting cron job for daily sync of ski resorts, pistes, and lifts...")
-	c := cron.New()
-	_, err = c.AddFunc("@daily", func() {
-		logger.Info("running scheduled daily sync for ski resorts, pistes, and lifts...")
-		if err := sync.SyncPistesData(context.Background(), store.DB(), logger); err != nil {
-			logger.Error("failed to run scheduled sync", slog.Any("error", err))
+	// Scheduler / Cron Job (optional, configured via SYNC_PISTES_CRON)
+	var cronRunner *cron.Cron
+	if cfg.Sync.CronSchedule != "" && cfg.Sync.CronSchedule != "disabled" && cfg.Sync.CronSchedule != "false" {
+		logger.Info("starting cron job for sync of ski resorts, pistes, and lifts", slog.String("schedule", cfg.Sync.CronSchedule))
+		cronRunner = cron.New()
+		_, err = cronRunner.AddFunc(cfg.Sync.CronSchedule, func() {
+			logger.Info("running scheduled sync for ski resorts, pistes, and lifts...")
+			if err := sync.SyncPistesData(context.Background(), store.DB(), logger); err != nil {
+				logger.Error("failed to run scheduled sync", slog.Any("error", err))
+			}
+		})
+		if err != nil {
+			logger.Error("failed to register cron job", slog.Any("error", err))
+			os.Exit(1)
 		}
-	})
-	if err != nil {
-		logger.Error("failed to register cron job", slog.Any("error", err))
-		os.Exit(1)
+		cronRunner.Start()
+	} else {
+		logger.Info("periodic sync cron job is disabled (set SYNC_PISTES_CRON to enable, e.g. '@monthly')")
 	}
-	c.Start()
 
-	// Initial sync on startup (only in non-development envs to avoid restart spamming)
+	// Initial sync on startup (only in non-development envs, and only if DB is empty)
 	if cfg.Server.Env != "development" {
 		go func() {
-			logger.Info("running initial pistes sync on startup...")
-			if err := sync.SyncPistesData(context.Background(), store.DB(), logger); err != nil {
+			logger.Info("checking if initial pistes sync is needed on startup...")
+			if err := sync.SyncPistesDataIfEmpty(context.Background(), store.DB(), logger); err != nil {
 				logger.Error("failed to run initial startup sync", slog.Any("error", err))
 			}
 		}()
@@ -164,7 +169,9 @@ func main() {
 	<-quit
 
 	logger.Info("shutting down server...")
-	c.Stop()
+	if cronRunner != nil {
+		cronRunner.Stop()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 

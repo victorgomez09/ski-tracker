@@ -16,6 +16,11 @@ type Config struct {
 	K8s      K8sConfig
 	Auth     AuthConfig
 	Minio    MinioConfig
+	Sync     SyncConfig
+}
+
+type SyncConfig struct {
+	CronSchedule string // Cron expression (e.g. "@monthly", "@weekly") or empty/disabled
 }
 
 type ServerConfig struct {
@@ -87,6 +92,9 @@ func Load() (*Config, error) {
 			AccessKey: envStr("MINIO_ACCESS_KEY", "minioadmin"),
 			SecretKey: envStr("MINIO_SECRET_KEY", "minioadmin"),
 			UseSSL:    envStr("MINIO_USE_SSL", "false") == "true",
+		},
+		Sync: SyncConfig{
+			CronSchedule: envStr("SYNC_PISTES_CRON", ""),
 		},
 	}
 

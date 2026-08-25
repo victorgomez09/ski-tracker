@@ -25,6 +25,28 @@ type GeoJSONFeature struct {
 	Properties map[string]interface{} `json:"properties"`
 }
 
+// HasPistesData checks if the database already contains resorts/pistes data.
+func HasPistesData(ctx context.Context, db *bun.DB) (bool, error) {
+	count, err := db.NewSelect().Model((*models.SkiResort)(nil)).Count(ctx)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// SyncPistesDataIfEmpty runs sync only if the database does not already contain ski resorts.
+func SyncPistesDataIfEmpty(ctx context.Context, db *bun.DB, logger *slog.Logger) error {
+	hasData, err := HasPistesData(ctx, db)
+	if err != nil {
+		return fmt.Errorf("failed to check existing pistes data: %w", err)
+	}
+	if hasData {
+		logger.Info("ski resorts and pistes data already present in database, skipping startup sync")
+		return nil
+	}
+	return SyncPistesData(ctx, db, logger)
+}
+
 // SyncPistesData downloads global resort, piste, and lift data and updates the database
 func SyncPistesData(ctx context.Context, db *bun.DB, logger *slog.Logger) error {
 	logger.Info("starting global pistes data synchronization")
