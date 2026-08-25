@@ -78,8 +78,8 @@
       }
     },
     "locales": {
-      "es": "./i18n/es.json",
-      "en": "./i18n/en.json"
+      "es": "./ios-locales/es.json",
+      "en": "./ios-locales/en.json"
     },
     "android": {
       "adaptiveIcon": {

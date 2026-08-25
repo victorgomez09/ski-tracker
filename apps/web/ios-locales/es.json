@@ -1,0 +1,8 @@
+{
+  "ios": {
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Permite que Ski Tracker use tu ubicación para registrar tus bajadas.",
+    "NSLocationWhenInUseUsageDescription": "Permite que Ski Tracker use tu ubicación para registrar tus bajadas.",
+    "NSCameraUsageDescription": "Permite que Ski Tracker acceda a tu cámara para tomar fotos.",
+    "NSMicrophoneUsageDescription": "Permite que Ski Tracker acceda a tu micrófono para grabar audio."
+  }
+}
