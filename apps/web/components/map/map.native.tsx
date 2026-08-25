@@ -12,6 +12,7 @@ import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
 import { ArrowLeft, CircleHelp, Download, MapPin, X } from 'lucide-react-native';
+import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Platform, processColor, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -302,6 +303,18 @@ export default function InteractiveSkiMapNative() {
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
     const syncParamsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const latestBoundsRef = useRef<{ minLon: string; minLat: string; maxLon: string; maxLat: string } | null>(null);
+    const lastFetchedCenterRef = useRef<{ lat: number; lon: number } | null>(null);
+    const lastFetchedZoomRef = useRef<number | null>(null);
+    const lastFetchedBoundsRef = useRef<{ minLon: number; minLat: number; maxLon: number; maxLat: number } | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+        };
+    }, []);
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
@@ -488,38 +501,126 @@ export default function InteractiveSkiMapNative() {
         loadSessionData();
     }, [searchParams.sessionId, token, applyExternalCameraMove]);
 
-    useEffect(() => {
-        const loadInitial = async () => {
-            console.log(`Current network type: ${JSON.stringify(networkState)}`);
-            if (viewState.zoom < 10) {
-                try {
-                    const bounds = latestBoundsRef.current;
-                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
-                        params: {
-                            minLon: bounds?.minLon ?? (viewState.longitude - 0.4).toString(),
-                            minLat: bounds?.minLat ?? (viewState.latitude - 0.4).toString(),
-                            maxLon: bounds?.maxLon ?? (viewState.longitude + 0.4).toString(),
-                            maxLat: bounds?.maxLat ?? (viewState.latitude + 0.4).toString(),
-                        },
-                    });
-                    if (request.status === 200) {
-                        setResorts(request.data);
-                    }
-                } catch (error) {
-                    console.error("Error fetching resorts:", error);
+    const fetchResortsData = useCallback(async (
+        lat: number,
+        lon: number,
+        zoom: number,
+        bounds?: { minLon: number; minLat: number; maxLon: number; maxLat: number }
+    ) => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+        const signal = abortControllerRef.current.signal;
+
+        if (zoom < 10) {
+            if (!bounds) return;
+
+            // If we have cached bounds and current bounds are fully inside them, skip API request
+            if (
+                lastFetchedBoundsRef.current &&
+                bounds.minLon >= lastFetchedBoundsRef.current.minLon &&
+                bounds.maxLon <= lastFetchedBoundsRef.current.maxLon &&
+                bounds.minLat >= lastFetchedBoundsRef.current.minLat &&
+                bounds.maxLat <= lastFetchedBoundsRef.current.maxLat
+            ) {
+                return;
+            }
+
+            try {
+                // Calculate padded bounds (50% larger than viewport to cache surrounding areas)
+                const lonDelta = bounds.maxLon - bounds.minLon;
+                const latDelta = bounds.maxLat - bounds.minLat;
+                const minLonPadded = bounds.minLon - lonDelta * 0.25;
+                const maxLonPadded = bounds.maxLon + lonDelta * 0.25;
+                const minLatPadded = bounds.minLat - latDelta * 0.25;
+                const maxLatPadded = bounds.maxLat + latDelta * 0.25;
+
+                const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/bbox`, {
+                    params: {
+                        minLon: minLonPadded.toString(),
+                        minLat: minLatPadded.toString(),
+                        maxLon: maxLonPadded.toString(),
+                        maxLat: maxLatPadded.toString()
+                    },
+                    signal
+                });
+                if (request.status === 200) {
+                    setResorts(request.data);
+                    
+                    // Save padded bounds as last fetched
+                    lastFetchedBoundsRef.current = {
+                        minLon: minLonPadded,
+                        minLat: minLatPadded,
+                        maxLon: maxLonPadded,
+                        maxLat: maxLatPadded
+                    };
+                    // Reset nearby cache since we moved to bbox mode
+                    lastFetchedCenterRef.current = null;
+                    lastFetchedZoomRef.current = zoom;
                 }
-            } else {
-                try {
-                    const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
-                        params: { lat: viewState.latitude, lon: viewState.longitude, radius: 50 },
-                    });
-                    if (request.status === 200) {
-                        setResorts(request.data);
-                    }
-                } catch (error) {
+            } catch (error) {
+                if (!axios.isCancel(error)) {
                     console.error("Error fetching resorts:", error);
                 }
             }
+        } else {
+            // Check if we already fetched nearby coordinates and if distance is < 15km
+            if (
+                lastFetchedCenterRef.current &&
+                lastFetchedZoomRef.current !== null &&
+                lastFetchedZoomRef.current >= 10 &&
+                getDistance(lat, lon, lastFetchedCenterRef.current.lat, lastFetchedCenterRef.current.lon) < 15
+            ) {
+                return;
+            }
+
+            try {
+                const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
+                    params: {
+                        lat: lat,
+                        lon: lon,
+                        radius: 50
+                    },
+                    signal
+                });
+                if (request.status === 200) {
+                    setResorts(request.data);
+
+                    lastFetchedCenterRef.current = { lat, lon };
+                    lastFetchedZoomRef.current = zoom;
+                    // Reset bbox cache since we moved to nearby mode
+                    lastFetchedBoundsRef.current = null;
+                }
+            } catch (error) {
+                if (!axios.isCancel(error)) {
+                    console.error("Error fetching resorts:", error);
+                }
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        const loadInitial = async () => {
+            console.log(`Current network type: ${JSON.stringify(networkState)}`);
+            const boundsVal = latestBoundsRef.current;
+            let bounds = undefined;
+            if (boundsVal) {
+                bounds = {
+                    minLon: parseFloat(boundsVal.minLon),
+                    minLat: parseFloat(boundsVal.minLat),
+                    maxLon: parseFloat(boundsVal.maxLon),
+                    maxLat: parseFloat(boundsVal.maxLat),
+                };
+            } else {
+                bounds = {
+                    minLon: viewState.longitude - 0.4,
+                    minLat: viewState.latitude - 0.4,
+                    maxLon: viewState.longitude + 0.4,
+                    maxLat: viewState.latitude + 0.4,
+                };
+            }
+            await fetchResortsData(viewState.latitude, viewState.longitude, viewState.zoom, bounds);
         };
 
         const timeout = setTimeout(loadInitial, 350);
