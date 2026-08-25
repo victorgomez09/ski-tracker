@@ -370,7 +370,7 @@ export default function InteractiveSkiMap() {
     const lastFetchedCenterRef = useRef<{ lat: number; lon: number } | null>(null);
     const lastFetchedZoomRef = useRef<number | null>(null);
     const lastFetchedBoundsRef = useRef<{ minLon: number; minLat: number; maxLon: number; maxLat: number } | null>(null);
-    const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const fetchTimeoutRef = useRef<number | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
