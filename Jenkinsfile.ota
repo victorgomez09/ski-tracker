@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'node:20'
+            args '-u root'
+        }
+    }
 
     environment {
         WEB_DIR = 'apps/web'
@@ -7,11 +12,12 @@ pipeline {
     }
 
     stages {
-        stage('Install Dependencies') {
+        stage('Install PNPM & Dependencies') {
             steps {
                 dir("${WEB_DIR}") {
-                    echo 'Installing dependencies using npx pnpm...'
-                    sh 'npx --yes pnpm install'
+                    echo 'Activating Corepack (pnpm) and installing dependencies...'
+                    sh 'corepack enable'
+                    sh 'pnpm install'
                 }
             }
         }
@@ -20,7 +26,7 @@ pipeline {
             steps {
                 dir("${WEB_DIR}") {
                     echo 'Exporting Expo OTA bundle...'
-                    sh 'npx --yes pnpm run export:ota'
+                    sh 'pnpm run export:ota'
                 }
             }
         }
@@ -28,7 +34,8 @@ pipeline {
         stage('Package Bundle') {
             steps {
                 dir("${WEB_DIR}") {
-                    echo 'Zipping the OTA bundle...'
+                    echo 'Installing zip/curl and archiving OTA bundle...'
+                    sh 'apt-get update -qq && apt-get install -y -qq zip curl'
                     sh 'cd dist-ota && zip -r ../bundle.zip . && cd ..'
                 }
             }
