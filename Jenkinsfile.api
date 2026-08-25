@@ -1,0 +1,78 @@
+pipeline {
+    agent any
+
+    environment {
+        API_DIR = 'apps/api'
+        DEPLOY_DIR = 'deploy'
+    }
+
+    stages {
+        stage('Lint & Test') {
+            steps {
+                dir("${API_DIR}") {
+                    echo 'Running tests...'
+                    sh 'go test -v ./...'
+                }
+            }
+        }
+
+        stage('Prepare Environment') {
+            steps {
+                dir("${DEPLOY_DIR}") {
+                    echo 'Preparing .env file...'
+                    script {
+                        // Create .env from template
+                        sh 'cp .env.template .env'
+                        
+                        // Replace secrets with environment credentials if defined in Jenkins
+                        try {
+                            withCredentials([
+                                string(credentialsId: 'ski-tracker-jwt-secret', variable: 'JWT_SECRET_CRED'),
+                                string(credentialsId: 'ski-tracker-ota-secret', variable: 'OTA_PUBLISH_SECRET_CRED')
+                            ]) {
+                                sh """
+                                    sed -i 's|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET_CRED}|' .env
+                                    sed -i 's|^OTA_PUBLISH_SECRET=.*|OTA_PUBLISH_SECRET=${OTA_PUBLISH_SECRET_CRED}|' .env
+                                """
+                            }
+                        } catch (err) {
+                            echo 'Warning: Jenkins credentials not found or failed to load. Using template defaults (recommended for development only).'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                dir("${DEPLOY_DIR}") {
+                    echo 'Building API Docker image via Docker Compose...'
+                    sh 'docker compose build api'
+                }
+            }
+        }
+
+        stage('Docker Deploy') {
+            steps {
+                dir("${DEPLOY_DIR}") {
+                    echo 'Deploying services with Docker Compose...'
+                    sh 'docker compose up -d'
+                    echo 'Cleaning up dangling images...'
+                    sh 'docker image prune -f'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo 'API deployment completed successfully!'
+        }
+        failure {
+            echo 'API deployment failed. Please check the logs.'
+        }
+    }
+}

@@ -1,0 +1,80 @@
+pipeline {
+    agent any
+
+    environment {
+        WEB_DIR = 'apps/web'
+        DEPLOY_DIR = 'deploy'
+    }
+
+    stages {
+        stage('Install Dependencies') {
+            steps {
+                dir("${WEB_DIR}") {
+                    echo 'Installing dependencies using pnpm...'
+                    sh 'pnpm install'
+                }
+            }
+        }
+
+        stage('Export OTA') {
+            steps {
+                dir("${WEB_DIR}") {
+                    echo 'Exporting Expo OTA bundle...'
+                    sh 'pnpm run export:ota'
+                }
+            }
+        }
+
+        stage('Package Bundle') {
+            steps {
+                dir("${WEB_DIR}") {
+                    echo 'Zipping the OTA bundle...'
+                    sh 'cd dist-ota && zip -r ../bundle.zip . && cd ..'
+                }
+            }
+        }
+
+        stage('Publish OTA Update') {
+            steps {
+                dir("${WEB_DIR}") {
+                    script {
+                        def version = sh(script: "node -p \"require('./app.json').expo.version\"", returnStdout: true).trim()
+                        echo "Target version detected from app.json: ${version}"
+                        
+                        // Send the zip bundle to the publish API endpoint
+                        withCredentials([
+                            string(credentialsId: 'ski-tracker-ota-secret', variable: 'OTA_PUBLISH_SECRET_CRED')
+                        ]) {
+                            sh """
+                                # Load URL from .env if it exists
+                                if [ -f ../../deploy/.env ]; then
+                                    export \$(cat ../../deploy/.env | grep -v '#' | xargs)
+                                fi
+                                TARGET_API_URL=\${API_PUBLIC_URL:-http://localhost:8082}
+                                
+                                echo "Publishing OTA update to \${TARGET_API_URL}..."
+                                curl -X POST "\${TARGET_API_URL}/api/v1/ota/publish" \
+                                  -H "Authorization: Bearer \${OTA_PUBLISH_SECRET_CRED}" \
+                                  -F "bundle=@bundle.zip" \
+                                  -F "runtime_version=\${version}" \
+                                  -F "version=\${version}"
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo 'OTA Update exported and published successfully!'
+        }
+        failure {
+            echo 'OTA Update publication failed. Please check the logs.'
+        }
+    }
+}
