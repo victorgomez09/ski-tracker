@@ -609,7 +609,6 @@ export default function InteractiveSkiMapNative() {
 
     useEffect(() => {
         const loadInitial = async () => {
-            console.log(`Current network type: ${JSON.stringify(networkState)}`);
             const boundsVal = latestBoundsRef.current;
             let bounds = undefined;
             if (boundsVal) {
@@ -634,6 +633,29 @@ export default function InteractiveSkiMapNative() {
         return () => clearTimeout(timeout);
     }, [viewState.latitude, viewState.longitude, viewState.zoom, token, networkState]);
 
+    const pisteCasingStyle: any = {
+        id: 'piste-casing',
+        sourceID: 'pistes-source',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#2e7d32',
+                'easy', '#1565c0',
+                'intermediate', '#c62828',
+                'advanced', '#212121',
+                '#616161'
+            ],
+            'line-width': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 10,
+                0
+            ],
+            'line-opacity': selectedFeature?.ID ? 1 : 0
+        }
+    };
+
     const pisteLineStyle: any = {
         id: 'piste-lines',
         sourceID: 'pistes-source',
@@ -651,7 +673,7 @@ export default function InteractiveSkiMapNative() {
             'line-dasharray': [1, 0],
             'line-width': [
                 'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], 9,
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 7,
                 ['==', ['get', 'id'], hoveredFeatureId || ''], 8,
                 ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
                 ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7,
@@ -1286,6 +1308,7 @@ export default function InteractiveSkiMapNative() {
                 {viewState.zoom >= 10 && (
                     <>
                         <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                            <NativeLayer {...pisteCasingStyle} />
                             <NativeLayer {...pisteLineStyle} onPress={handleNativeFeaturePress} />
                             <NativeLayer {...pisteLabelStyle} onPress={handleNativeFeaturePress} />
                             <NativeLayer {...pisteDirectionStyle} onPress={handleNativeFeaturePress} />

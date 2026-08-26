@@ -584,6 +584,28 @@ export default function InteractiveSkiMap() {
     }, [searchParams.lat, searchParams.lon, searchParams.zoom, searchParams.minLon, searchParams.minLat, searchParams.maxLon, searchParams.maxLat, token]);
 
     // --- Layer styles ---
+    const pisteCasingStyle: LayerProps = {
+        id: 'piste-casing',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#2e7d32',
+                'easy', '#1565c0',
+                'intermediate', '#c62828',
+                'advanced', '#212121',
+                '#616161'
+            ],
+            'line-width': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 10,
+                0
+            ],
+            'line-opacity': selectedFeature?.ID ? 1 : 0
+        }
+    };
+
     const pisteLineStyle: LayerProps = {
         id: 'piste-lines',
         type: 'line',
@@ -610,7 +632,7 @@ export default function InteractiveSkiMap() {
             ],
             'line-width': [
                 'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], 9,
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 7,
                 ['==', ['get', 'id'], hoveredFeatureId || ''], 8,
                 ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
                 ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7,
@@ -1114,6 +1136,7 @@ export default function InteractiveSkiMap() {
                 {viewState.zoom >= 10 && (
                     <>
                         <Source id="pistes-source" type="geojson" data={pistesGeoJSON as any}>
+                            <Layer {...pisteCasingStyle} />
                             <Layer {...pisteLineStyle} />
                             <Layer {...pisteLabelStyle} />
                             <Layer {...pisteDirectionStyle} />
