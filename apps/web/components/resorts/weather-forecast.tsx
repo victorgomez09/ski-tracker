@@ -99,10 +99,10 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             <View style={styles.iconCircle}>
                                 {currentWeatherInfo.icon}
                             </View>
-                            <View>
+                            <View style={styles.conditionTextContainer}>
                                 <Text style={styles.metricLabel}>{t('condition')}</Text>
-                                <Text style={styles.conditionText}>{currentWeatherInfo.label}</Text>
-                                <Text style={styles.timeText}>
+                                <Text style={styles.conditionText} numberOfLines={1} ellipsizeMode="tail">{currentWeatherInfo.label}</Text>
+                                <Text style={styles.timeText} numberOfLines={1} ellipsizeMode="tail">
                                     {t('updated')}: {new Date(current.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </Text>
                             </View>
@@ -303,11 +303,18 @@ const getStyles = (colors: any) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        gap: SPACING.sm,
     },
     conditionLeft: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: SPACING.sm,
+        flex: 1,
+        minWidth: 0,
+    },
+    conditionTextContainer: {
+        flex: 1,
+        minWidth: 0,
     },
     iconCircle: {
         padding: 10,
@@ -315,6 +322,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         backgroundColor: colors.background,
         borderWidth: 1,
         borderColor: colors.border,
+        flexShrink: 0,
     },
     metricLabel: {
         fontSize: 10,
@@ -334,6 +342,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     conditionRight: {
         alignItems: 'flex-end',
+        flexShrink: 0,
     },
     tempText: {
         fontSize: 30,

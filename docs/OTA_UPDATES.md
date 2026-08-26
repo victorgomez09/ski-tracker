@@ -114,3 +114,9 @@ Open the installed release app. It will query the local API for the manifest:
 
 - **Manifest Hashes (Backend):** Currently, `ota_service.go` downloads every asset into memory during the `buildManifest` call to calculate the `SHA256` and `MD5` hashes. For a large bundle or high traffic, this can cause memory spikes. 
   - *Recommendation:* Pre-calculate these hashes during the `POST /api/v1/ota/publish` phase and save them in a custom `hashes.json` in MinIO, so the manifest endpoint can just read the JSON instead of downloading all assets.
+
+
+## To export OTA to server
+```shell
+make ota-publish ARGS='--es "Cambiar estilo en los detalles del tiempo" --en "Change styles inside weather forecast"'
+```
