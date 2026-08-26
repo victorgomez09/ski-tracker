@@ -46,8 +46,8 @@ pipeline {
         stage('Docker Build') {
             steps {
                 dir("${DEPLOY_DIR}") {
-                    echo 'Building API Docker image via Docker Compose...'
-                    sh 'docker compose build api'
+                    echo 'Building API Docker image via Docker Compose (no cache)...'
+                    sh 'docker compose build --no-cache api'
                 }
             }
         }
@@ -55,8 +55,11 @@ pipeline {
         stage('Docker Deploy') {
             steps {
                 dir("${DEPLOY_DIR}") {
-                    echo 'Deploying services with Docker Compose...'
-                    sh 'docker compose up -d'
+                    echo 'Stopping and removing old API container...'
+                    sh 'docker compose stop api || true'
+                    sh 'docker compose rm -f api || true'
+                    echo 'Deploying API service...'
+                    sh 'docker compose up -d --force-recreate api'
                     echo 'Cleaning up dangling images...'
                     sh 'docker image prune -f'
                 }
