@@ -20,7 +20,7 @@ export const ResortLogo: React.FC<ResortLogoProps> = ({
 }) => {
     const colors = useThemeColors();
     const [hasError, setHasError] = useState(false);
-    const logoUrl = getResortLogoUrl(website, Math.min(128, Math.max(64, size * 2)));
+    const logoUrl = getResortLogoUrl(website, 256);
 
     const containerStyle = [
         styles.container,

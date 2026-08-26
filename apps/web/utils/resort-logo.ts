@@ -1,7 +1,7 @@
 /**
  * Extracts clean domain and generates a high-resolution favicon URL via Google Favicons API
  */
-export function getResortLogoUrl(website?: string | null, size: number = 128): string | null {
+export function getResortLogoUrl(website?: string | null, size: number = 256): string | null {
     if (!website || typeof website !== 'string') return null;
 
     try {

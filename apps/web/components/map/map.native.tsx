@@ -1267,7 +1267,7 @@ export default function InteractiveSkiMapNative() {
                                 <Text style={{
                                     fontSize: 11,
                                     fontWeight: 'bold',
-                                    color: selectedResort?.ID === resort.ID ? colors.primary : colors.textPrimary,
+                                    color: colors.primary,
                                     textShadowColor: '#ffffff',
                                     textShadowOffset: { width: 0, height: 0 },
                                     textShadowRadius: 3,
