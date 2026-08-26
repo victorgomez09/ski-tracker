@@ -27,7 +27,7 @@ func NewContainer(
 	minioClient *minio.Client,
 	dbURL string,
 	setupSecret string,
-	otaUpdatesDir string,
+	otaBucket string,
 	apiPublicURL string,
 ) *Container {
 	return &Container{
@@ -37,6 +37,6 @@ func NewContainer(
 		User:       NewUserService(s, jwtManager, logger),
 		SkiSession: NewSkiSessionService(s, jwtManager, logger, minioClient),
 		Weather:    NewWeatherService(logger),
-		OTA:        NewOTAService(minioClient, otaUpdatesDir, apiPublicURL, logger),
+		OTA:        NewOTAService(minioClient, otaBucket, apiPublicURL, logger),
 	}
 }

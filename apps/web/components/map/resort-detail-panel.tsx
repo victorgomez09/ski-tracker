@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, ScrollView, Linking, Platform, StyleSheet
 import { X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
+import { ResortLogo } from '../resorts/resort-logo';
 
 interface ResortDetailPanelProps {
     resort: Resort | ResortDetail;
@@ -221,9 +222,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                     </View>
 
                     <View style={styles.titleRow}>
-                        <View style={styles.avatarCircle}>
-                            <Text style={styles.avatarEmoji}>🏔️</Text>
-                        </View>
+                        <ResortLogo website={resort.Website} size={44} />
                         <View style={styles.titleInfo}>
                             <Text style={styles.titleText}>{resort.Name}</Text>
                             {resort.Website && (

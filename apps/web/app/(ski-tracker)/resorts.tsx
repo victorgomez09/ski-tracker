@@ -21,6 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { OfflineMapsModal } from "components/map/offline-maps-panel";
 import { WeatherForecastDetails } from "components/resorts/weather-forecast";
+import { ResortLogo } from "components/resorts/resort-logo";
 import { API_BASE_URL } from "constants/constants";
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 import { useAuth } from "context/auth.context";
@@ -223,12 +224,15 @@ export default function ResortsView() {
                 <ScrollView style={styles.detailsScrollView}>
                     {/* Header Banner */}
                     <View style={styles.headerBanner}>
-                        <View style={{ flex: 1 }}>
-                            <View style={styles.countryBadge}>
-                                <Globe size={12} color={colors.primaryDark} />
-                                <Text style={styles.countryText}>{selectedResort.Country}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                            <ResortLogo website={selectedResort.Website} size={48} />
+                            <View style={{ flex: 1 }}>
+                                <View style={styles.countryBadge}>
+                                    <Globe size={12} color={colors.primaryDark} />
+                                    <Text style={styles.countryText}>{selectedResort.Country}</Text>
+                                </View>
+                                <Text style={styles.resortName}>{selectedResort.Name}</Text>
                             </View>
-                            <Text style={styles.resortName}>{selectedResort.Name}</Text>
                         </View>
                         <TouchableOpacity
                             style={styles.closeButton}
@@ -530,11 +534,14 @@ export default function ResortsView() {
                                             onPress={() => handleResortSelect(resort)}
                                         >
                                             <View style={styles.resortCardHeader}>
-                                                <View>
-                                                    <Text style={[styles.resortCardName, isSelected && { color: colors.primaryDark }]}>{resort.Name}</Text>
-                                                    <View style={styles.resortCardLocation}>
-                                                        <MapPin size={12} color={colors.textSecondary} />
-                                                        <Text style={styles.resortCardCountry}>{resort.Country}</Text>
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                                                    <ResortLogo website={resort.Website} size={36} />
+                                                    <View style={{ flex: 1 }}>
+                                                        <Text style={[styles.resortCardName, isSelected && { color: colors.primaryDark }]}>{resort.Name}</Text>
+                                                        <View style={styles.resortCardLocation}>
+                                                            <MapPin size={12} color={colors.textSecondary} />
+                                                            <Text style={styles.resortCardCountry}>{resort.Country}</Text>
+                                                        </View>
                                                     </View>
                                                 </View>
                                                 <View style={styles.resortCardBadge}>

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -85,9 +86,14 @@ type OTAService struct {
 }
 
 func NewOTAService(minioClient *minio.Client, bucketName, publicURL string, logger *slog.Logger) *OTAService {
+	// Defend against invalid bucket names (e.g. legacy directory paths like ./updates or /app/updates)
+	sanitizedBucket := strings.TrimSpace(bucketName)
+	if sanitizedBucket == "" || strings.Contains(sanitizedBucket, "/") || strings.Contains(sanitizedBucket, "\\") || strings.HasPrefix(sanitizedBucket, ".") {
+		sanitizedBucket = "ski-tracker-ota"
+	}
 	return &OTAService{
 		minioClient: minioClient,
-		bucketName:  bucketName,
+		bucketName:  sanitizedBucket,
 		publicURL:   publicURL,
 		logger:      logger,
 	}
@@ -119,6 +125,11 @@ func (s *OTAService) WriteManifestResponse(w http.ResponseWriter, req ManifestRe
 
 	bundlePrefix, err := s.latestBundlePrefix(ctx, req.RuntimeVersion)
 	if err != nil {
+		if errors.Is(err, apierr.ErrNotFound) || (err != nil && strings.Contains(err.Error(), "No updates published")) {
+			if req.ProtocolVersion >= 1 {
+				return s.writeDirective(w, expoDirective{Type: "noUpdateAvailable"}, req.ProtocolVersion)
+			}
+		}
 		return err
 	}
 
@@ -456,6 +467,10 @@ func (s *OTAService) latestBundlePrefix(ctx context.Context, runtimeVersion stri
 	var dirs []string
 	for object := range s.minioClient.ListObjects(ctx, s.bucketName, opts) {
 		if object.Err != nil {
+			errResp := minio.ToErrorResponse(object.Err)
+			if errResp.Code == "NoSuchBucket" {
+				return "", apierr.ErrNotFound.WithDetail("No updates published for this runtime version.")
+			}
 			return "", object.Err
 		}
 		// Extraer el nombre de la subcarpeta (timestamp)

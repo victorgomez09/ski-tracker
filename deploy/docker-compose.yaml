@@ -52,6 +52,7 @@ services:
       - OTA_UPDATES_DIR=/app/updates
       - APP_ENV=production              
       - OTA_PUBLISH_SECRET=${OTA_PUBLISH_SECRET}
+      - SYNC_PISTES_CRON=${SYNC_PISTES_CRON:-0 0 * * *}
     depends_on:
       postgres:
         condition: service_healthy

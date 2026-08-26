@@ -15,7 +15,7 @@ import { ArrowLeft, CircleHelp, Download, MapPin, X } from 'lucide-react-native'
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Platform, processColor, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, processColor, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
@@ -316,6 +316,7 @@ export default function InteractiveSkiMapNative() {
         };
     }, []);
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
+    const [isLoadingResorts, setIsLoadingResorts] = useState<boolean>(false);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
@@ -527,6 +528,7 @@ export default function InteractiveSkiMapNative() {
                 return;
             }
 
+            setIsLoadingResorts(true);
             try {
                 // Calculate padded bounds (50% larger than viewport to cache surrounding areas)
                 const lonDelta = bounds.maxLon - bounds.minLon;
@@ -563,6 +565,8 @@ export default function InteractiveSkiMapNative() {
                 if (!axios.isCancel(error)) {
                     console.error("Error fetching resorts:", error);
                 }
+            } finally {
+                setIsLoadingResorts(false);
             }
         } else {
             // Check if we already fetched nearby coordinates and if distance is < 15km
@@ -575,6 +579,7 @@ export default function InteractiveSkiMapNative() {
                 return;
             }
 
+            setIsLoadingResorts(true);
             try {
                 const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
                     params: {
@@ -596,6 +601,8 @@ export default function InteractiveSkiMapNative() {
                 if (!axios.isCancel(error)) {
                     console.error("Error fetching resorts:", error);
                 }
+            } finally {
+                setIsLoadingResorts(false);
             }
         }
     }, []);
@@ -1071,6 +1078,13 @@ export default function InteractiveSkiMapNative() {
 
     return (
         <View style={styles.container}>
+            {isLoadingResorts && (
+                <View style={styles.loadingBanner}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={styles.loadingBannerText}>{t('loading_slopes')}</Text>
+                </View>
+            )}
+
             {!searchParams.sessionId && (
                 <>
                     <TouchableOpacity
@@ -1317,6 +1331,27 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         flex: 1,
         width: '100%',
         height: '100%',
+    },
+    loadingBanner: {
+        position: 'absolute',
+        top: 16,
+        alignSelf: 'center',
+        zIndex: 60,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: BORDER_RADIUS.round,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        ...SHADOWS.md,
+    },
+    loadingBannerText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: colors.textPrimary,
     },
     helpButton: {
         position: 'absolute',

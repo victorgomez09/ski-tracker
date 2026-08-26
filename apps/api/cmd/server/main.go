@@ -97,13 +97,13 @@ func main() {
 		logger.Error("failed to create MinIO client", slog.Any("error", err))
 		os.Exit(1)
 	}
-	InitMinIOBucket(ctx, minioClient)
+	InitMinIOBucket(ctx, minioClient, cfg.Minio.OTABucket)
 
 	// JWT
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.TokenExpiry, cfg.Auth.RefreshExpiry)
 
 	// // Services
-	services := service.NewContainer(store, jwtManager, logger, minioClient, cfg.Database.URL, cfg.Auth.SetupSecret, cfg.Server.OTAUpdatesDir, cfg.Server.APIPublicURL)
+	services := service.NewContainer(store, jwtManager, logger, minioClient, cfg.Database.URL, cfg.Auth.SetupSecret, cfg.Minio.OTABucket, cfg.Server.APIPublicURL)
 
 	// Router
 	cache := persistence.NewInMemoryStore(1 * time.Hour)
@@ -183,19 +183,24 @@ func main() {
 	logger.Info("server exited gracefully")
 }
 
-func InitMinIOBucket(ctx context.Context, minioClient *minio.Client) error {
-	bucketName := "ski-session-photos"
+func InitMinIOBucket(ctx context.Context, minioClient *minio.Client, otaBucket string) error {
+	buckets := []string{"ski-session-photos"}
+	if otaBucket != "" {
+		buckets = append(buckets, otaBucket)
+	}
 	location := "eu-west-1"
 
-	exists, err := minioClient.BucketExists(ctx, bucketName)
-	if err != nil {
-		return err
-	}
-
-	if !exists {
-		err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{Region: location})
+	for _, bucketName := range buckets {
+		exists, err := minioClient.BucketExists(ctx, bucketName)
 		if err != nil {
-			return fmt.Errorf("failed to create bucket: %w", err)
+			return err
+		}
+
+		if !exists {
+			err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{Region: location})
+			if err != nil {
+				return fmt.Errorf("failed to create bucket %s: %w", bucketName, err)
+			}
 		}
 	}
 	return nil

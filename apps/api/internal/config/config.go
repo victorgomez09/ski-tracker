@@ -58,6 +58,7 @@ type MinioConfig struct {
 	AccessKey string
 	SecretKey string
 	UseSSL    bool
+	OTABucket string
 }
 
 // Load reads configuration from .env file (if present) and environment variables.
@@ -92,6 +93,7 @@ func Load() (*Config, error) {
 			AccessKey: envStr("MINIO_ACCESS_KEY", "minioadmin"),
 			SecretKey: envStr("MINIO_SECRET_KEY", "minioadmin"),
 			UseSSL:    envStr("MINIO_USE_SSL", "false") == "true",
+			OTABucket: envStr("MINIO_OTA_BUCKET", envStr("OTA_BUCKET", "ski-tracker-ota")),
 		},
 		Sync: SyncConfig{
 			CronSchedule: envStr("SYNC_PISTES_CRON", ""),

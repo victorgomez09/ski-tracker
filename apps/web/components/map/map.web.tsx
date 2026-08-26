@@ -294,6 +294,7 @@ export default function InteractiveSkiMap() {
     const mapRef = useRef<MapRef>(null);
     const isInternalMoveRef = useRef(false);
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
+    const [isLoadingResorts, setIsLoadingResorts] = useState<boolean>(false);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
@@ -479,6 +480,7 @@ export default function InteractiveSkiMap() {
                     return;
                 }
 
+                setIsLoadingResorts(true);
                 try {
                     // Calculate padded bounds (50% larger than viewport to cache surrounding areas)
                     const lonDelta = bounds.maxLon - bounds.minLon;
@@ -516,6 +518,8 @@ export default function InteractiveSkiMap() {
                     if (!axios.isCancel(error)) {
                         console.error("Error fetching resorts:", error);
                     }
+                } finally {
+                    setIsLoadingResorts(false);
                 }
             } else {
                 // Check if we already fetched nearby coordinates and if distance is < 15km
@@ -528,6 +532,7 @@ export default function InteractiveSkiMap() {
                     return;
                 }
 
+                setIsLoadingResorts(true);
                 try {
                     const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
                         params: {
@@ -550,6 +555,8 @@ export default function InteractiveSkiMap() {
                     if (!axios.isCancel(error)) {
                         console.error("Error fetching resorts:", error);
                     }
+                } finally {
+                    setIsLoadingResorts(false);
                 }
             }
         }, 300);
@@ -1007,6 +1014,12 @@ export default function InteractiveSkiMap() {
 
     return (
         <div style={styles.container}>
+            {isLoadingResorts && (
+                <div style={styles.loadingBanner}>
+                    <div style={styles.spinner} />
+                    <span style={styles.loadingBannerText}>{t('loading_slopes')}</span>
+                </div>
+            )}
             {selectedLegend && (
                 <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
             )}
@@ -1276,6 +1289,35 @@ const getStyles = (colors: typeof LIGHT_COLORS) => ({
         height: '100%',
         position: 'relative' as const,
         backgroundColor: colors.background,
+    },
+    loadingBanner: {
+        position: 'absolute' as const,
+        top: '16px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 60,
+        backgroundColor: colors.card,
+        border: `1px solid ${colors.border}`,
+        padding: '8px 16px',
+        borderRadius: `${BORDER_RADIUS.round}px`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+        pointerEvents: 'none' as const,
+    },
+    loadingBannerText: {
+        fontSize: '12px',
+        fontWeight: '600' as const,
+        color: colors.textPrimary,
+    },
+    spinner: {
+        width: '14px',
+        height: '14px',
+        border: `2px solid ${colors.border}`,
+        borderTopColor: colors.primary,
+        borderRadius: '50%',
+        animation: 'spin 1s linear infinite',
     },
     controlsContainer: {
         position: 'absolute' as const,
