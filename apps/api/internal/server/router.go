@@ -80,6 +80,9 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		{
 			// Resort routes
 			skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
+			protected.GET("/resorts/favorites", skiResortHandler.ListFavorites)
+			protected.POST("/resorts/favorites/:id", skiResortHandler.AddFavorite)
+			protected.DELETE("/resorts/favorites/:id", skiResortHandler.RemoveFavorite)
 			protected.GET("/resorts/bbox", skiResortHandler.ListByBBox)
 			protected.GET("/resorts/nearby", skiResortHandler.ListNearby)
 			protected.GET("/resorts/by-name", skiResortHandler.ListByName)

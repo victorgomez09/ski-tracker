@@ -11,6 +11,7 @@ import { initDB } from 'tracking/database';
 
 import { UpdateModal } from 'components/updates/update-modal';
 import { AuthProvider } from 'context/auth.context';
+import { FavoritesProvider } from 'context/favorites.context';
 import { OtaProvider, useOta } from 'context/ota.context';
 import { ToastProvider } from 'context/toast.context';
 import { AxiosInterceptor } from 'interceptor/axios.interceptor';
@@ -114,13 +115,15 @@ function AppContent() {
         <SafeAreaProvider>
             <OtaProvider>
                 <AuthProvider>
-                    <ToastProvider>
-                        <AxiosInterceptor>
-                            <OtaGate>
-                                <Slot />
-                            </OtaGate>
-                        </AxiosInterceptor>
-                    </ToastProvider>
+                    <FavoritesProvider>
+                        <ToastProvider>
+                            <AxiosInterceptor>
+                                <OtaGate>
+                                    <Slot />
+                                </OtaGate>
+                            </AxiosInterceptor>
+                        </ToastProvider>
+                    </FavoritesProvider>
                 </AuthProvider>
             </OtaProvider>
         </SafeAreaProvider>

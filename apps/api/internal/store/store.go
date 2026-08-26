@@ -62,6 +62,9 @@ type SkiResortStore interface {
 	ListAll(ctx context.Context, filter SkiResortListFilter) ([]models.SkiResort, error)
 	ListByBBox(ctx context.Context, filter SkiResortBBoxFilter) ([]models.SkiResort, error)
 	GetByCloseness(ctx context.Context, lat, lon float64) (*models.SkiResort, error)
+	ListFavorites(ctx context.Context, userID uuid.UUID) ([]models.SkiResort, error)
+	AddFavorite(ctx context.Context, userID uuid.UUID, resortID string) error
+	RemoveFavorite(ctx context.Context, userID uuid.UUID, resortID string) error
 }
 
 type SkiPisteStore interface {

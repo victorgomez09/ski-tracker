@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/google/uuid"
 	"github.com/victorgomez09/ski-tracker/internal/apierr"
 	"github.com/victorgomez09/ski-tracker/internal/models"
 	"github.com/victorgomez09/ski-tracker/internal/store"
@@ -172,6 +173,85 @@ func (s *SkiResortService) ListByName(ctx context.Context, name string) ([]Resor
 	}
 
 	return result, nil
+}
+
+func (s *SkiResortService) ListFavorites(ctx context.Context, userID uuid.UUID) ([]ResortDetailDTO, error) {
+	resorts, err := s.store.SkiResort().ListFavorites(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]ResortDetailDTO, len(resorts))
+	for i, resort := range resorts {
+		result[i] = ResortDetailDTO{
+			SkiResort:  resort,
+			DistanceKM: 0,
+		}
+	}
+
+	for i, resort := range resorts {
+		pistes, err := s.store.SkiPiste().GetByResortID(ctx, resort.ID)
+		if err != nil {
+			s.logger.Error("failed to get pistes for favorite resort", "resort_id", resort.ID, "error", err)
+			continue
+		}
+
+		pistes = mergeContiguousPistes(pistes)
+		totalKmOfPistes := 0.0
+		for _, piste := range pistes {
+			coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{})
+			if !ok || len(coords) < 2 {
+				continue
+			}
+
+			for j := 0; j < len(coords)-1; j++ {
+				pointA, okA := coords[j].([]interface{})
+				pointB, okB := coords[j+1].([]interface{})
+				if !okA || !okB || len(pointA) < 2 || len(pointB) < 2 {
+					continue
+				}
+
+				latA, okLatA := pointA[1].(float64)
+				lonA, okLonA := pointA[0].(float64)
+				latB, okLatB := pointB[1].(float64)
+				lonB, okLonB := pointB[0].(float64)
+
+				if !okLatA || !okLonA || !okLatB || !okLonB {
+					continue
+				}
+
+				totalKmOfPistes += calculateDistance(latA, lonA, latB, lonB)
+			}
+		}
+		result[i].DistanceKM = totalKmOfPistes
+
+		filterPistes := make([]models.SkiPiste, 0, len(pistes))
+		for _, piste := range pistes {
+			if piste.Name != "" {
+				filterPistes = append(filterPistes, piste)
+			}
+		}
+		result[i].TotalPistes = len(filterPistes)
+
+		lifts, err := s.store.SkiLift().GetByResortID(ctx, resort.ID)
+		if err != nil {
+			s.logger.Error("failed to get lifts for favorite resort", "resort_id", resort.ID, "error", err)
+			continue
+		}
+		result[i].TotalLifts = len(lifts)
+		result[i].Pistes = pistes
+		result[i].Lifts = lifts
+	}
+
+	return result, nil
+}
+
+func (s *SkiResortService) AddFavorite(ctx context.Context, userID uuid.UUID, resortID string) error {
+	return s.store.SkiResort().AddFavorite(ctx, userID, resortID)
+}
+
+func (s *SkiResortService) RemoveFavorite(ctx context.Context, userID uuid.UUID, resortID string) error {
+	return s.store.SkiResort().RemoveFavorite(ctx, userID, resortID)
 }
 
 func (s *SkiResortService) List(ctx context.Context, latStr, lngStr, radStr string) ([]ResortDetailDTO, error) {

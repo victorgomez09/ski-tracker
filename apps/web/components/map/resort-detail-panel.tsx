@@ -1,8 +1,9 @@
 import { Resort, ResortDetail, Piste } from 'models/ski-resort.model';
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Linking, Platform, StyleSheet } from 'react-native';
-import { X } from 'lucide-react-native';
+import { Star, X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
+import { useFavorites } from '../../context/favorites.context';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 import { ResortLogo } from '../resorts/resort-logo';
 
@@ -68,6 +69,7 @@ const parseLiftType = (liftType: string, t: any) => {
 
 export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, onClose }) => {
     const { t } = useTranslation();
+    const { isFavorite, toggleFavorite } = useFavorites();
     const isWeb = Platform.OS === 'web';
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
@@ -216,9 +218,21 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                         <Text style={styles.breadcrumbText}>
                             {resort.Country || t('ski_resort')}
                         </Text>
-                        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                            <X size={18} color={colors.textSecondary} />
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <TouchableOpacity
+                                onPress={() => toggleFavorite(resort as Resort)}
+                                style={styles.closeButton}
+                            >
+                                <Star
+                                    size={16}
+                                    color={isFavorite(resort.ID) ? '#F59E0B' : colors.textSecondary}
+                                    fill={isFavorite(resort.ID) ? '#F59E0B' : 'transparent'}
+                                />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                                <X size={18} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
                     <View style={styles.titleRow}>

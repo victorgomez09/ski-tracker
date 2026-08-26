@@ -3,6 +3,7 @@ package pg
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 	"github.com/victorgomez09/ski-tracker/internal/models"
 	"github.com/victorgomez09/ski-tracker/internal/store"
@@ -99,3 +100,36 @@ func (s *skiResortStore) GetByCloseness(ctx context.Context, latitude, longitude
 
 	return &resort, nil
 }
+
+func (s *skiResortStore) ListFavorites(ctx context.Context, userID uuid.UUID) ([]models.SkiResort, error) {
+	var resorts []models.SkiResort
+	err := s.db.NewSelect().
+		Model(&resorts).
+		Join("JOIN user_favorite_resorts AS ufr ON ufr.resort_id = sr.id").
+		Where("ufr.user_id = ?", userID).
+		OrderExpr("ufr.created_at DESC").
+		Scan(ctx)
+
+	return resorts, err
+}
+
+func (s *skiResortStore) AddFavorite(ctx context.Context, userID uuid.UUID, resortID string) error {
+	fav := &models.UserFavoriteResort{
+		UserID:   userID,
+		ResortID: resortID,
+	}
+	_, err := s.db.NewInsert().
+		Model(fav).
+		On("CONFLICT (user_id, resort_id) DO NOTHING").
+		Exec(ctx)
+	return err
+}
+
+func (s *skiResortStore) RemoveFavorite(ctx context.Context, userID uuid.UUID, resortID string) error {
+	_, err := s.db.NewDelete().
+		Model((*models.UserFavoriteResort)(nil)).
+		Where("user_id = ? AND resort_id = ?", userID, resortID).
+		Exec(ctx)
+	return err
+}
+
