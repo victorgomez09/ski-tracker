@@ -24,11 +24,19 @@ type GeoJSONFeature struct {
 
 // HasPistesData checks if the database already contains resorts/pistes data.
 func HasPistesData(ctx context.Context, db *bun.DB) (bool, error) {
-	count, err := db.NewSelect().Model((*models.SkiResort)(nil)).Count(ctx)
+	resortsCount, err := db.NewSelect().Model((*models.SkiResort)(nil)).Count(ctx)
 	if err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	if resortsCount == 0 {
+		return false, nil
+	}
+
+	pistesCount, err := db.NewSelect().Model((*models.SkiPiste)(nil)).Count(ctx)
+	if err != nil {
+		return false, err
+	}
+	return pistesCount > 0, nil
 }
 
 // SyncPistesDataIfEmpty runs sync only if the database does not already contain ski resorts.
