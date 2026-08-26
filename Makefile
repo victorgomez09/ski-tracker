@@ -42,6 +42,9 @@ build-api: ## Build Go API binary
 build-web: ## Build web production
 	cd $(WEB_DIR) && bun run build
 
+ota-publish: ## Export and publish Expo OTA update to server
+	./scripts/publish-ota.sh $(ARGS)
+
 # ============================================================================
 # Database
 # ============================================================================

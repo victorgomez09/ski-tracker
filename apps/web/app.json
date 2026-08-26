@@ -2,9 +2,9 @@
   "expo": {
     "name": "Ski tracker",
     "slug": "ski-tracker",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://api-ski-tracker.viti-tech.es/api/v1/ota/manifest",
