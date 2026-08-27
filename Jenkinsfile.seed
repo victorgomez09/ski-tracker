@@ -1,75 +1,62 @@
 pipeline {
-    agent {
-        docker {
-            image 'python:3.11-slim'
-            args '-u root'
-        }
-    }
+    agent any
 
     parameters {
         string(
             name: 'RESORT_TARGET',
             defaultValue: 'Valdesquí',
-            description: 'Name or partial name of the ski resort to simulate'
+            description: 'Nombre o parte del nombre de la estación a simular'
         )
         string(
             name: 'API_BASE_URL',
-            defaultValue: 'https://api-ski-tracker.viti-tech.es',
-            description: 'Target API base URL (e.g. http://localhost:8082, http://api:8082, or production URL)'
+            defaultValue: 'http://api:8080',
+            description: 'URL base de la API (ej: http://api:8080 si corre en la red Docker, o https://api-ski-tracker.viti-tech.es)'
         )
         string(
             name: 'DB_HOST',
             defaultValue: 'postgres',
-            description: 'PostgreSQL Hostname / IP (e.g. localhost, postgres, or remote DB host)'
+            description: 'Host de PostgreSQL (ej: postgres dentro de la red Docker, o localhost)'
         )
         string(
             name: 'DB_PORT',
             defaultValue: '5432',
-            description: 'PostgreSQL Port (5432 or 5433)'
+            description: 'Puerto de PostgreSQL (5432 dentro de Docker, o 5433 en host)'
         )
         string(
             name: 'DB_NAME',
             defaultValue: 'ski_tracker',
-            description: 'PostgreSQL Database Name'
+            description: 'Nombre de la base de datos'
         )
         string(
             name: 'DB_USER',
             defaultValue: 'ski_tracker',
-            description: 'PostgreSQL Username'
+            description: 'Usuario de PostgreSQL'
+        )
+        string(
+            name: 'DOCKER_NETWORK',
+            defaultValue: 'deploy_default',
+            description: 'Red Docker de compose donde conviven postgres y api'
         )
         string(
             name: 'SEED_USER_EMAIL',
             defaultValue: 'admin@admin.es',
-            description: 'Seed user email address for authentication'
+            description: 'Email del usuario para iniciar la sesión de esquí'
         )
         password(
             name: 'SEED_USER_PASSWORD',
             defaultValue: 'adminadmin',
-            description: 'Seed user password'
+            description: 'Contraseña del usuario seed'
         )
     }
 
     environment {
-        SEED_DIR = 'seed'
         DEPLOY_DIR = 'deploy'
-        PYTHONUNBUFFERED = '1'
     }
 
     stages {
-        stage('Install Dependencies') {
-            steps {
-                echo 'Installing system build tools and Python requirements...'
-                sh '''
-                    apt-get update -qq && apt-get install -y -qq gcc libpq-dev curl
-                    pip install --no-cache-dir psycopg2-binary requests
-                '''
-            }
-        }
-
-        stage('Resolve Secrets & Configuration') {
+        stage('Resolve Secrets') {
             steps {
                 script {
-                    // Try to load DB password and secrets from Jenkins credentials or deploy/.env
                     try {
                         withCredentials([
                             string(credentialsId: 'ski-tracker-db-password', variable: 'CRED_DB_PASSWORD')
@@ -77,7 +64,7 @@ pipeline {
                             env.DB_PASSWORD = CRED_DB_PASSWORD
                         }
                     } catch (err) {
-                        echo 'Info: Jenkins credential "ski-tracker-db-password" not defined. Checking deploy/.env or default...'
+                        echo 'Info: Credencial "ski-tracker-db-password" no encontrada en Jenkins. Leyendo deploy/.env...'
                         if (fileExists('deploy/.env')) {
                             def envPass = sh(
                                 script: "grep '^DB_PASSWORD=' deploy/.env | cut -d '=' -f2- | tr -d '\"' | tr -d \"'\" || true",
@@ -92,21 +79,26 @@ pipeline {
             }
         }
 
-        stage('Run Ski Day Simulation') {
+        stage('Execute Simulation') {
             steps {
-                echo "🎿 Launching simulation for resort: ${params.RESORT_TARGET} against ${params.API_BASE_URL}..."
+                echo "🎿 Ejecutando simulación de esquí para '${params.RESORT_TARGET}' en red '${params.DOCKER_NETWORK}'..."
                 sh """
-                    export RESORT_TARGET="${params.RESORT_TARGET}"
-                    export API_BASE_URL="${params.API_BASE_URL}"
-                    export DB_HOST="${params.DB_HOST}"
-                    export DB_PORT="${params.DB_PORT}"
-                    export DB_NAME="${params.DB_NAME}"
-                    export DB_USER="${params.DB_USER}"
-                    export DB_PASSWORD="\${DB_PASSWORD}"
-                    export SEED_USER_EMAIL="${params.SEED_USER_EMAIL}"
-                    export SEED_USER_PASSWORD="${params.SEED_USER_PASSWORD}"
-
-                    python3 seed/seed-database.py
+                    docker run --rm \
+                        --network ${params.DOCKER_NETWORK} \
+                        -v "\$PWD":/app \
+                        -w /app \
+                        -e RESORT_TARGET="${params.RESORT_TARGET}" \
+                        -e API_BASE_URL="${params.API_BASE_URL}" \
+                        -e DB_HOST="${params.DB_HOST}" \
+                        -e DB_PORT="${params.DB_PORT}" \
+                        -e DB_NAME="${params.DB_NAME}" \
+                        -e DB_USER="${params.DB_USER}" \
+                        -e DB_PASSWORD="\${DB_PASSWORD}" \
+                        -e SEED_USER_EMAIL="${params.SEED_USER_EMAIL}" \
+                        -e SEED_USER_PASSWORD="${params.SEED_USER_PASSWORD}" \
+                        -e PYTHONUNBUFFERED="1" \
+                        python:3.11-slim \
+                        bash -c "pip install -q psycopg2-binary requests && python3 seed/seed-database.py"
                 """
             }
         }
@@ -117,10 +109,10 @@ pipeline {
             cleanWs()
         }
         success {
-            echo '🎉 Ski Day Simulation completed successfully!'
+            echo '🎉 ¡Simulación del día de esquí completada con éxito!'
         }
         failure {
-            echo '❌ Ski Day Simulation failed. Please check the logs.'
+            echo '❌ Error durante la simulación. Revisa la traza de logs.'
         }
     }
 }
