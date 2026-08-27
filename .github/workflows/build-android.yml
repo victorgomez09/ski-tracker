@@ -154,27 +154,6 @@ jobs:
             git log --pretty=format:"- %s" -n 10 > changelog.md
           fi
 
-      - name: 🚀 Publish Production APK to Backend
-        if: (github.event.inputs.buildType == 'all' || github.event.inputs.buildType == 'prod-apk' || github.event_name == 'push')
-        working-directory: apps/web
-        run: |
-          if [ -f "./app-prod.apk" ]; then
-            echo "Publishing production APK to backend..."
-            chmod +x ../../scripts/publish-apk.sh
-            ../../scripts/publish-apk.sh \
-              --file "./app-prod.apk" \
-              --url "${{ secrets.API_PUBLIC_URL || 'https://api-ski-tracker.viti-tech.es' }}" \
-              --secret "${{ secrets.OTA_PUBLISH_SECRET }}" \
-              --version "${{ steps.build-info.outputs.version }}" \
-              --runtime-version "${{ steps.build-info.outputs.runtime_version }}" \
-              --build-number "${{ steps.build-info.outputs.build_number }}" \
-              --es "Actualización nativa v${{ steps.build-info.outputs.version }}" \
-              --en "Native update v${{ steps.build-info.outputs.version }}"
-          else
-            echo "No production APK found to publish."
-          fi
-        env:
-          OTA_PUBLISH_SECRET: ${{ secrets.OTA_PUBLISH_SECRET }}
 
       - name: 📦 Upload build artifacts to GitHub
         uses: actions/upload-artifact@v4
