@@ -90,6 +90,7 @@ func (s *skiResortStore) GetByCloseness(ctx context.Context, latitude, longitude
 	err := s.db.NewSelect().
 		Model(&resort).
 		Where("name IS NOT NULL AND name != ? AND tags->>'status' = ?", "No name", "operating").
+		Where(distanceFormula+" <= 50.0", latitude, longitude, latitude). // Pre-filter resorts to optimize PostGIS execution
 		Where(
 			distanceFormula+` <= 5.0 OR EXISTS (
 				SELECT 1 FROM ski_pistes p 
