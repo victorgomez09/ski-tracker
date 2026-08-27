@@ -25,6 +25,7 @@ services:
       - MINIO_DEFAULT_BUCKETS=bucket
     volumes:
       - minio_tracker:/data
+    restart: unless-stopped
     ports:
       - "9222:9000"
       - "9223:9001"

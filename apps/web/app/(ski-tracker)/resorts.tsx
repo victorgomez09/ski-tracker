@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   Activity,
   ChevronDown,
@@ -17,7 +17,7 @@ import {
   Unlock,
   X,
 } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -67,12 +67,18 @@ export default function ResortsView() {
   const { t } = useTranslation();
   const router = useRouter();
   const { token } = useAuth();
-  const { favorites, isFavorite, toggleFavorite } = useFavorites();
+  const { favorites, isFavorite, toggleFavorite, isLoadingFavorites, refreshFavorites } = useFavorites();
   const { showToast } = useToast();
   const colors = useThemeColors();
   const styles = useMemo(() => getStyles(colors), [colors]);
   const { packs, downloadingPack, downloadingProgress, downloadRegion, deletePack } =
     useOffline(mapStyleUrl);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshFavorites();
+    }, [refreshFavorites])
+  );
 
   const [showOfflineModal, setShowOfflineModal] = useState(false);
   const [favoritesExpanded, setFavoritesExpanded] = useState(true);
@@ -183,7 +189,7 @@ export default function ResortsView() {
       params: {
         sessionId: session.id,
         lat: selectedResort.Latitude,
-        lng: selectedResort.Longitude,
+        lon: selectedResort.Longitude,
         zoom: 14,
       },
     });
@@ -659,7 +665,11 @@ export default function ResortsView() {
 
             {favoritesExpanded && (
               <View style={styles.favoritesAccordionContent}>
-                {favorites.length > 0 ? (
+                {isLoadingFavorites && favorites.length === 0 ? (
+                  <View style={{ padding: SPACING.lg, alignItems: 'center', justifyContent: 'center' }}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : favorites.length > 0 ? (
                   <View style={styles.matchingResortsList}>
                     {favorites.map((resort) => renderResortCard(resort))}
                   </View>

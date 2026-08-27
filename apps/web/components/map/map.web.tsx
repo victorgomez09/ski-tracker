@@ -30,44 +30,34 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
     return R * c;
 };
 
-const getOrientedDownhillSegments = (geometry: any): any[] => {
-    if (!geometry || !geometry.coordinates) return [];
-    
-    const segments: any[] = [];
-    const createSegmentFeature = (coords: any[]) => {
-        if (coords.length < 2) return null;
-        const first = coords[0];
-        const last = coords[1];
-        let finalCoords = coords;
-        if (first && last && first.length >= 3 && last.length >= 3) {
-            const startElev = first[2];
-            const endElev = last[2];
-            if (typeof startElev === 'number' && typeof endElev === 'number' && endElev > startElev) {
-                finalCoords = [last, first];
-            }
-        }
-        return {
-            type: 'LineString',
-            coordinates: finalCoords
-        };
-    };
-
-    if (geometry.type === 'LineString') {
-        const coords = geometry.coordinates;
-        for (let i = 0; i < coords.length - 1; i++) {
-            const segment = createSegmentFeature([coords[i], coords[i + 1]]);
-            if (segment) segments.push(segment);
-        }
-    } else if (geometry.type === 'MultiLineString') {
-        const lines = geometry.coordinates;
-        for (const line of lines) {
-            for (let i = 0; i < line.length - 1; i++) {
-                const segment = createSegmentFeature([line[i], line[i + 1]]);
-                if (segment) segments.push(segment);
-            }
+const orientLineDownhill = (coords: any[]): any[] => {
+    if (!coords || coords.length < 2) return coords;
+    const first = coords[0];
+    const last = coords[coords.length - 1];
+    if (first && last && first.length >= 3 && last.length >= 3) {
+        const startElev = first[2];
+        const endElev = last[2];
+        if (typeof startElev === 'number' && typeof endElev === 'number' && endElev > startElev) {
+            return [...coords].reverse();
         }
     }
-    return segments;
+    return coords;
+};
+
+const getOrientedPisteGeometry = (geometry: any): any => {
+    if (!geometry || !geometry.coordinates) return null;
+    if (geometry.type === 'LineString') {
+        return {
+            type: 'LineString',
+            coordinates: orientLineDownhill(geometry.coordinates)
+        };
+    } else if (geometry.type === 'MultiLineString') {
+        return {
+            type: 'MultiLineString',
+            coordinates: geometry.coordinates.map((line: any[]) => orientLineDownhill(line))
+        };
+    }
+    return geometry;
 };
 
 interface GenericChartDatum {
@@ -386,24 +376,52 @@ export default function InteractiveSkiMap() {
     }, []);
 
     useEffect(() => {
+        const rawLat = searchParams.lat;
+        const rawLon = searchParams.lon || searchParams.lng;
+        if (!rawLat || !rawLon) return;
+
+        const lat = parseFloat(Array.isArray(rawLat) ? rawLat[0] : (rawLat as string));
+        const lon = parseFloat(Array.isArray(rawLon) ? rawLon[0] : (rawLon as string));
+        const zoom = searchParams.zoom
+            ? parseFloat(Array.isArray(searchParams.zoom) ? searchParams.zoom[0] : (searchParams.zoom as string))
+            : viewState.zoom;
+
+        if (isNaN(lat) || isNaN(lon)) return;
+
+        const distFromCurrent = getDistance(lat, lon, viewState.latitude, viewState.longitude);
+        const isSignificantlyDifferent = distFromCurrent > 0.05 || Math.abs(zoom - viewState.zoom) > 0.5;
+
         if (isInternalMoveRef.current) {
             isInternalMoveRef.current = false;
-            return;
-        }
-
-        if (searchParams.lat && searchParams.lon) {
-            const lat = parseFloat(searchParams.lat as string);
-            const lon = parseFloat(searchParams.lon as string);
-            if (!isNaN(lat) && !isNaN(lon)) {
-                setViewState(prev => ({
-                    ...prev,
-                    latitude: lat,
-                    longitude: lon,
-                    zoom: searchParams.zoom ? parseInt(searchParams.zoom as string) : prev.zoom
-                }));
+            if (!isSignificantlyDifferent) {
+                return;
             }
         }
-    }, [searchParams.lat, searchParams.lon, searchParams.zoom]);
+
+        if (isSignificantlyDifferent) {
+            const targetZoom = !isNaN(zoom) ? zoom : 13;
+            setViewState(prev => ({
+                ...prev,
+                latitude: lat,
+                longitude: lon,
+                zoom: targetZoom
+            }));
+
+            if (mapRef.current) {
+                try {
+                    mapRef.current.flyTo({
+                        center: [lon, lat],
+                        zoom: targetZoom,
+                        essential: true
+                    });
+                } catch (e) {
+                    console.error("flyTo error:", e);
+                }
+            }
+
+            fetchResortsData(lat, lon, targetZoom);
+        }
+    }, [searchParams.lat, searchParams.lon, searchParams.lng, searchParams.zoom]);
 
     useEffect(() => {
         const loadSessionData = async () => {
@@ -783,9 +801,10 @@ export default function InteractiveSkiMap() {
                     const geomType = p.GeometryGeoJSON?.type;
                     return geomType && geomType !== 'Polygon' && geomType !== 'MultiPolygon';
                 })
-                .flatMap(p => {
-                    const segments = getOrientedDownhillSegments(p.GeometryGeoJSON);
-                    return segments.map(segGeom => ({
+                .map(p => {
+                    const geom = getOrientedPisteGeometry(p.GeometryGeoJSON);
+                    if (!geom) return null;
+                    return {
                         type: 'Feature' as const,
                         properties: {
                             id: p.ID,
@@ -796,10 +815,11 @@ export default function InteractiveSkiMap() {
                             resortName: r.Name,
                             resortId: r.ID
                         },
-                        geometry: segGeom
-                    }));
-                });
-        });
+                        geometry: geom
+                    };
+                })
+                .filter((f): f is NonNullable<typeof f> => Boolean(f));
+        }) || [];
         return { type: 'FeatureCollection' as const, features: pistesFeatures };
     }, [resorts]);
 

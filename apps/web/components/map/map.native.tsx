@@ -49,44 +49,34 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
     return R * c;
 };
 
-const getOrientedDownhillSegments = (geometry: any): any[] => {
-    if (!geometry || !geometry.coordinates) return [];
-    
-    const segments: any[] = [];
-    const createSegmentFeature = (coords: any[]) => {
-        if (coords.length < 2) return null;
-        const first = coords[0];
-        const last = coords[1];
-        let finalCoords = coords;
-        if (first && last && first.length >= 3 && last.length >= 3) {
-            const startElev = first[2];
-            const endElev = last[2];
-            if (typeof startElev === 'number' && typeof endElev === 'number' && endElev > startElev) {
-                finalCoords = [last, first];
-            }
-        }
-        return {
-            type: 'LineString',
-            coordinates: finalCoords
-        };
-    };
-
-    if (geometry.type === 'LineString') {
-        const coords = geometry.coordinates;
-        for (let i = 0; i < coords.length - 1; i++) {
-            const segment = createSegmentFeature([coords[i], coords[i + 1]]);
-            if (segment) segments.push(segment);
-        }
-    } else if (geometry.type === 'MultiLineString') {
-        const lines = geometry.coordinates;
-        for (const line of lines) {
-            for (let i = 0; i < line.length - 1; i++) {
-                const segment = createSegmentFeature([line[i], line[i + 1]]);
-                if (segment) segments.push(segment);
-            }
+const orientLineDownhill = (coords: any[]): any[] => {
+    if (!coords || coords.length < 2) return coords;
+    const first = coords[0];
+    const last = coords[coords.length - 1];
+    if (first && last && first.length >= 3 && last.length >= 3) {
+        const startElev = first[2];
+        const endElev = last[2];
+        if (typeof startElev === 'number' && typeof endElev === 'number' && endElev > startElev) {
+            return [...coords].reverse();
         }
     }
-    return segments;
+    return coords;
+};
+
+const getOrientedPisteGeometry = (geometry: any): any => {
+    if (!geometry || !geometry.coordinates) return null;
+    if (geometry.type === 'LineString') {
+        return {
+            type: 'LineString',
+            coordinates: orientLineDownhill(geometry.coordinates)
+        };
+    } else if (geometry.type === 'MultiLineString') {
+        return {
+            type: 'MultiLineString',
+            coordinates: geometry.coordinates.map((line: any[]) => orientLineDownhill(line))
+        };
+    }
+    return geometry;
 };
 
 interface GenericChartDatum {
@@ -425,83 +415,6 @@ export default function InteractiveSkiMapNative() {
         }
     }, []);
 
-    useEffect(() => {
-        const latParam = Array.isArray(searchParams.lat) ? searchParams.lat[0] : searchParams.lat;
-        const lonParam = Array.isArray(searchParams.lon) ? searchParams.lon[0] : searchParams.lon;
-        const zoomParam = Array.isArray(searchParams.zoom) ? searchParams.zoom[0] : searchParams.zoom;
-
-        if (!latParam || !lonParam) return;
-
-        const lat = parseFloat(latParam);
-        const lon = parseFloat(lonParam);
-        const zoom = zoomParam ? parseFloat(zoomParam) : viewStateRef.current.zoom;
-        if (isNaN(lat) || isNaN(lon) || isNaN(zoom)) return;
-
-        const rounded = {
-            lat: lat.toFixed(5),
-            lon: lon.toFixed(5),
-            zoom: zoom.toFixed(2),
-        };
-
-        const lastInternal = lastInternalParamsRef.current;
-        if (lastInternal &&
-            Math.abs(parseFloat(lastInternal.lat) - lat) < 1e-5 &&
-            Math.abs(parseFloat(lastInternal.lon) - lon) < 1e-5 &&
-            Math.abs(parseFloat(lastInternal.zoom) - zoom) < 0.05) {
-            return;
-        }
-
-        lastInternalParamsRef.current = rounded;
-
-        if (skipNextUrlCameraRef.current) {
-            skipNextUrlCameraRef.current = false;
-            return;
-        }
-
-        applyExternalCameraMove(lon, lat, zoom, 0);
-    }, [searchParams.lat, searchParams.lon, searchParams.zoom, applyExternalCameraMove]);
-
-    useEffect(() => {
-        const loadSessionData = async () => {
-            if (searchParams.sessionId) {
-                try {
-                    const res = await api.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`);
-                    if (res.status === 200 && res.data) {
-                        const session = res.data.data || res.data;
-                        setSessionDetails(session);
-                        if (session.points && Array.isArray(session.points) && session.points.length > 0) {
-                            const parsedPoints = session.points.map((p: any) => {
-                                const match = p.geom?.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/i);
-                                return {
-                                    lat: match ? parseFloat(match[2]) : p.lat,
-                                    lon: match ? parseFloat(match[1]) : p.lon,
-                                    altitude: p.altitude,
-                                    speed: p.speed,
-                                    timestamp: p.timestamp
-                                };
-                            });
-                            setTrackPoints(parsedPoints);
-
-                            if (parsedPoints.length > 0) {
-                                applyExternalCameraMove(parsedPoints[0].lon, parsedPoints[0].lat, 14, 400);
-                            }
-                        }
-                        if (session.runs && Array.isArray(session.runs)) {
-                            const ids = session.runs
-                                .map((r: any) => r.matched_piste_id)
-                                .filter(Boolean);
-                            setMatchedPisteIds(ids);
-                        }
-                    }
-                } catch (error) {
-                    console.error("Error loading session track on map:", error);
-                    showToast(t('failed_load_session'), 'error');
-                }
-            }
-        };
-        loadSessionData();
-    }, [searchParams.sessionId, token, applyExternalCameraMove]);
-
     const fetchResortsData = useCallback(async (
         lat: number,
         lon: number,
@@ -549,7 +462,7 @@ export default function InteractiveSkiMapNative() {
                 });
                 if (request.status === 200) {
                     setResorts(request.data);
-                    
+
                     // Save padded bounds as last fetched
                     lastFetchedBoundsRef.current = {
                         minLon: minLonPadded,
@@ -606,6 +519,84 @@ export default function InteractiveSkiMapNative() {
             }
         }
     }, []);
+
+    useEffect(() => {
+        const rawLat = searchParams.lat;
+        const rawLon = searchParams.lon || searchParams.lng;
+        const latParam = Array.isArray(rawLat) ? rawLat[0] : rawLat;
+        const lonParam = Array.isArray(rawLon) ? rawLon[0] : rawLon;
+        const zoomParam = Array.isArray(searchParams.zoom) ? searchParams.zoom[0] : searchParams.zoom;
+
+        if (!latParam || !lonParam) return;
+
+        const lat = parseFloat(latParam);
+        const lon = parseFloat(lonParam);
+        const zoom = zoomParam ? parseFloat(zoomParam) : viewStateRef.current.zoom;
+        if (isNaN(lat) || isNaN(lon) || isNaN(zoom)) return;
+
+        const rounded = {
+            lat: lat.toFixed(5),
+            lon: lon.toFixed(5),
+            zoom: zoom.toFixed(2),
+        };
+
+        const lastInternal = lastInternalParamsRef.current;
+        const isInternalDuplicate = lastInternal &&
+            Math.abs(parseFloat(lastInternal.lat) - lat) < 1e-4 &&
+            Math.abs(parseFloat(lastInternal.lon) - lon) < 1e-4 &&
+            Math.abs(parseFloat(lastInternal.zoom) - zoom) < 0.05;
+
+        if (isInternalDuplicate) {
+            return;
+        }
+
+        lastInternalParamsRef.current = rounded;
+        skipNextUrlCameraRef.current = false;
+
+        applyExternalCameraMove(lon, lat, zoom, 300);
+        fetchResortsData(lat, lon, zoom);
+    }, [searchParams.lat, searchParams.lon, searchParams.lng, searchParams.zoom, applyExternalCameraMove, fetchResortsData]);
+
+    useEffect(() => {
+        const loadSessionData = async () => {
+            if (searchParams.sessionId) {
+                try {
+                    const res = await api.get(`${API_BASE_URL}/ski-sessions/${searchParams.sessionId}`);
+                    if (res.status === 200 && res.data) {
+                        const session = res.data.data || res.data;
+                        setSessionDetails(session);
+                        if (session.points && Array.isArray(session.points) && session.points.length > 0) {
+                            const parsedPoints = session.points.map((p: any) => {
+                                const match = p.geom?.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/i);
+                                return {
+                                    lat: match ? parseFloat(match[2]) : p.lat,
+                                    lon: match ? parseFloat(match[1]) : p.lon,
+                                    altitude: p.altitude,
+                                    speed: p.speed,
+                                    timestamp: p.timestamp
+                                };
+                            });
+                            setTrackPoints(parsedPoints);
+
+                            if (parsedPoints.length > 0) {
+                                applyExternalCameraMove(parsedPoints[0].lon, parsedPoints[0].lat, 14, 400);
+                            }
+                        }
+                        if (session.runs && Array.isArray(session.runs)) {
+                            const ids = session.runs
+                                .map((r: any) => r.matched_piste_id)
+                                .filter(Boolean);
+                            setMatchedPisteIds(ids);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error loading session track on map:", error);
+                    showToast(t('failed_load_session'), 'error');
+                }
+            }
+        };
+        loadSessionData();
+    }, [searchParams.sessionId, token, applyExternalCameraMove]);
 
     useEffect(() => {
         const loadInitial = async () => {
@@ -883,11 +874,12 @@ export default function InteractiveSkiMapNative() {
 
     const pistesGeoJSON = useMemo(() => {
         const features = resorts.flatMap(resort =>
-            (resort.pistes || []).flatMap(piste => {
+            (resort.pistes || []).map(piste => {
                 const baseGeom = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
-                if (!baseGeom) return [];
-                const segments = getOrientedDownhillSegments(baseGeom);
-                return segments.map(segGeom => ({
+                if (!baseGeom) return null;
+                const geom = getOrientedPisteGeometry(baseGeom);
+                if (!geom) return null;
+                return {
                     type: 'Feature' as const,
                     properties: {
                         id: piste.ID,
@@ -897,9 +889,9 @@ export default function InteractiveSkiMapNative() {
                         pisteType: piste.PisteType?.toLowerCase() || 'downhill',
                         grooming: piste.Grooming?.toLowerCase() || 'classic'
                     },
-                    geometry: segGeom
-                }));
-            })
+                    geometry: geom
+                };
+            }).filter((f): f is NonNullable<typeof f> => Boolean(f))
         );
         return { type: 'FeatureCollection' as const, features: features as any };
     }, [resorts]);

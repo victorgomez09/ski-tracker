@@ -53,7 +53,7 @@ export default function LoginView() {
             if (request.status === 200) {
                 const resData = request.data as LoginResponse;
                 await signIn(resData.access_token);
-                router.push("/resorts");
+                router.replace("/resorts");
             } else {
                 console.error("Login failed:", request.status, request.statusText);
                 showToast(t('login_failed'), 'error');
