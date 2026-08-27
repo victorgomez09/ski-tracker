@@ -1,7 +1,7 @@
 import { X } from 'lucide-react-native';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import {
   useThemeColors,
   SPACING,
@@ -14,6 +14,8 @@ interface Props {
   forceUpdate: boolean;
   latestVersion: string;
   changelog: string[];
+  isDownloading?: boolean;
+  downloadProgress?: number;
   onUpdate: () => void;
   onDismiss: () => void;
 }
@@ -22,12 +24,16 @@ export const UpdateModal: React.FC<Props> = ({
   forceUpdate,
   latestVersion,
   changelog,
+  isDownloading = false,
+  downloadProgress = 0,
   onUpdate,
   onDismiss,
 }) => {
   const { t } = useTranslation();
   const colors = useThemeColors();
   const styles = useMemo(() => getStyles(colors), [colors]);
+
+  const percent = Math.round(downloadProgress * 100);
 
   return (
     <View style={styles.overlay}>
@@ -36,7 +42,7 @@ export const UpdateModal: React.FC<Props> = ({
           <Text style={styles.headerTitle}>
             {forceUpdate ? t('force_update') : t('new_version_available')}
           </Text>
-          {!forceUpdate && (
+          {!forceUpdate && !isDownloading && (
             <TouchableOpacity onPress={onDismiss} style={styles.closeButton}>
               <X size={18} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -66,17 +72,33 @@ export const UpdateModal: React.FC<Props> = ({
           </View>
         </ScrollView>
 
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.updateButton} onPress={onUpdate}>
-            <Text style={styles.buttonText}>{t('update')}</Text>
-          </TouchableOpacity>
-
-          {!forceUpdate && (
-            <TouchableOpacity style={styles.laterButton} onPress={onDismiss}>
-              <Text style={styles.laterButtonText}>{t('later')}</Text>
+        {isDownloading ? (
+          <View style={styles.downloadProgressContainer}>
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressText}>
+                {percent >= 100
+                  ? t('opening_installer')
+                  : t('downloading_apk_progress', { percent })}
+              </Text>
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+            <View style={styles.progressBarTrack}>
+              <View style={[styles.progressBarFill, { width: `${Math.max(percent, 5)}%` }]} />
+            </View>
+          </View>
+        ) : (
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity style={styles.updateButton} onPress={onUpdate}>
+              <Text style={styles.buttonText}>{t('update')}</Text>
             </TouchableOpacity>
-          )}
-        </View>
+
+            {!forceUpdate && (
+              <TouchableOpacity style={styles.laterButton} onPress={onDismiss}>
+                <Text style={styles.laterButtonText}>{t('later')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -171,6 +193,36 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
     buttonContainer: {
       gap: SPACING.sm,
       marginTop: SPACING.md,
+    },
+    downloadProgressContainer: {
+      marginTop: SPACING.md,
+      padding: SPACING.sm,
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 10,
+    },
+    progressHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    progressText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.textPrimary,
+    },
+    progressBarTrack: {
+      height: 8,
+      backgroundColor: colors.border,
+      borderRadius: BORDER_RADIUS.round,
+      overflow: 'hidden',
+    },
+    progressBarFill: {
+      height: '100%',
+      backgroundColor: colors.primary,
+      borderRadius: BORDER_RADIUS.round,
     },
     updateButton: {
       backgroundColor: colors.primary,

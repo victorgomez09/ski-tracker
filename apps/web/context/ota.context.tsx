@@ -5,6 +5,7 @@ import { OtaUpdateInfo, OtaPhase, useOtaUpdates } from 'hooks/use-ota-updates.ho
 type OtaContextValue = {
     phase: OtaPhase;
     updateInfo: OtaUpdateInfo | null;
+    downloadProgress: number;
     optionalModalVisible: boolean;
     hasOptionalUpdate: boolean;
     isBlocking: boolean;

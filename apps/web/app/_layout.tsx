@@ -23,6 +23,7 @@ function OtaGate({ children }: { children: React.ReactNode }) {
     const styles = useMemo(() => getStyles(colors), [colors]);
     const {
         phase,
+        downloadProgress,
         isBlocking,
         isDownloading,
         updateInfo,
@@ -32,7 +33,7 @@ function OtaGate({ children }: { children: React.ReactNode }) {
         dismissOptionalModal,
     } = useOta();
 
-    if (isBlocking) {
+    if (isBlocking && !updateInfo) {
         return (
             <View style={styles.container}>
                 <ActivityIndicator size="large" color={colors.primary} />
@@ -43,12 +44,14 @@ function OtaGate({ children }: { children: React.ReactNode }) {
         );
     }
 
-    if (phase === 'mandatory' && updateInfo) {
+    if ((phase === 'mandatory' || (isDownloading && updateInfo?.isNative)) && updateInfo) {
         return (
             <UpdateModal
                 forceUpdate
                 latestVersion={updateInfo.latestVersion}
                 changelog={updateInfo.changelog}
+                isDownloading={isDownloading}
+                downloadProgress={downloadProgress}
                 onUpdate={applyUpdate}
                 onDismiss={() => {}}
             />
@@ -63,6 +66,8 @@ function OtaGate({ children }: { children: React.ReactNode }) {
                     forceUpdate={false}
                     latestVersion={updateInfo.latestVersion}
                     changelog={updateInfo.changelog}
+                    isDownloading={isDownloading}
+                    downloadProgress={downloadProgress}
                     onUpdate={applyUpdate}
                     onDismiss={dismissOptionalModal}
                 />

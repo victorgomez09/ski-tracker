@@ -34,13 +34,78 @@ export const useOtaUpdates = () => {
     const [phase, setPhase] = useState<OtaPhase>('idle');
     const [updateInfo, setUpdateInfo] = useState<OtaUpdateInfo | null>(null);
     const [optionalModalVisible, setOptionalModalVisible] = useState(false);
+    const [downloadProgress, setDownloadProgress] = useState<number>(0);
 
     const applyUpdate = useCallback(async () => {
         if (updateInfo?.isNative && updateInfo.downloadUrl) {
+            if (Platform.OS === 'android') {
+                try {
+                    setPhase('downloading');
+                    setDownloadProgress(0);
+
+                    // Import legacy FileSystem dynamically / statically
+                    const FileSystem = await import('expo-file-system/legacy');
+                    const IntentLauncher = await import('expo-intent-launcher');
+
+                    const filename = `app-update-${updateInfo.latestVersion || Date.now()}.apk`;
+                    const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+                    // Check if already downloaded
+                    const fileInfo = await FileSystem.getInfoAsync(fileUri);
+                    if (fileInfo.exists) {
+                        await FileSystem.deleteAsync(fileUri, { idempotent: true });
+                    }
+
+                    const downloadResumable = FileSystem.createDownloadResumable(
+                        updateInfo.downloadUrl,
+                        fileUri,
+                        {},
+                        (downloadProgressData) => {
+                            if (downloadProgressData.totalBytesExpectedToWrite > 0) {
+                                const progress =
+                                    downloadProgressData.totalBytesWritten /
+                                    downloadProgressData.totalBytesExpectedToWrite;
+                                setDownloadProgress(Math.min(Math.max(progress, 0), 1));
+                            }
+                        }
+                    );
+
+                    const result = await downloadResumable.downloadAsync();
+                    if (!result || !result.uri) {
+                        throw new Error('APK download failed: No local URI returned');
+                    }
+
+                    setDownloadProgress(1);
+
+                    // Convert to content URI so Android PackageInstaller can read it
+                    const contentUri = await FileSystem.getContentUriAsync(result.uri);
+
+                    // Launch PackageInstaller Intent with FLAG_GRANT_READ_URI_PERMISSION (1)
+                    await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+                        data: contentUri,
+                        type: 'application/vnd.android.package-archive',
+                        flags: 1,
+                    });
+
+                    setPhase('mandatory');
+                } catch (err) {
+                    console.error('Error downloading/installing native APK:', err);
+                    setPhase('mandatory');
+                    // Fallback to external browser if internal install fails
+                    try {
+                        await Linking.openURL(updateInfo.downloadUrl);
+                    } catch (linkErr) {
+                        console.error('Fallback link open failed:', linkErr);
+                    }
+                }
+                return;
+            }
+
+            // Fallback for iOS or other platforms
             try {
                 await Linking.openURL(updateInfo.downloadUrl);
             } catch (err) {
-                console.error('Error opening native APK download link:', err);
+                console.error('Error opening native download link:', err);
             }
             return;
         }
@@ -49,6 +114,7 @@ export const useOtaUpdates = () => {
 
         try {
             setPhase('downloading');
+            setDownloadProgress(0);
             const result = await Updates.fetchUpdateAsync();
             if (result.isNew) {
                 await Updates.reloadAsync();
@@ -137,6 +203,7 @@ export const useOtaUpdates = () => {
     return {
         phase,
         updateInfo,
+        downloadProgress,
         optionalModalVisible,
         hasOptionalUpdate: phase === 'optional',
         isBlocking: phase === 'checking' || phase === 'downloading',

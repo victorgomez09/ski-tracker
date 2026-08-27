@@ -137,6 +137,9 @@ if [ ! -f "$APK_FILE" ]; then
     exit 1
 fi
 
+# Convert to absolute path before cd into WEB_DIR
+APK_FILE="$(cd "$(dirname "$APK_FILE")" && pwd)/$(basename "$APK_FILE")"
+
 if [ -z "$SECRET" ]; then
     echo -e "${RED}Error: OTA_PUBLISH_SECRET is not set.${NC}"
     echo "Provide it via --secret <token> or set OTA_PUBLISH_SECRET in deploy/.env or apps/api/.env"
