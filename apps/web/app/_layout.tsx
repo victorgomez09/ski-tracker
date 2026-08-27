@@ -1,3 +1,4 @@
+import * as Location from "expo-location";
 import { Slot } from 'expo-router';
 import 'i18n';
 import '../styles/global.css';
@@ -90,10 +91,12 @@ function AppContent() {
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
+
+
     useEffect(() => {
         const initDatabase = async () => {
             try {
-                const database = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
+                const database = await SQLite.openDatabaseAsync('ski_tracker.db');
                 await initDB(database);
             } catch (error) {
                 console.error('Failed to initialize local database:', error);
@@ -101,8 +104,20 @@ function AppContent() {
                 setIsDbReady(true);
             }
         };
+        
+        const checkStartupPermissions = async () => {
+            try {
+                const { status } = await Location.getForegroundPermissionsAsync();
+                if (status !== 'granted') {
+                    await Location.requestForegroundPermissionsAsync();
+                }
+            } catch (e) {
+                console.error("Error checking permissions on startup", e);
+            }
+        };
     
         initDatabase();
+        checkStartupPermissions();
     }, []);
 
     if (!isDbReady) {

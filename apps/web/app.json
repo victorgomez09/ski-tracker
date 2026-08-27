@@ -2,8 +2,8 @@
   "expo": {
     "name": "Ski tracker",
     "slug": "ski-tracker",
-    "version": "1.1.7",
-    "runtimeVersion": "1.2.0",
+    "version": "1.2.0",
+    "runtimeVersion": "1.2.1",
     "updates": {
       "url": "https://api-ski-tracker.viti-tech.es/api/v1/ota/manifest",
       "enabled": true,
@@ -92,7 +92,10 @@
         "FOREGROUND_SERVICE_LOCATION",
         "CAMERA",
         "RECORD_AUDIO",
-        "REQUEST_INSTALL_PACKAGES"
+        "REQUEST_INSTALL_PACKAGES",
+        "RECEIVE_BOOT_COMPLETED",
+        "POST_NOTIFICATIONS",
+        "WAKE_LOCK"
       ],
       "package": "com.vira.skitracker"
     },
