@@ -73,6 +73,8 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			}
 			middleware.Auth(deps.JWTManager)(c)
 		}
+		apiV1.POST("/ota/publish", otaPublishAuth, otaHandler.Publish)
+
 		// Native App Release routes (for self-hosted APK updates)
 		appReleaseHandler := v1.NewAppReleaseHandler(deps.Services.AppRelease, deps.APIPublicURL)
 		apiV1.GET("/app/check-update", appReleaseHandler.CheckUpdate)

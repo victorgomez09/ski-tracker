@@ -110,8 +110,8 @@ if [ -z "$OTA_SECRET" ]; then
     exit 1
 fi
 
-# Strip trailing slash from API_URL
-API_URL="${API_URL%/}"
+# Strip trailing slash and /api/v1 if present to avoid duplicated paths
+API_URL="${API_URL%/api/v1}"
 
 # Ensure prerequisites
 for cmd in node pnpm zip curl; do

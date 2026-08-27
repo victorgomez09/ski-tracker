@@ -144,6 +144,7 @@ if [ -z "$SECRET" ]; then
 fi
 
 API_URL="${API_URL%/}"
+API_URL="${API_URL%/api/v1}"
 
 cd "${WEB_DIR}"
 
