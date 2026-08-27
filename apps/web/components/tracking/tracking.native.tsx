@@ -153,7 +153,7 @@ export default function InteractiveSkiMapNative() {
     const isFetchingRef = useRef(false);
 
     // --- Fetchers ---
-    const fetchResortDetails = useCallback(async (lon?: number, lat?: number) => {
+    const fetchResortDetails = useCallback(async (lon?: number, lat?: number, preventCameraMove: boolean = false) => {
         if (isFetchingRef.current) return;
         isFetchingRef.current = true;
         try {
@@ -176,7 +176,7 @@ export default function InteractiveSkiMapNative() {
                     try {
                         const parsed = JSON.parse(cached);
                         setResort(parsed);
-                        if (parsed.Latitude && parsed.Longitude) {
+                        if (!preventCameraMove && parsed.Latitude && parsed.Longitude) {
                             cameraRef.current?.easeTo({
                                 center: [parsed.Longitude, parsed.Latitude],
                                 zoom: 13,
@@ -199,11 +199,13 @@ export default function InteractiveSkiMapNative() {
                     longitude: targetLon,
                     zoom: 13
                 }));
-                cameraRef.current?.easeTo({
-                    center: [targetLon, targetLat],
-                    zoom: 13,
-                    duration: 400,
-                });
+                if (!preventCameraMove) {
+                    cameraRef.current?.easeTo({
+                        center: [targetLon, targetLat],
+                        zoom: 13,
+                        duration: 400,
+                    });
+                }
             }
 
             const request = await api.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
@@ -212,7 +214,7 @@ export default function InteractiveSkiMapNative() {
             if (request.status === 200 && request.data) {
                 setResort(request.data);
                 await AsyncStorage.setItem('LAST_RESORT_DETAILS', JSON.stringify(request.data));
-                if (request.data.Latitude && request.data.Longitude) {
+                if (!preventCameraMove && request.data.Latitude && request.data.Longitude) {
                     cameraRef.current?.easeTo({
                         center: [request.data.Longitude, request.data.Latitude],
                         zoom: 13,
@@ -296,6 +298,8 @@ export default function InteractiveSkiMapNative() {
                         try {
                             cameraRef.current?.easeTo({ center: [longitude, latitude], zoom: 14, duration: 1000 });
                             hasCenteredMapRef.current = true;
+                            // Fetch correct resort once we have the actual user location, but don't move camera again
+                            fetchResortDetails(longitude, latitude, true);
                         } catch (e) {}
                     }
                 }
@@ -310,7 +314,7 @@ export default function InteractiveSkiMapNative() {
         } finally {
             setCheckingLocation(false);
         }
-    }, [getCurrentLocation]);
+    }, [getCurrentLocation, fetchResortDetails]);
 
     useEffect(() => {
         checkLocationServices();
