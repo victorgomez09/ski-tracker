@@ -739,19 +739,19 @@ export default function InteractiveSkiMapNative() {
         paint: {
             'line-color': [
                 'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#d500f9',
-                ['==', ['get', 'id'], hoveredFeatureId || ''], '#d500f9',
-                ['==', ['get', 'resortId'], selectedResort?.ID || ''], '#d500f9',
-                '#aa00ff'
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#2557C7',
+                ['==', ['get', 'id'], hoveredFeatureId || ''], '#3B76F6',
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], '#1E293B',
+                '#475569'
             ],
             'line-width': [
                 'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], 6,
-                ['==', ['get', 'id'], hoveredFeatureId || ''], 5,
-                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 5,
-                3.5
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 5,
+                ['==', ['get', 'id'], hoveredFeatureId || ''], 4,
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 4,
+                2.5
             ],
-            'line-dasharray': [2, 1]
+            'line-dasharray': [3, 2]
         }
     };
 
@@ -772,13 +772,9 @@ export default function InteractiveSkiMapNative() {
             'text-max-angle': 30
         },
         paint: {
-            'text-color': [
-                'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#ffffff',
-                '#d500f9'
-            ],
+            'text-color': '#475569',
             'text-halo-color': '#ffffff',
-            'text-halo-width': 1
+            'text-halo-width': 1.5
         }
     };
 

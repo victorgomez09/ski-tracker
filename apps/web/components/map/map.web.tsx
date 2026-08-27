@@ -763,12 +763,12 @@ export default function InteractiveSkiMap() {
         minzoom: 15,
         layout: {
             'text-field': ['get', 'name'],
-            'text-size': 12,
+            'text-size': 11,
             'symbol-placement': 'line',
             'text-allow-overlap': false
         },
         paint: {
-            'text-color': '#d35400',
+            'text-color': '#475569',
             'text-halo-color': '#ffffff',
             'text-halo-width': 2
         }
@@ -779,15 +779,21 @@ export default function InteractiveSkiMap() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#8e44ad',
+            'line-color': [
+                'case',
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#2557C7',
+                ['==', ['get', 'id'], hoveredFeatureId || ''], '#3B76F6',
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], '#1E293B',
+                '#475569'
+            ],
             'line-width': [
                 'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], 6,
-                ['==', ['get', 'id'], hoveredFeatureId || ''], 5,
-                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
-                3
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 5,
+                ['==', ['get', 'id'], hoveredFeatureId || ''], 4,
+                ['==', ['get', 'resortId'], selectedResort?.ID || ''], 4,
+                2.5
             ],
-            'line-dasharray': [2, 2]
+            'line-dasharray': [3, 2]
         }
     };
 

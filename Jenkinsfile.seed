@@ -1,0 +1,126 @@
+pipeline {
+    agent {
+        docker {
+            image 'python:3.11-slim'
+            args '-u root'
+        }
+    }
+
+    parameters {
+        string(
+            name: 'RESORT_TARGET',
+            defaultValue: 'Valdesquí',
+            description: 'Name or partial name of the ski resort to simulate'
+        )
+        string(
+            name: 'API_BASE_URL',
+            defaultValue: 'https://api-ski-tracker.viti-tech.es',
+            description: 'Target API base URL (e.g. http://localhost:8082, http://api:8082, or production URL)'
+        )
+        string(
+            name: 'DB_HOST',
+            defaultValue: 'postgres',
+            description: 'PostgreSQL Hostname / IP (e.g. localhost, postgres, or remote DB host)'
+        )
+        string(
+            name: 'DB_PORT',
+            defaultValue: '5432',
+            description: 'PostgreSQL Port (5432 or 5433)'
+        )
+        string(
+            name: 'DB_NAME',
+            defaultValue: 'ski_tracker',
+            description: 'PostgreSQL Database Name'
+        )
+        string(
+            name: 'DB_USER',
+            defaultValue: 'ski_tracker',
+            description: 'PostgreSQL Username'
+        )
+        string(
+            name: 'SEED_USER_EMAIL',
+            defaultValue: 'admin@admin.es',
+            description: 'Seed user email address for authentication'
+        )
+        password(
+            name: 'SEED_USER_PASSWORD',
+            defaultValue: 'adminadmin',
+            description: 'Seed user password'
+        )
+    }
+
+    environment {
+        SEED_DIR = 'seed'
+        DEPLOY_DIR = 'deploy'
+        PYTHONUNBUFFERED = '1'
+    }
+
+    stages {
+        stage('Install Dependencies') {
+            steps {
+                echo 'Installing system build tools and Python requirements...'
+                sh '''
+                    apt-get update -qq && apt-get install -y -qq gcc libpq-dev curl
+                    pip install --no-cache-dir psycopg2-binary requests
+                '''
+            }
+        }
+
+        stage('Resolve Secrets & Configuration') {
+            steps {
+                script {
+                    // Try to load DB password and secrets from Jenkins credentials or deploy/.env
+                    try {
+                        withCredentials([
+                            string(credentialsId: 'ski-tracker-db-password', variable: 'CRED_DB_PASSWORD')
+                        ]) {
+                            env.DB_PASSWORD = CRED_DB_PASSWORD
+                        }
+                    } catch (err) {
+                        echo 'Info: Jenkins credential "ski-tracker-db-password" not defined. Checking deploy/.env or default...'
+                        if (fileExists('deploy/.env')) {
+                            def envPass = sh(
+                                script: "grep '^DB_PASSWORD=' deploy/.env | cut -d '=' -f2- | tr -d '\"' | tr -d \"'\" || true",
+                                returnStdout: true
+                            ).trim()
+                            env.DB_PASSWORD = envPass ?: 'ski_tracker'
+                        } else {
+                            env.DB_PASSWORD = 'ski_tracker'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Run Ski Day Simulation') {
+            steps {
+                echo "🎿 Launching simulation for resort: ${params.RESORT_TARGET} against ${params.API_BASE_URL}..."
+                sh """
+                    export RESORT_TARGET="${params.RESORT_TARGET}"
+                    export API_BASE_URL="${params.API_BASE_URL}"
+                    export DB_HOST="${params.DB_HOST}"
+                    export DB_PORT="${params.DB_PORT}"
+                    export DB_NAME="${params.DB_NAME}"
+                    export DB_USER="${params.DB_USER}"
+                    export DB_PASSWORD="\${DB_PASSWORD}"
+                    export SEED_USER_EMAIL="${params.SEED_USER_EMAIL}"
+                    export SEED_USER_PASSWORD="${params.SEED_USER_PASSWORD}"
+
+                    python3 seed/seed-database.py
+                """
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo '🎉 Ski Day Simulation completed successfully!'
+        }
+        failure {
+            echo '❌ Ski Day Simulation failed. Please check the logs.'
+        }
+    }
+}

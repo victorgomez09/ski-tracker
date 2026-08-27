@@ -1,3 +1,4 @@
+import os
 import time
 import random
 import json
@@ -11,43 +12,102 @@ import struct
 # ==========================================
 # CONFIGURATION
 # ==========================================
-API_BASE_URL = "http://localhost:8082"
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8082").rstrip("/")
 DB_CONFIG = {
-    "dbname": "ski_tracker",
-    "user": "ski_tracker",
-    "password": "ski_tracker",
-    "host": "localhost",
-    "port": "5433",
+    "dbname": os.environ.get("DB_NAME", "ski_tracker"),
+    "user": os.environ.get("DB_USER", "ski_tracker"),
+    "password": os.environ.get("DB_PASSWORD", "ski_tracker"),
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "port": os.environ.get("DB_PORT", "5433"),
 }
-RESORT_TARGET = "Valdesquí"
-SEED_USER_EMAIL = "admin@admin.es"
-SEED_USER_PASSWORD = "adminadmin"
-SEED_USER_DISPLAY_NAME = "Seed User"
-SEED_USER_FIRST_NAME = "Seed"
-SEED_USER_LAST_NAME = "User"
+RESORT_TARGET = os.environ.get("RESORT_TARGET", "Valdesquí")
+SEED_USER_EMAIL = os.environ.get("SEED_USER_EMAIL", "admin@admin.es")
+SEED_USER_PASSWORD = os.environ.get("SEED_USER_PASSWORD", "adminadmin")
+SEED_USER_DISPLAY_NAME = os.environ.get("SEED_USER_DISPLAY_NAME", "Seed User")
+SEED_USER_FIRST_NAME = os.environ.get("SEED_USER_FIRST_NAME", "Seed")
+SEED_USER_LAST_NAME = os.environ.get("SEED_USER_LAST_NAME", "User")
 
 
+# ==========================================
+# GEOMETRY & MATH HELPERS
+# ==========================================
+def get_distance_meters(p1, p2):
+    """Calculates ground distance between two (lat, lon) coordinates in meters."""
+    lat1, lon1 = p1[0], p1[1]
+    lat2, lon2 = p2[0], p2[1]
+    lat_mid = (lat1 + lat2) / 2.0
+    dy = (lat2 - lat1) * 111320.0
+    dx = (lon2 - lon1) * 40075000.0 * math.cos(math.radians(lat_mid)) / 360.0
+    return math.sqrt(dx * dx + dy * dy)
+
+
+def extract_3d_coordinates(geojson_geom, tags=None):
+    """
+    Extracts a list of (lat, lon, ele) coordinates from GeoJSON and tags.
+    """
+    if not geojson_geom or "coordinates" not in geojson_geom:
+        return []
+
+    coords = geojson_geom["coordinates"]
+    g_type = geojson_geom.get("type", "LineString")
+
+    raw_coords = []
+    if g_type == "LineString":
+        raw_coords = coords
+    elif g_type == "MultiLineString":
+        for line in coords:
+            raw_coords.extend(line)
+
+    if not raw_coords:
+        return []
+
+    elevation_profile = None
+    if tags and isinstance(tags, dict):
+        elevation_profile = tags.get("elevationProfile", {}).get("heights", [])
+
+    results = []
+    for idx, c in enumerate(raw_coords):
+        lon = float(c[0])
+        lat = float(c[1])
+        ele = None
+        if len(c) >= 3 and isinstance(c[2], (int, float)):
+            ele = float(c[2])
+        elif elevation_profile and idx < len(elevation_profile) and isinstance(elevation_profile[idx], (int, float)):
+            ele = float(elevation_profile[idx])
+        results.append((lat, lon, ele))
+
+    return results
+
+
+# ==========================================
+# DATABASE FETCH & TOPOLOGY BUILDER
+# ==========================================
 def get_resort_data_from_db(resort_name):
     """Connects to Postgres and fetches the resort, its lifts, and its named pistes."""
     print(f"🔍 Looking up resort '{resort_name}' in the database...")
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
 
-    # 1. Find the resort ID
-    cur.execute("SELECT id, name FROM ski_resorts WHERE name ILIKE %s LIMIT 1;", (f"%{resort_name}%",))
+    # 1. Find the resort ID and metadata
+    cur.execute("SELECT id, name, tags FROM ski_resorts WHERE name ILIKE %s LIMIT 1;", (f"%{resort_name}%",))
     resort = cur.fetchone()
     if not resort:
         print(f"❌ Resort '{resort_name}' was not found in the database.")
         cur.close()
         conn.close()
-        return None, [], []
+        return None, [], [], 1800.0, 2250.0
 
-    resort_id, full_name = resort
-    print(f"✅ Resort found: {full_name} (ID: {resort_id})")
+    resort_id, full_name, resort_tags = resort
+    resort_tags = resort_tags or {}
+    stats = resort_tags.get("statistics", {})
+    min_elev = stats.get("minElevation") or stats.get("runs", {}).get("minElevation") or 1800.0
+    max_elev = stats.get("maxElevation") or stats.get("runs", {}).get("maxElevation") or 2250.0
+
+    print(f"✅ Resort found: {full_name} (ID: {resort_id}) [Elevation: {min_elev}m - {max_elev}m]")
 
     # 2. Get only pistes with a name and valid GeoJSON geometry
     cur.execute("""
-        SELECT id, name, piste_type, difficulty, geometry_geojson
+        SELECT id, name, piste_type, difficulty, geometry_geojson, tags
         FROM ski_pistes
         WHERE resort_id = %s AND name IS NOT NULL AND name != '';
     """, (resort_id,))
@@ -59,12 +119,13 @@ def get_resort_data_from_db(resort_name):
             "name": row[1],
             "type": row[2],
             "difficulty": row[3],
-            "geojson": row[4],  # psycopg2 maps jsonb values to Python dictionaries
+            "geojson": row[4],
+            "tags": row[5],
         })
 
-    # 3. Get lifts to simulate realistic ascents
+    # 3. Get lifts
     cur.execute("""
-        SELECT id, name, lift_type, geometry_geojson
+        SELECT id, name, lift_type, geometry_geojson, tags
         FROM ski_lifts
         WHERE resort_id = %s;
     """, (resort_id,))
@@ -76,33 +137,110 @@ def get_resort_data_from_db(resort_name):
             "name": row[1],
             "type": row[2],
             "geojson": row[3],
+            "tags": row[4],
         })
 
     cur.close()
     conn.close()
     print(f"📊 Loaded {len(pistes)} named pistes and {len(lifts)} lifts.")
-    return resort_id, pistes, lifts
+    return resort_id, pistes, lifts, float(min_elev), float(max_elev)
 
 
-def extract_coordinates_from_geojson(geojson_geom):
-    """Extracts [lon, lat] coordinates from a GeoJSON LineString or MultiLineString."""
-    if not geojson_geom or "coordinates" not in geojson_geom:
-        return []
+def build_topological_network(raw_pistes, raw_lifts, default_min_alt, default_max_alt):
+    """
+    Normalizes lifts and pistes so that:
+    - Every lift is oriented UPHILL (from bottom station to top station).
+    - Every piste is oriented DOWNHILL (from top summit start to bottom base end).
+    - Validates coordinates and ensures elevation gradients.
+    """
+    normalized_lifts = []
+    normalized_pistes = []
 
-    coords = geojson_geom["coordinates"]
-    g_type = geojson_geom.get("type", "LineString")
+    # 1. Process lifts
+    for l in raw_lifts:
+        coords_3d = extract_3d_coordinates(l.get("geojson"), l.get("tags"))
+        if len(coords_3d) < 2:
+            continue
 
-    if g_type == "LineString":
-        return [(c[1], c[0]) for c in coords]  # Returns tuples in (lat, lon) format
-    elif g_type == "MultiLineString":
-        flat_coords = []
-        for line in coords:
-            for c in line:
-                flat_coords.append((c[1], c[0]))
-        return flat_coords
-    return []
+        first_ele = coords_3d[0][2]
+        last_ele = coords_3d[-1][2]
+
+        # Determine if we need to reverse (lift must go UPHILL: bottom -> top)
+        if first_ele is not None and last_ele is not None:
+            if first_ele > last_ele:
+                coords_3d = list(reversed(coords_3d))
+                first_ele, last_ele = last_ele, first_ele
+        else:
+            first_ele = default_min_alt + random.uniform(0, 80)
+            last_ele = first_ele + random.uniform(150, 350)
+
+        elev_diff = last_ele - first_ele
+        tot_d = sum(get_distance_meters(coords_3d[i], coords_3d[i+1]) for i in range(len(coords_3d)-1)) or 1.0
+        acc_d = 0.0
+        clean_coords = []
+        for i in range(len(coords_3d)):
+            if i > 0:
+                acc_d += get_distance_meters(coords_3d[i-1], coords_3d[i])
+            ele = coords_3d[i][2] if coords_3d[i][2] is not None else (first_ele + (acc_d / tot_d) * elev_diff)
+            clean_coords.append((coords_3d[i][0], coords_3d[i][1], ele))
+
+        normalized_lifts.append({
+            "id": l["id"],
+            "name": l["name"] or f"Remonte #{l['id'][:4]}",
+            "type": l["type"] or "chair_lift",
+            "coords": clean_coords,
+            "bottom_pos": (clean_coords[0][0], clean_coords[0][1]),
+            "bottom_alt": clean_coords[0][2],
+            "top_pos": (clean_coords[-1][0], clean_coords[-1][1]),
+            "top_alt": clean_coords[-1][2],
+        })
+
+    # 2. Process pistes
+    for p in raw_pistes:
+        coords_3d = extract_3d_coordinates(p.get("geojson"), p.get("tags"))
+        if len(coords_3d) < 2:
+            continue
+
+        first_ele = coords_3d[0][2]
+        last_ele = coords_3d[-1][2]
+
+        # Determine if we need to reverse (piste must go DOWNHILL: top -> bottom)
+        if first_ele is not None and last_ele is not None:
+            if first_ele < last_ele:
+                coords_3d = list(reversed(coords_3d))
+                first_ele, last_ele = last_ele, first_ele
+        else:
+            first_ele = default_max_alt - random.uniform(0, 100)
+            last_ele = max(default_min_alt, first_ele - random.uniform(150, 350))
+
+        elev_diff = first_ele - last_ele
+        tot_d = sum(get_distance_meters(coords_3d[i], coords_3d[i+1]) for i in range(len(coords_3d)-1)) or 1.0
+        acc_d = 0.0
+        clean_coords = []
+        for i in range(len(coords_3d)):
+            if i > 0:
+                acc_d += get_distance_meters(coords_3d[i-1], coords_3d[i])
+            ele = coords_3d[i][2] if coords_3d[i][2] is not None else (first_ele - (acc_d / tot_d) * elev_diff)
+            clean_coords.append((coords_3d[i][0], coords_3d[i][1], ele))
+
+        normalized_pistes.append({
+            "id": p["id"],
+            "name": p["name"] or f"Pista #{p['id'][:4]}",
+            "type": p["type"] or "downhill",
+            "difficulty": p["difficulty"] or "intermediate",
+            "coords": clean_coords,
+            "top_pos": (clean_coords[0][0], clean_coords[0][1]),
+            "top_alt": clean_coords[0][2],
+            "bottom_pos": (clean_coords[-1][0], clean_coords[-1][1]),
+            "bottom_alt": clean_coords[-1][2],
+        })
+
+    return normalized_lifts, normalized_pistes
 
 
+# ==========================================
+# AUTH & USER CREATION
+# ==========================================
 def create_or_login_user():
     """Creates a seed user in the API and returns its auth headers."""
     register_payload = {
@@ -118,7 +256,7 @@ def create_or_login_user():
     if register_resp.status_code == 200:
         print("✅ Seed user created successfully.")
     elif register_resp.status_code in {400, 409, 422}:
-        print("ℹ️ Seed user already exists; trying login instead.")
+        print("ℹ️ Seed user already exists; logging in...")
     else:
         print(f"⚠️ Registration returned {register_resp.status_code}: {register_resp.text}")
 
@@ -142,89 +280,68 @@ def create_or_login_user():
 
 
 def generate_square_image():
-    """Generates PNG bytes for a 120x120 image with a red square on a blue background using standard library."""
+    """Generates PNG bytes for a 120x120 test photo."""
     width, height = 120, 120
     png_signature = b'\x89PNG\r\n\x1a\n'
-    
-    # IHDR chunk
-    # Width, Height, Bit depth (8), Color type (2 = RGB), Compression (0), Filter (0), Interlace (0)
     ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
     ihdr_chunk = struct.pack('>I', 13) + b'IHDR' + ihdr_data + struct.pack('>I', zlib.crc32(b'IHDR' + ihdr_data))
     
-    # Generate pixel data (RGB)
     raw_data = bytearray()
     for y in range(height):
-        raw_data.append(0) # Filter byte 0 (None) for the row
+        raw_data.append(0)
         for x in range(width):
-            # Red square in the center (from 35 to 85)
             if 35 <= x < 85 and 35 <= y < 85:
-                raw_data.extend(b'\xff\x00\x00') # Red
+                raw_data.extend(b'\xff\x44\x44')
             else:
-                raw_data.extend(b'\x3a\x9a\xe9') # Sky blue background
+                raw_data.extend(b'\x3a\x9a\xe9')
                 
-    # Compress the data
     idat_data = zlib.compress(raw_data)
     idat_chunk = struct.pack('>I', len(idat_data)) + b'IDAT' + idat_data + struct.pack('>I', zlib.crc32(b'IDAT' + idat_data))
-    
-    # IEND chunk
     iend_chunk = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', zlib.crc32(b'IEND'))
-    
     return png_signature + ihdr_chunk + idat_chunk + iend_chunk
 
-
-# Generate the test image bytes
 DUMMY_IMAGE = generate_square_image()
 
 
-def get_distance_meters(p1, p2):
-    """Calculates flat-earth distance between two (lat, lon) coordinates in meters."""
-    lat1, lon1 = p1
-    lat2, lon2 = p2
-    lat_mid = (lat1 + lat2) / 2.0
-    dy = (lat2 - lat1) * 111320.0
-    dx = (lon2 - lon1) * 40075000.0 * math.cos(math.radians(lat_mid)) / 360.0
-    return (dx**2 + dy**2)**0.5
-
-
-def interpolate_track(coords, start_alt, end_alt, target_speed_range, is_lift=False, difficulty=None, time_step=2):
+# ==========================================
+# TRACK SAMPLING & SMOOTHING ENGINE
+# ==========================================
+def interpolate_smooth_path(coords_3d, speed_range, is_lift=False, difficulty=None, time_step=2.0, is_transition=False):
     """
-    Interpolates a list of (lat, lon) coordinates to generate high-resolution points 
-    sampled every `time_step` seconds, with speeds matching physical movement.
+    Interpolates 3D coordinates into a continuous sequence of GPS points.
+    Applies realistic physics, carving S-turns on downhill pistes, and gentle GPS noise.
     """
-    if not coords or len(coords) < 2:
+    if not coords_3d or len(coords_3d) < 2:
         return []
 
-    # Calculate segment lengths and cumulative distance
     segs = []
     tot_dist = 0.0
-    for i in range(len(coords) - 1):
-        d = get_distance_meters(coords[i], coords[i+1])
+    for i in range(len(coords_3d) - 1):
+        d = get_distance_meters(coords_3d[i], coords_3d[i+1])
         segs.append(d)
         tot_dist += d
 
-    if tot_dist == 0:
+    if tot_dist < 0.1:
         return []
 
     points = []
     accum_dist = 0.0
-    
-    # Carving parameters (simulates slalom turns left and right)
-    carve_period = 15.0  # seconds per full S-turn
-    carve_amp = 0.0      # meters
-    if not is_lift:
-        # Normalize difficulty string
+
+    carve_amp = 0.0
+    carve_period = 6.0
+    if not is_lift and not is_transition:
         diff = str(difficulty).lower() if difficulty else ""
         if "easy" in diff or "novice" in diff or "green" in diff:
-            carve_amp = 1.5
+            carve_amp = 1.2
             carve_period = 8.0
         elif "intermediate" in diff or "blue" in diff:
-            carve_amp = 3.0
+            carve_amp = 2.5
             carve_period = 6.0
         elif "advanced" in diff or "red" in diff:
-            carve_amp = 4.0
+            carve_amp = 3.5
             carve_period = 5.0
         elif "expert" in diff or "black" in diff:
-            carve_amp = 5.0
+            carve_amp = 4.5
             carve_period = 4.0
         else:
             carve_amp = 2.0
@@ -232,89 +349,90 @@ def interpolate_track(coords, start_alt, end_alt, target_speed_range, is_lift=Fa
 
     current_segment_idx = 0
     seg_start_dist = 0.0
-    
     elapsed_time = 0.0
-    v = (target_speed_range[0] + target_speed_range[1]) / 2.0  # starting speed
+    v = (speed_range[0] + speed_range[1]) / 2.0
 
-    while accum_dist < tot_dist:
-        # Find current segment
+    while accum_dist <= tot_dist:
         while current_segment_idx < len(segs) and accum_dist > (seg_start_dist + segs[current_segment_idx]):
             seg_start_dist += segs[current_segment_idx]
             current_segment_idx += 1
-            
+
         if current_segment_idx >= len(segs):
+            p_final = coords_3d[-1]
+            points.append({
+                "lat": p_final[0],
+                "lon": p_final[1],
+                "altitude": p_final[2],
+                "speed": max(0.5, v),
+                "elapsed_seconds": elapsed_time
+            })
             break
 
-        # Interpolate position on segment
         seg_d = segs[current_segment_idx]
-        p_ratio = 1.0 if seg_d == 0 else (accum_dist - seg_start_dist) / seg_d
-            
-        p1 = coords[current_segment_idx]
-        p2 = coords[current_segment_idx + 1]
-        
-        lat = p1[0] + (p2[0] - p1[0]) * p_ratio
-        lon = p1[1] + (p2[1] - p1[1]) * p_ratio
-        
-        # Altitude: linear interpolation over total distance
-        ratio = accum_dist / tot_dist
-        alt = start_alt + (end_alt - start_alt) * ratio
-        
-        # Add carving & noise
-        if not is_lift and carve_amp > 0:
-            # Perpendicular vector in degrees approx
+        ratio = 1.0 if seg_d == 0 else (accum_dist - seg_start_dist) / seg_d
+
+        p1 = coords_3d[current_segment_idx]
+        p2 = coords_3d[current_segment_idx + 1]
+
+        lat = p1[0] + (p2[0] - p1[0]) * ratio
+        lon = p1[1] + (p2[1] - p1[1]) * ratio
+        alt = p1[2] + (p2[2] - p1[2]) * ratio
+
+        # Apply subtle carving turns if skiing downhill
+        if not is_lift and not is_transition and carve_amp > 0:
             dy = p2[0] - p1[0]
             dx = p2[1] - p1[1]
-            mag = (dx**2 + dy**2)**0.5
+            mag = math.sqrt(dx * dx + dy * dy)
             if mag > 0:
-                # Perpendicular unit vector
                 ny = -dx / mag
                 nx = dy / mag
-                
-                # Carving offset (sinusoidal carving path)
                 phase = (elapsed_time / carve_period) * 2.0 * math.pi
                 offset_m = carve_amp * math.sin(phase)
-                
-                # Convert meters to degrees offset
-                offset_lat = (offset_m * ny) / 111320.0
-                offset_lon = (offset_m * nx) / (111320.0 * math.cos(math.radians(lat)))
-                
-                lat += offset_lat
-                lon += offset_lon
-        
-        # GPS noise: 0.5 meter random jitter
-        lat += random.normalvariate(0, 0.5) / 111320.0
-        lon += random.normalvariate(0, 0.5) / (111320.0 * math.cos(math.radians(lat)))
+                lat += (offset_m * ny) / 111320.0
+                lon += (offset_m * nx) / (111320.0 * math.cos(math.radians(lat)))
+
+        # Subtle GPS jitter (0.2 - 0.4 meters)
+        lat += random.normalvariate(0, 0.3) / 111320.0
+        lon += random.normalvariate(0, 0.3) / (111320.0 * math.cos(math.radians(lat)))
 
         points.append({
             "lat": lat,
             "lon": lon,
             "altitude": alt,
-            "speed": v,
+            "speed": max(0.5, v),
             "elapsed_seconds": elapsed_time
         })
-        
-        # Determine speed for next step
+
         if is_lift:
-            v = random.uniform(target_speed_range[0], target_speed_range[1])
+            v = random.uniform(speed_range[0], speed_range[1])
+        elif is_transition:
+            v = random.uniform(speed_range[0], speed_range[1])
         else:
-            # Physics/Slalom simulation: speed depends on slope, target difficulty, and minor noise
-            target_v = random.uniform(target_speed_range[0], target_speed_range[1])
-            # smooth transition
-            v = 0.85 * v + 0.15 * target_v
-            
-        accum_dist += v * time_step
+            target_v = random.uniform(speed_range[0], speed_range[1])
+            v = 0.80 * v + 0.20 * target_v
+
+        step_dist = max(1.0, v * time_step)
+        accum_dist += step_dist
         elapsed_time += time_step
 
     return points
 
 
-def get_distance(p1, p2):
-    """Calculates Euclidean distance between two (lat, lon) coordinates."""
-    return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
+def create_smooth_transition_track(from_3d, to_3d, speed=2.0, time_step=2.0):
+    """
+    Creates a gentle glide/walk transition between two points (e.g. lift exit to piste start),
+    ensuring 0m teleportation.
+    """
+    d = get_distance_meters(from_3d, to_3d)
+    if d < 1.0:
+        return []
+
+    coords = [from_3d, to_3d]
+    return interpolate_smooth_path(coords, (speed * 0.8, speed * 1.2), is_lift=False, time_step=time_step, is_transition=True)
 
 
 def send_points_batch(session_id, points, auth_headers, photo_bytes=None, photo_name=None):
-    """Sends a batch of points to the Go API, optionally with a photo."""
+    """Sends a batch of points to the backend API, optionally with a photo."""
     if not points:
         return
 
@@ -332,38 +450,35 @@ def send_points_batch(session_id, points, auth_headers, photo_bytes=None, photo_
             files=files,
         )
         if resp.status_code != 200:
-            print(f"⚠️ Error sending points: {resp.status_code} {resp.text}")
+            print(f"⚠️ Error sending points batch: {resp.status_code} {resp.text}")
     except Exception as e:
         print(f"⚠️ HTTP exception while sending points: {e}")
 
 
+# ==========================================
+# MAIN REALISTIC SKI DAY SIMULATION
+# ==========================================
 def simulate_full_day():
-    resort_id, pistes, lifts = get_resort_data_from_db(RESORT_TARGET)
-    if not pistes or not lifts:
-        print("❌ No pistes or lifts available to simulate. Make sure you imported data into PostGIS.")
+    print("=" * 65)
+    print("🎿 STARTING REALISTIC SKI DAY SIMULATION (NO OFF-PISTE / NO TELEPORT)")
+    print("=" * 65)
+
+    resort_id, raw_pistes, raw_lifts, min_alt, max_alt = get_resort_data_from_db(RESORT_TARGET)
+    if not raw_pistes or not raw_lifts:
+        print("❌ No pistes or lifts found for the resort.")
         return
 
-    # Filter out empty elements
-    valid_lifts = []
-    for l in lifts:
-        c = extract_coordinates_from_geojson(l["geojson"])
-        if len(c) > 1:
-            valid_lifts.append({"id": l["id"], "name": l["name"], "coords": c})
-
-    valid_pistes = []
-    for p in pistes:
-        c = extract_coordinates_from_geojson(p["geojson"])
-        if len(c) > 1:
-            valid_pistes.append({"id": p["id"], "name": p["name"], "difficulty": p["difficulty"], "coords": c})
-
-    if not valid_lifts or not valid_pistes:
-        print("❌ Not enough valid lifts or pistes to build a continuous trace.")
+    lifts, pistes = build_topological_network(raw_pistes, raw_lifts, min_alt, max_alt)
+    if not lifts or not pistes:
+        print("❌ Could not build topological network.")
         return
+
+    print(f"🌐 Topology ready: {len(lifts)} uphill lifts, {len(pistes)} downhill pistes.")
 
     user_id, auth_headers = create_or_login_user()
 
-    # 1. Start a session in the Go API (include resortId)
-    print("\n🚀 Starting ski session in the API...")
+    # 1. Start Session in API
+    print("\n🚀 Starting ski session in API...")
     resp = requests.post(
         f"{API_BASE_URL}/api/v1/ski-sessions",
         headers=auth_headers,
@@ -375,50 +490,62 @@ def simulate_full_day():
 
     session_data = resp.json()
     session_id = session_data.get("sessionId")
-    print(f"✅ Session started for user {user_id} with ID: {session_id} (resort: {resort_id})")
+    print(f"✅ Ski session started with ID: {session_id}")
 
-    # Day schedule configuration (10:00 to 16:00, simulated in accelerated time)
-    current_time = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
-    end_time = current_time.replace(hour=16, minute=0)
+    # Start time: 09:45 AM
+    current_time = datetime.now().replace(hour=9, minute=45, second=0, microsecond=0)
+    end_time = current_time.replace(hour=16, minute=15)
 
-    simulated_runs = 0
-    current_lift = random.choice(valid_lifts)
-    current_alt = 1800.0
+    # 2. Skier arrives at the Base of the Resort (lowest lift bottom station)
+    base_lift = min(lifts, key=lambda l: l["bottom_alt"])
+    current_lift = base_lift
+    current_pos_3d = current_lift["coords"][0]
+
+    print(f"\n🚗 Skier arrives at base lift: '{current_lift['name']}' ({current_lift['bottom_alt']:.0f}m)")
 
     recent_pistes = []
-    recent_lifts = [current_lift["id"]]
+    simulated_runs = 0
+    photo_runs = {2, 5, 8}
 
-    # Select 3 random runs to take a photo during the day
-    photo_runs = sorted(random.sample(range(1, 9), 3))
-
-    print(f"\n⛷️ Starting day at {RESORT_TARGET} at {current_time.strftime('%H:%M')}...")
-
-    while current_time < end_time and simulated_runs < 8:
+    while current_time < end_time and simulated_runs < 10:
         simulated_runs += 1
+        print(f"\n{'='*50}")
+        print(f"🎿 RUN #{simulated_runs} - Time: {current_time.strftime('%H:%M')}")
+        print(f"{'='*50}")
 
-        # ---------------------------------------------------------
-        # STEP A: Simulate chairlift ascent using real lift coordinates
-        # ---------------------------------------------------------
-        lift_coords = current_lift["coords"]
-        top_alt = current_alt + random.uniform(200, 300)
+        # -------------------------------------------------------------
+        # STEP 1: Lift Queue & Boarding
+        # -------------------------------------------------------------
+        queue_duration = random.randint(30, 75)
+        print(f"[{current_time.strftime('%H:%M')}] ⏱️ Waiting in lift line at '{current_lift['name']}' ({queue_duration}s)...")
+        queue_points = []
+        for _ in range(0, queue_duration, 5):
+            queue_points.append({
+                "lat": current_pos_3d[0] + random.normalvariate(0, 0.15) / 111320.0,
+                "lon": current_pos_3d[1] + random.normalvariate(0, 0.15) / (111320.0 * math.cos(math.radians(current_pos_3d[0]))),
+                "altitude": current_pos_3d[2],
+                "speed": 0.0,
+                "timestamp": current_time.isoformat() + "Z",
+            })
+            current_time += timedelta(seconds=5)
+        send_points_batch(session_id, queue_points, auth_headers)
 
-        print(f"\n[Day {current_time.strftime('%H:%M')}] 🚠 Riding lift '{current_lift['name']}' up...")
-        
-        # Decide speed range based on name/type
-        lift_name = current_lift["name"].lower()
-        if "telesilla" in lift_name or "chair" in lift_name:
-            lift_speed_range = (2.5, 3.5)
-        elif "telecabina" in lift_name or "gondola" in lift_name:
-            lift_speed_range = (4.0, 5.5)
+        # -------------------------------------------------------------
+        # STEP 2: Lift Ascent (Bottom -> Top strictly on lift line)
+        # -------------------------------------------------------------
+        l_type = current_lift["type"].lower()
+        if "telesilla" in l_type or "chair" in l_type:
+            speed_range = (2.6, 3.6)
+        elif "telecabina" in l_type or "gondola" in l_type:
+            speed_range = (4.5, 6.0)
         else:
-            lift_speed_range = (2.0, 3.0)
+            speed_range = (2.0, 2.8)
 
-        lift_points_raw = interpolate_track(
-            lift_coords, current_alt, top_alt, lift_speed_range, is_lift=True, time_step=3
-        )
+        print(f"[{current_time.strftime('%H:%M')}] 🚠 Riding lift '{current_lift['name']}' ({current_lift['bottom_alt']:.0f}m ➔ {current_lift['top_alt']:.0f}m)...")
+        lift_pts_raw = interpolate_smooth_path(current_lift["coords"], speed_range, is_lift=True, time_step=3.0)
         
         lift_points = []
-        for p in lift_points_raw:
+        for p in lift_pts_raw:
             lift_points.append({
                 "lat": p["lat"],
                 "lon": p["lon"],
@@ -429,79 +556,88 @@ def simulate_full_day():
             current_time += timedelta(seconds=3)
 
         send_points_batch(session_id, lift_points, auth_headers)
-        time.sleep(0.05)
+        time.sleep(0.04)
 
-        current_pos = lift_coords[-1]
-        current_alt = top_alt
+        current_pos_3d = current_lift["coords"][-1]
 
-        # ---------------------------------------------------------
-        # STEP B: Short pause at the summit
-        # ---------------------------------------------------------
-        print(f"[{current_time.strftime('%H:%M')}] ☕ Short break at the summit...")
-        pause_points = []
-        # Pause duration: random between 60 and 150 seconds, sampled every 10 seconds
-        pause_duration = random.randint(60, 150)
-        for _ in range(0, pause_duration, 10):
-            pause_points.append({
-                "lat": current_pos[0] + random.normalvariate(0, 0.2) / 111320.0,
-                "lon": current_pos[1] + random.normalvariate(0, 0.2) / (111320.0 * math.cos(math.radians(current_pos[0]))),
-                "altitude": current_alt,
-                "speed": 0.0,
-                "timestamp": current_time.isoformat() + "Z",
-            })
-            current_time += timedelta(seconds=10)
+        # -------------------------------------------------------------
+        # STEP 3: Summit Arrival & Piste Selection
+        # -------------------------------------------------------------
+        # Find candidate pistes whose top start is reachable from this lift exit (sorted by distance)
+        sorted_pistes = sorted(pistes, key=lambda p: get_distance_meters(p["top_pos"], current_pos_3d))
         
-        photo_bytes = None
-        photo_name = None
-        if simulated_runs in photo_runs:
-            print(f"📸 Taking a photo at the summit of run {simulated_runs}...")
-            photo_bytes = DUMMY_IMAGE
-            photo_name = f"summit_view_run_{simulated_runs}.png"
+        piste_pool = [p for p in sorted_pistes[:4] if p["id"] not in recent_pistes]
+        if not piste_pool:
+            piste_pool = sorted_pistes[:2]
+        chosen_piste = random.choice(piste_pool)
 
-        send_points_batch(session_id, pause_points, auth_headers, photo_bytes=photo_bytes, photo_name=photo_name)
-
-        # ---------------------------------------------------------
-        # STEP C: Choose a real piste starting near the summit
-        # ---------------------------------------------------------
-        # Find candidates starting near the summit (sorted by distance)
-        sorted_pistes = sorted(valid_pistes, key=lambda p: get_distance(p["coords"][0], current_pos))
-        
-        # Select from the top 5 closest pistes, avoiding recently visited ones if possible
-        piste_candidates = [p for p in sorted_pistes[:5] if p["id"] not in recent_pistes]
-        if not piste_candidates:
-            piste_candidates = sorted_pistes[:3]
-        chosen_piste = random.choice(piste_candidates)
-
-        # Update history
         recent_pistes.append(chosen_piste["id"])
         if len(recent_pistes) > 3:
             recent_pistes.pop(0)
 
-        print(f"[{current_time.strftime('%H:%M')}] 🏂 Descending piste: '{chosen_piste['name']}' (Difficulty: {chosen_piste['difficulty']})")
+        # Smooth transition from lift exit to piste top start (ZERO teleportation)
+        piste_top_3d = chosen_piste["coords"][0]
+        trans_dist = get_distance_meters(current_pos_3d, piste_top_3d)
+        if trans_dist > 2.0:
+            trans_pts_raw = create_smooth_transition_track(current_pos_3d, piste_top_3d, speed=2.2, time_step=2.0)
+            trans_points = []
+            for p in trans_pts_raw:
+                trans_points.append({
+                    "lat": p["lat"],
+                    "lon": p["lon"],
+                    "altitude": p["altitude"],
+                    "speed": p["speed"],
+                    "timestamp": current_time.isoformat() + "Z",
+                })
+                current_time += timedelta(seconds=2)
+            send_points_batch(session_id, trans_points, auth_headers)
 
-        piste_coords = chosen_piste["coords"]
-        bottom_alt = max(1500.0, current_alt - random.uniform(200, 300))
-        
-        diff = str(chosen_piste["difficulty"]).lower() if chosen_piste["difficulty"] else ""
+        current_pos_3d = piste_top_3d
+
+        # Short summit pause / photo
+        pause_duration = random.randint(20, 60)
+        print(f"[{current_time.strftime('%H:%M')}] 🏔️ Summit break at {current_pos_3d[2]:.0f}m ({pause_duration}s)...")
+        summit_pause_points = []
+        for _ in range(0, pause_duration, 10):
+            summit_pause_points.append({
+                "lat": current_pos_3d[0] + random.normalvariate(0, 0.1) / 111320.0,
+                "lon": current_pos_3d[1] + random.normalvariate(0, 0.1) / (111320.0 * math.cos(math.radians(current_pos_3d[0]))),
+                "altitude": current_pos_3d[2],
+                "speed": 0.0,
+                "timestamp": current_time.isoformat() + "Z",
+            })
+            current_time += timedelta(seconds=10)
+
+        photo_bytes = None
+        photo_name = None
+        if simulated_runs in photo_runs:
+            print(f"📸 Taking summit photo #{simulated_runs}...")
+            photo_bytes = DUMMY_IMAGE
+            photo_name = f"summit_view_run_{simulated_runs}.png"
+
+        send_points_batch(session_id, summit_pause_points, auth_headers, photo_bytes=photo_bytes, photo_name=photo_name)
+
+        # -------------------------------------------------------------
+        # STEP 4: Piste Descent (Top -> Bottom strictly on piste line)
+        # -------------------------------------------------------------
+        diff = str(chosen_piste["difficulty"]).lower()
         if "easy" in diff or "novice" in diff or "green" in diff:
-            speed_range = (4.5, 9.0)
+            downhill_speed = (5.0, 9.5)
         elif "intermediate" in diff or "blue" in diff:
-            speed_range = (8.0, 14.0)
+            downhill_speed = (8.5, 15.0)
         elif "advanced" in diff or "red" in diff:
-            speed_range = (12.0, 19.0)
+            downhill_speed = (12.0, 20.0)
         elif "expert" in diff or "black" in diff:
-            speed_range = (16.0, 26.0)
+            downhill_speed = (16.0, 25.0)
         else:
-            speed_range = (9.0, 15.0)
+            downhill_speed = (9.0, 16.0)
 
-        # Sample every 2 seconds for high resolution and realistic physics
-        run_points_raw = interpolate_track(
-            piste_coords, current_alt, bottom_alt, speed_range, is_lift=False, difficulty=chosen_piste["difficulty"], time_step=2
-        )
-        
-        run_points = []
-        for p in run_points_raw:
-            run_points.append({
+        print(f"[{current_time.strftime('%H:%M')}] 🏂 Skiing down piste: '{chosen_piste['name']}' [{chosen_piste['difficulty']}] ({chosen_piste['top_alt']:.0f}m ➔ {chosen_piste['bottom_alt']:.0f}m)...")
+        piste_pts_raw = interpolate_smooth_path(chosen_piste["coords"], downhill_speed, is_lift=False, difficulty=chosen_piste["difficulty"], time_step=2.0)
+
+        piste_points = []
+        for p in piste_pts_raw:
+            piste_points.append({
                 "lat": p["lat"],
                 "lon": p["lon"],
                 "altitude": p["altitude"],
@@ -510,56 +646,56 @@ def simulate_full_day():
             })
             current_time += timedelta(seconds=2)
 
-        send_points_batch(session_id, run_points, auth_headers)
-        time.sleep(0.05)
+        send_points_batch(session_id, piste_points, auth_headers)
+        time.sleep(0.04)
 
-        current_pos = piste_coords[-1]
-        current_alt = bottom_alt
+        current_pos_3d = chosen_piste["coords"][-1]
 
-        # ---------------------------------------------------------
-        # STEP D: Short pause at the base before next lift
-        # ---------------------------------------------------------
-        print(f"[{current_time.strftime('%H:%M')}] 🥤 Short break / lift queue at the base...")
-        base_points = []
-        # Queue/break duration: random between 45 and 120 seconds
-        base_duration = random.randint(45, 120)
-        for _ in range(0, base_duration, 10):
-            base_points.append({
-                "lat": current_pos[0] + random.normalvariate(0, 0.2) / 111320.0,
-                "lon": current_pos[1] + random.normalvariate(0, 0.2) / (111320.0 * math.cos(math.radians(current_pos[0]))),
-                "altitude": current_alt,
-                "speed": 0.0,
-                "timestamp": current_time.isoformat() + "Z",
-            })
-            current_time += timedelta(seconds=10)
-        send_points_batch(session_id, base_points, auth_headers)
-
-        # Find the next lift starting near current position (sorted by distance)
-        sorted_lifts = sorted(valid_lifts, key=lambda l: get_distance(l["coords"][0], current_pos))
+        # -------------------------------------------------------------
+        # STEP 5: Bottom Base Transition to Closest Connecting Lift
+        # -------------------------------------------------------------
+        sorted_next_lifts = sorted(lifts, key=lambda l: get_distance_meters(l["bottom_pos"], current_pos_3d))
         
-        # Select from the top 3 closest lifts, avoiding recently visited ones if possible
-        lift_candidates = [l for l in sorted_lifts[:3] if l["id"] not in recent_lifts]
-        if not lift_candidates:
-            lift_candidates = sorted_lifts[:2]
-        current_lift = random.choice(lift_candidates)
+        next_lift = sorted_next_lifts[0]
+        if len(sorted_next_lifts) > 1 and random.random() < 0.35:
+            if get_distance_meters(sorted_next_lifts[1]["bottom_pos"], current_pos_3d) < 120.0:
+                next_lift = sorted_next_lifts[1]
 
-        # Update history
-        recent_lifts.append(current_lift["id"])
-        if len(recent_lifts) > 2:
-            recent_lifts.pop(0)
+        # Smooth transition to lift bottom station (ZERO teleportation)
+        lift_bot_3d = next_lift["coords"][0]
+        trans_base_dist = get_distance_meters(current_pos_3d, lift_bot_3d)
+        if trans_base_dist > 2.0:
+            base_trans_pts_raw = create_smooth_transition_track(current_pos_3d, lift_bot_3d, speed=2.0, time_step=2.0)
+            base_trans_points = []
+            for p in base_trans_pts_raw:
+                base_trans_points.append({
+                    "lat": p["lat"],
+                    "lon": p["lon"],
+                    "altitude": p["altitude"],
+                    "speed": p["speed"],
+                    "timestamp": current_time.isoformat() + "Z",
+                })
+                current_time += timedelta(seconds=2)
+            send_points_batch(session_id, base_trans_points, auth_headers)
 
-    # 2. Finish session
-    print(f"\n🏁 Day finished. Closing session in the API...")
+        current_pos_3d = lift_bot_3d
+        current_lift = next_lift
+
+    # -------------------------------------------------------------
+    # STEP 6: Finish Day & Close Session
+    # -------------------------------------------------------------
+    print(f"\n🏁 Ski day finished at {current_time.strftime('%H:%M')}. Closing session in API...")
     resp = requests.post(
         f"{API_BASE_URL}/api/v1/ski-sessions/{session_id}/finish",
         headers=auth_headers,
     )
     if resp.status_code == 200:
-        print("✅ Session closed successfully.")
-        print("✨ Check your Go server logs to verify run-detection and map-matching.")
+        print("🎉 Session closed successfully! All runs and lifts recorded cleanly.")
+        print("✨ Open the web app or mobile app to view the session and detected runs!")
     else:
         print(f"❌ Error closing session: {resp.text}")
 
 
 if __name__ == "__main__":
     simulate_full_day()
+
