@@ -1,81 +1,81 @@
-# Expo OTA Updates Architecture
+# Arquitectura de Actualizaciones OTA con Expo
 
-This document describes the Over-The-Air (OTA) update system implemented for the Ski Tracker application. The system relies on a custom Golang backend (interacting with MinIO for storage) and an Expo client using `expo-updates`.
+Este documento describe el sistema de actualizaciones inalámbricas (Over-The-Air / OTA) implementado para la aplicación Ski Tracker. El sistema se basa en un backend propio en Golang (utilizando MinIO como almacenamiento de objetos) y un cliente Expo que utiliza `expo-updates`.
 
-## Overview
+## Visión General
 
-The system allows you to bypass standard Expo Application Services (EAS) for OTA updates and host the update bundles on your own infrastructure. It supports:
-- **Mandatory (Forced) vs. Optional Updates:** Controlled via a custom flag.
-- **Multilingual Changelogs:** Sent securely from the backend to the frontend.
-- **Rollbacks & Directives:** Supported by adhering to the `expo-updates` protocol.
+El sistema permite prescindir de los servicios estándar de Expo Application Services (EAS) para las actualizaciones OTA, alojando los paquetes de actualización en tu propia infraestructura. Soporta:
+- **Actualizaciones obligatorias (forzadas) vs. opcionales:** Controladas mediante un flag personalizado.
+- **Registros de cambios (changelogs) multilingües:** Enviados de forma segura desde el backend al frontend.
+- **Rollbacks y directivas:** Compatibles con el protocolo oficial de `expo-updates`.
 
-## Backend: Golang API & MinIO Storage
+## Backend: API en Golang y Almacenamiento en MinIO
 
-The backend handles receiving new bundles, storing them, and serving them via the Expo Updates protocol.
+El backend se encarga de recibir los nuevos bundles, almacenarlos y servirlos mediante el protocolo de Expo Updates.
 
-### 1. Publishing an Update (`POST /api/v1/ota/publish`)
+### 1. Publicar una actualización (`POST /api/v1/ota/publish`)
 
-To release an update, the CI/CD or developer zips the output of `expo export` and uploads it to this endpoint along with metadata (`runtime_version`, `force_update`, `changelog`, `version`).
+Para publicar una actualización, el pipeline de CI/CD o el desarrollador comprime en ZIP la salida de `expo export` y la sube a este endpoint junto con los metadatos correspondientes (`runtime_version`, `force_update`, `changelog`, `version`).
 
-- **Extraction & Upload:** The server unzips the payload and uploads every file to a MinIO bucket under `updates/<runtime-version>/<timestamp>/`.
-- **Metadata Generation:** A custom `info.json` is generated containing the changelog and the `forceUpdate` flag.
+- **Extracción y subida:** El servidor descomprime el archivo y sube cada fichero al bucket de MinIO bajo la ruta `updates/<runtime-version>/<timestamp>/`.
+- **Generación de metadatos:** Se genera un archivo `info.json` personalizado que contiene el changelog y el flag `forceUpdate`.
 
-### 2. Serving the Manifest (`GET /api/v1/ota/manifest`)
+### 2. Servir el Manifiesto (`GET /api/v1/ota/manifest`)
 
-When the Expo client checks for updates, it hits this endpoint.
-- **Resolution:** The server finds the latest timestamp folder for the requested `runtimeVersion`.
-- **Manifest Assembly:** It reads `metadata.json` (created by `expo export`) and the custom `info.json`.
-- **Hashes:** The server calculates SHA256 and MD5 hashes for the launch bundle and assets.
-- **Expo Protocol:** It formats the response based on the `expo-protocol-version` header, utilizing `multipart/mixed` responses for version 1+ to correctly pass directives (like rollback) and the manifest body.
-- **Custom Payload (`extra`):** The `info.json` fields (`forceUpdate`, `changelog`, `version`) are injected into the manifest's `extra` object.
+Cuando el cliente Expo comprueba si hay actualizaciones, realiza una petición a este endpoint.
+- **Resolución:** El servidor localiza la carpeta con la marca de tiempo más reciente para la `runtimeVersion` solicitada.
+- **Construcción del manifiesto:** Lee el archivo `metadata.json` (generado por `expo export`) y el `info.json` personalizado.
+- **Hashes:** El servidor calcula los hashes SHA256 y MD5 para el bundle de inicio y los assets.
+- **Protocolo Expo:** Formatea la respuesta en función de la cabecera `expo-protocol-version`, utilizando respuestas `multipart/mixed` para la versión 1+ para enviar correctamente las directivas (como rollback) y el cuerpo del manifiesto.
+- **Carga útil personalizada (`extra`):** Los campos de `info.json` (`forceUpdate`, `changelog`, `version`) se inyectan en el objeto `extra` del manifiesto.
 
-### 3. Serving Assets (`GET /api/v1/ota/assets`)
+### 3. Servir Assets (`GET /api/v1/ota/assets`)
 
-When the Expo client needs to download the JS bundle or images, it requests this endpoint with the `asset`, `runtimeVersion`, and `platform` queries. The backend streams the file directly from MinIO, setting appropriate `Content-Type` and `Cache-Control` headers.
+Cuando el cliente Expo necesita descargar el bundle JS o imágenes, solicita este endpoint con los parámetros `asset`, `runtimeVersion` y `platform`. El backend transmite el archivo directamente desde MinIO, configurando las cabeceras `Content-Type` y `Cache-Control` adecuadas.
 
-## Frontend: Expo Client
+## Frontend: Cliente Expo
 
-The Expo client handles the update lifecycle using a custom React hook: `useOtaUpdates`.
+El cliente Expo gestiona el ciclo de vida de las actualizaciones mediante un hook personalizado de React: `useOtaUpdates`.
 
-### The `useOtaUpdates` Hook (`hooks/use-ota-updates.hook.tsx`)
+### El Hook `useOtaUpdates` (`hooks/use-ota-updates.hook.tsx`)
 
-This hook abstracts the complexity of the `expo-updates` API and manages the update state machine.
+Este hook abstrae la complejidad de la API de `expo-updates` y gestiona la máquina de estados de actualización.
 
-#### Update States (Phases)
-- `idle`: Default state.
-- `checking`: Actively pinging the server for a manifest.
-- `downloading`: Fetching the bundle and assets.
-- `mandatory`: A forced update is ready. The app will usually reload immediately.
-- `optional`: A non-forced update is available. The UI can prompt the user.
-- `none`: No updates available or not supported (e.g., in `__DEV__` or web).
+#### Estados de Actualización (Fases)
+- `idle`: Estado por defecto.
+- `checking`: Comprobando activamente con el servidor si existe un nuevo manifiesto.
+- `downloading`: Descargando el bundle y los assets.
+- `mandatory`: Actualización obligatoria lista. La aplicación se recargará inmediatamente.
+- `optional`: Actualización no obligatoria disponible. La interfaz puede consultar al usuario.
+- `none`: No hay actualizaciones disponibles o no está soportado (por ejemplo, en modo `__DEV__` o web).
 
-#### Flow
-1. **Check:** On mount, it calls `Updates.checkForUpdateAsync()`.
-2. **Read Metadata:** If an update exists, it reads `manifest.extra` to extract `forceUpdate`, `version`, and `changelog`. It filters the changelog based on the active language (`i18n.language`).
-3. **Action:**
-   - If `forceUpdate` is true, it immediately calls `Updates.fetchUpdateAsync()` and `Updates.reloadAsync()`.
-    - If false, it transitions to the `optional` phase, allowing the UI to show an update modal and call `applyUpdate()` when the user accepts.
+#### Flujo de Ejecución
+1. **Comprobación:** Al montarse, ejecuta `Updates.checkForUpdateAsync()`.
+2. **Lectura de metadatos:** Si existe una actualización, lee `manifest.extra` para extraer `forceUpdate`, `version` y `changelog`. Filtra el changelog según el idioma activo (`i18n.language`).
+3. **Acción:**
+   - Si `forceUpdate` es verdadero, llama inmediatamente a `Updates.fetchUpdateAsync()` y `Updates.reloadAsync()`.
+   - Si es falso, transiciona a la fase `optional`, permitiendo a la UI mostrar un modal de actualización y ejecutar `applyUpdate()` cuando el usuario acepte.
 
-## Local Testing Guide
+## Guía de Pruebas en Local
 
-By default, the OTA update checks are disabled in development mode (`__DEV__ = true`). To test the OTA update pipeline end-to-end on your local environment, follow these steps:
+Por defecto, las comprobaciones de actualizaciones OTA están deshabilitadas en modo de desarrollo (`__DEV__ = true`). Para probar el flujo completo de actualizaciones OTA en tu entorno local, sigue estos pasos:
 
-### 1. Run the Backend & Storage
-Ensure your Golang API server (usually running on port `8082`) and MinIO instance are up and running.
+### 1. Iniciar Backend y Almacenamiento
+Asegúrate de que el servidor API en Golang (habitualmente en el puerto `8082`) y la instancia de MinIO estén en ejecución.
 
-### 2. Configure the OTA Update URL
-In [`app.json`](file:///home/development/projects/ski-tracker/apps/web/app.json), make sure the `updates.url` points to your machine's accessible IP or localhost:
-- **iOS Simulator / Machine Hosting API:** `"http://localhost:8082/api/v1/ota/manifest"`
-- **Android Emulator:** `"http://10.0.2.2:8082/api/v1/ota/manifest"` (since `localhost` refers to the emulator itself)
-- **Physical Device:** Use your local machine's IP address (e.g., `"http://192.168.1.50:8082/api/v1/ota/manifest"`).
+### 2. Configurar la URL de Actualizaciones OTA
+En [`app.json`](file:///home/development/projects/ski-tracker/apps/web/app.json), verifica que `updates.url` apunte a la IP accesible de tu máquina o a localhost:
+- **Simulador iOS / Máquina local:** `"http://localhost:8082/api/v1/ota/manifest"`
+- **Emulador Android:** `"http://10.0.2.2:8082/api/v1/ota/manifest"` (ya que `localhost` apunta al propio emulador)
+- **Dispositivo físico:** Usa la dirección IP local de tu ordenador (ej. `"http://192.168.1.50:8082/api/v1/ota/manifest"`).
 
-### 3. Build & Publish Version A (Initial Build)
-1. Export the initial production bundle:
+### 3. Compilar y Publicar la Versión A (Build Inicial)
+1. Exportar el bundle inicial de producción:
    ```bash
    npm run export:ota
    ```
-2. Compress the contents of the generated `dist-ota/` folder into a ZIP file (e.g., `dist-ota.zip`).
-3. Publish this initial version to the local API:
+2. Comprimir el contenido de la carpeta generada `dist-ota/` en un archivo ZIP (ej. `dist-ota.zip`).
+3. Publicar esta versión inicial en la API local:
    ```bash
    curl -X POST http://localhost:8082/api/v1/ota/publish \
      -F "bundle=@dist-ota.zip" \
@@ -84,18 +84,18 @@ In [`app.json`](file:///home/development/projects/ski-tracker/apps/web/app.json)
      -F "force_update=false" \
      -F "changelog={\"en\":[\"Initial version\"],\"es\":[\"Versión inicial\"]}"
    ```
-4. Build and run the app in **Release** mode so that `__DEV__` is set to `false`:
+4. Compilar y ejecutar la app en modo **Release** para que `__DEV__` sea `false`:
    - **Android:** `npx expo run:android --variant release`
    - **iOS:** `npx expo run:ios --configuration Release`
 
-### 4. Build & Publish Version B (The Update)
-1. Make a visible change in the app code (e.g., modify text or color).
-2. Re-export the bundle:
+### 4. Compilar y Publicar la Versión B (La Actualización)
+1. Realiza un cambio visible en el código de la app (ej. modificar un texto o color).
+2. Vuelve a exportar el bundle:
    ```bash
    npm run export:ota
    ```
-3. Re-zip the updated `dist-ota/` folder.
-4. Publish the update with a new version number and changelog:
+3. Vuelve a comprimir la carpeta `dist-ota/` actualizada.
+4. Publica la actualización con un nuevo número de versión y changelog:
    ```bash
    curl -X POST http://localhost:8082/api/v1/ota/publish \
      -F "bundle=@dist-ota.zip" \
@@ -105,18 +105,17 @@ In [`app.json`](file:///home/development/projects/ski-tracker/apps/web/app.json)
      -F "changelog={\"en\":[\"New features!\"],\"es\":[\"¡Nuevas funciones!\"]}"
    ```
 
-### 5. Verify the Update Flow
-Open the installed release app. It will query the local API for the manifest:
-- If `force_update=false`, the custom OTA UI modal will show up, presenting the changelog in the device's language and allowing the user to trigger the update.
-- If `force_update=true`, the app will automatically download and apply the update upon restarting.
+### 5. Verificar el Flujo de Actualización
+Abre la app instalada en versión Release. Consultará la API local en busca del manifiesto:
+- Si `force_update=false`, aparecerá el modal de actualización personalizada presentando el changelog en el idioma del dispositivo y permitiendo al usuario aplicar la actualización.
+- Si `force_update=true`, la app descargará y aplicará automáticamente la actualización al reiniciarse.
 
-## Performance & Improvement Considerations
+## Consideraciones de Rendimiento y Mejoras
 
-- **Manifest Hashes (Backend):** Currently, `ota_service.go` downloads every asset into memory during the `buildManifest` call to calculate the `SHA256` and `MD5` hashes. For a large bundle or high traffic, this can cause memory spikes. 
-  - *Recommendation:* Pre-calculate these hashes during the `POST /api/v1/ota/publish` phase and save them in a custom `hashes.json` in MinIO, so the manifest endpoint can just read the JSON instead of downloading all assets.
+- **Hashes del Manifiesto (Backend):** Actualmente, `ota_service.go` descarga cada asset a memoria durante la llamada `buildManifest` para calcular los hashes `SHA256` y `MD5`. En bundles grandes o con tráfico elevado, esto puede ocasionar picos de uso de memoria.
+  - *Recomendación:* Precalcular estos hashes durante la fase `POST /api/v1/ota/publish` y guardarlos en un archivo `hashes.json` en MinIO, de modo que el endpoint del manifiesto simplemente lea el JSON sin tener que descargar todos los assets.
 
-
-## To export OTA to server
+## Comando para Publicar OTA al Servidor
 ```shell
 make ota-publish ARGS='--es "Cambiar estilo en los detalles del tiempo" --en "Change styles inside weather forecast"'
 ```

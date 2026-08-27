@@ -47,30 +47,30 @@ func (p *ProblemDetail) WithFieldErrors(errs []FieldError) *ProblemDetail {
 // Pre-defined error types.
 var (
 	ErrBadRequest = &ProblemDetail{
-		Type: "https://ski-tracker.dev/errors/bad-request", Title: "Bad Request", Status: http.StatusBadRequest,
+		Type: "https://api-ski-tracker.viti-tech.es/errors/bad-request", Title: "Bad Request", Status: http.StatusBadRequest,
 	}
 	ErrValidation = &ProblemDetail{
-		Type: "https://ski-tracker.dev/errors/validation-failed", Title: "Validation Failed", Status: http.StatusBadRequest,
+		Type: "https://api-ski-tracker.viti-tech.es/errors/validation-failed", Title: "Validation Failed", Status: http.StatusBadRequest,
 	}
 	ErrUnauthorized = &ProblemDetail{
-		Type: "https://ski-tracker.dev/errors/unauthorized", Title: "Unauthorized", Status: http.StatusUnauthorized,
+		Type: "https://api-ski-tracker.viti-tech.es/errors/unauthorized", Title: "Unauthorized", Status: http.StatusUnauthorized,
 	}
 	ErrForbidden = &ProblemDetail{
-		Type: "https://ski-tracker.dev/errors/forbidden", Title: "Forbidden", Status: http.StatusForbidden,
+		Type: "https://api-ski-tracker.viti-tech.es/errors/forbidden", Title: "Forbidden", Status: http.StatusForbidden,
 	}
 	ErrNotFound = &ProblemDetail{
-		Type: "https://ski-tracker.dev/errors/not-found", Title: "Not Found", Status: http.StatusNotFound,
+		Type: "https://api-ski-tracker.viti-tech.es/errors/not-found", Title: "Not Found", Status: http.StatusNotFound,
 	}
 	ErrNotAcceptable = &ProblemDetail{
-		Type: "https://ski-tracker.dev/errors/not-acceptable", Title: "Not Acceptable", Status: http.StatusNotAcceptable,
+		Type: "https://api-ski-tracker.viti-tech.es/errors/not-acceptable", Title: "Not Acceptable", Status: http.StatusNotAcceptable,
 	}
 	ErrConflict = &ProblemDetail{
-		Type: "https://ski-tracker.dev/errors/conflict", Title: "Conflict", Status: http.StatusConflict,
+		Type: "https://api-ski-tracker.viti-tech.es/errors/conflict", Title: "Conflict", Status: http.StatusConflict,
 	}
 	ErrInternal = &ProblemDetail{
-		Type: "https://ski-tracker.dev/errors/internal", Title: "Internal Server Error", Status: http.StatusInternalServerError,
+		Type: "https://api-ski-tracker.viti-tech.es/errors/internal", Title: "Internal Server Error", Status: http.StatusInternalServerError,
 	}
 	ErrTooManyRequests = &ProblemDetail{
-		Type: "https://ski-tracker.dev/errors/too-many-requests", Title: "Too Many Requests", Status: http.StatusTooManyRequests,
+		Type: "https://api-ski-tracker.viti-tech.es/errors/too-many-requests", Title: "Too Many Requests", Status: http.StatusTooManyRequests,
 	}
 )

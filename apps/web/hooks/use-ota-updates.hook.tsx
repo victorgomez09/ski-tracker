@@ -1,14 +1,20 @@
+import axios from 'axios';
+import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import i18n from 'i18n';
 import { useCallback, useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
+
+import { API_BASE_URL } from 'constants/constants';
 
 export type OtaPhase = 'idle' | 'checking' | 'mandatory' | 'downloading' | 'optional' | 'none';
 
 export interface OtaUpdateInfo {
     forceUpdate: boolean;
+    isNative: boolean;
     latestVersion: string;
     changelog: string[];
+    downloadUrl?: string;
 }
 
 const readExtra = (manifest: Updates.Manifest | undefined): Record<string, unknown> => {
@@ -18,12 +24,10 @@ const readExtra = (manifest: Updates.Manifest | undefined): Record<string, unkno
     return manifest.extra as Record<string, unknown>;
 };
 
-const changelogForLang = (extra: Record<string, unknown>): string[] => {
-    const changelog = extra.changelog;
+const changelogForLang = (changelog: Record<string, string[]> | undefined): string[] => {
     if (!changelog || typeof changelog !== 'object') return [];
-    const byLang = changelog as Record<string, string[]>;
     const lang = i18n.language?.startsWith('en') ? 'en' : 'es';
-    return byLang[lang] ?? byLang.en ?? byLang.es ?? [];
+    return changelog[lang] ?? changelog.es ?? changelog.en ?? [];
 };
 
 export const useOtaUpdates = () => {
@@ -32,7 +36,17 @@ export const useOtaUpdates = () => {
     const [optionalModalVisible, setOptionalModalVisible] = useState(false);
 
     const applyUpdate = useCallback(async () => {
+        if (updateInfo?.isNative && updateInfo.downloadUrl) {
+            try {
+                await Linking.openURL(updateInfo.downloadUrl);
+            } catch (err) {
+                console.error('Error opening native APK download link:', err);
+            }
+            return;
+        }
+
         if (__DEV__ || Platform.OS === 'web' || !Updates.isEnabled) return;
+
         try {
             setPhase('downloading');
             const result = await Updates.fetchUpdateAsync();
@@ -40,21 +54,58 @@ export const useOtaUpdates = () => {
                 await Updates.reloadAsync();
                 return;
             }
-            setPhase(updateInfo?.forceUpdate ? 'mandatory' : 'optional');
+            setPhase('optional');
         } catch (error) {
             console.error('Error applying OTA update:', error);
-            setPhase(updateInfo?.forceUpdate ? 'mandatory' : 'optional');
+            setPhase('optional');
         }
-    }, [updateInfo?.forceUpdate]);
+    }, [updateInfo]);
 
-    const checkForOta = useCallback(async () => {
+    const checkForUpdates = useCallback(async () => {
+        setPhase('checking');
+
+        // 1. First: Check for Native updates (Always MANDATORY)
+        try {
+            const currentVersion = Constants.expoConfig?.version || '1.0.0';
+            const currentRuntime =
+                typeof Updates.runtimeVersion === 'string' && Updates.runtimeVersion
+                    ? Updates.runtimeVersion
+                    : (Constants.expoConfig?.runtimeVersion as string) || '1.0.0';
+
+            const nativeCheckRes = await axios.get(`${API_BASE_URL}/app/check-update`, {
+                params: {
+                    platform: Platform.OS,
+                    current_version: currentVersion,
+                    current_runtime: currentRuntime,
+                },
+                timeout: 5000,
+            });
+
+            if (nativeCheckRes.status === 200 && nativeCheckRes.data?.has_update) {
+                const data = nativeCheckRes.data;
+                const info: OtaUpdateInfo = {
+                    forceUpdate: true, // Native updates are ALWAYS mandatory
+                    isNative: true,
+                    latestVersion: data.latest_version || currentVersion,
+                    changelog: changelogForLang(data.changelog),
+                    downloadUrl: data.download_url,
+                };
+                setUpdateInfo(info);
+                setPhase('mandatory');
+                return; // Stop here: native update must be installed before any OTA
+            }
+        } catch (nativeErr) {
+            // Ignore offline or 404 errors during native check and continue to OTA check
+            console.warn('Native update check skipped or failed:', nativeErr);
+        }
+
+        // 2. Second: Check for OTA updates (OPCIONAL)
         if (__DEV__ || Platform.OS === 'web' || !Updates.isEnabled) {
             setPhase('none');
             return;
         }
 
         try {
-            setPhase('checking');
             const result = await Updates.checkForUpdateAsync();
             if (!result.isAvailable) {
                 setPhase('none');
@@ -63,25 +114,16 @@ export const useOtaUpdates = () => {
             }
 
             const extra = readExtra(result.manifest);
-            const forceUpdate = Boolean(extra.forceUpdate);
             const info: OtaUpdateInfo = {
-                forceUpdate,
+                forceUpdate: false, // OTA updates are OPTIONAL by default
+                isNative: false,
                 latestVersion: typeof extra.version === 'string' && extra.version ? extra.version : Updates.updateId ?? '',
-                changelog: changelogForLang(extra),
+                changelog: changelogForLang(extra.changelog as Record<string, string[]> | undefined),
             };
-            setUpdateInfo(info);
 
-            if (forceUpdate) {
-                setPhase('downloading');
-                const fetched = await Updates.fetchUpdateAsync();
-                if (fetched.isNew) {
-                    await Updates.reloadAsync();
-                    return;
-                }
-                setPhase('mandatory');
-            } else {
-                setPhase('optional');
-            }
+            setUpdateInfo(info);
+            setPhase('optional');
+            setOptionalModalVisible(true);
         } catch (error) {
             console.error('Error checking OTA update:', error);
             setPhase('none');
@@ -89,8 +131,8 @@ export const useOtaUpdates = () => {
     }, []);
 
     useEffect(() => {
-        checkForOta();
-    }, [checkForOta]);
+        checkForUpdates();
+    }, [checkForUpdates]);
 
     return {
         phase,
@@ -102,6 +144,6 @@ export const useOtaUpdates = () => {
         openOptionalModal: () => setOptionalModalVisible(true),
         dismissOptionalModal: () => setOptionalModalVisible(false),
         applyUpdate,
-        checkForOta,
+        checkForUpdates,
     };
 };

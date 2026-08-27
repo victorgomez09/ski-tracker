@@ -599,7 +599,7 @@ export default function InteractiveSkiMap() {
         };
 
         loadInitial();
-    }, [searchParams.lat, searchParams.lon, searchParams.zoom, searchParams.minLon, searchParams.minLat, searchParams.maxLon, searchParams.maxLat, token]);
+    }, [token]);
 
     // --- Layer styles ---
     const pisteCasingStyle: LayerProps = {
@@ -697,8 +697,9 @@ export default function InteractiveSkiMap() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#000000',
-            'line-width': 12
+            'line-color': '#ffffff',
+            'line-width': 11,
+            'line-opacity': 0.95
         }
     };
 
@@ -707,8 +708,8 @@ export default function InteractiveSkiMap() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#e67e22',
-            'line-width': 8
+            'line-color': '#2557C7',
+            'line-width': 6.5
         }
     };
 
@@ -1091,7 +1092,6 @@ export default function InteractiveSkiMap() {
                 onMoveEnd={handleMoveEnd}
                 onMouseLeave={handleMouseLeave}
                 onClick={handleMapClick}
-                onZoomEnd={fetchResortsWithDetails}
                 interactiveLayerIds={['piste-lines', 'lift-lines']}
                 style={{ width: '100%', height: '100%' }}
                 mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"

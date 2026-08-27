@@ -819,8 +819,8 @@ export default function InteractiveSkiMapNative() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#e67e22',
-            'line-width': 8
+            'line-color': '#2557C7',
+            'line-width': 6.5
         }
     };
 
@@ -830,8 +830,9 @@ export default function InteractiveSkiMapNative() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#000000',
-            'line-width': 12
+            'line-color': '#ffffff',
+            'line-width': 10.5,
+            'line-opacity': 0.95
         }
     };
 

@@ -1,88 +1,88 @@
-# Roadmap: Ski Tracking and Run Detection System
+# Hoja de Ruta: Sistema de Tracking de Esquí y Detección de Bajadas
 
-## 🏗️ 1. System Architecture
+## 🏗️ 1. Arquitectura del Sistema
 
-The data flow is divided into three main layers: mobile capture, ingestion, and geospatial/analytical processing.
+El flujo de datos se divide en tres capas principales: captura móvil, ingesta y procesamiento geoespacial/analítico.
 ```
 +-------------------------------------------------------------+
 |               APP FRONTEND (React / Expo)                   |
-|  - Background GPS capture (expo-location)                   |
-|  - Local buffer temporary storage                           |
-|  - Batch synchronization (Batch POST)                       |
+|  - Captura GPS en segundo plano (expo-location)             |
+|  - Almacenamiento temporal en buffer local                  |
+|  - Sincronización por lotes (Batch POST)                    |
 +-------------------------------------------------------------+
 |
 | [POST /sessions & POST /points]
 v
 +-------------------------------------------------------------+
-|               BACKEND API (Node.js / Express)               |
-|  - Raw points ingestion                                     |
-|  - Storage in raw coordinates table                         |
+|               API BACKEND (Golang / Gin)                    |
+|  - Ingesta de puntos brutos                                 |
+|  - Almacenamiento en tabla de coordenadas                   |
 +-------------------------------------------------------------+
 |
-| [On session finish / Trigger]
+| [Al finalizar sesión / Trigger]
 v
 +-------------------------------------------------------------+
-|             ANALYSIS & GIS ENGINE (Backend)                 |
-|  ├─ 1. Noise filtering and altimetric smoothing             |
-|  ├─ 2. Segmentation (Lifts vs. Runs Heuristic)             |
-|  └─ 3. Geospatial Map Matching with Ski Runs (PostGIS)     |
+|             MOTOR DE ANÁLISIS Y GIS (Backend)               |
+|  ├─ 1. Filtrado de ruido y suavizado altimétrico            |
+|  ├─ 2. Segmentación (Heurística Remontes vs. Bajadas)       |
+|  └─ 3. Map Matching geoespacial con pistas (PostGIS)        |
 +-------------------------------------------------------------+
 ```
 
 ---
 
-## 🗺️ 2. Implementation Phases (Roadmap)
+## 🗺️ 2. Fases de Implementación (Roadmap)
 
-### Phase 1: Client Telemetry Capture (Frontend / Expo)
-*Objective: Record user GPS coordinates efficiently with low battery consumption.*
+### Fase 1: Captura de Telemetría en el Cliente (Frontend / Expo)
+*Objetivo: Registrar las coordenadas GPS del usuario de manera eficiente y con bajo consumo de batería.*
 
-*   [x] **Background Service:** Implement location tracking using Expo-compatible libraries (e.g., `expo-location` with `startLocationUpdatesAsync`).
-*   [x] **Precision Configuration:** Set optimal intervals (e.g., update every 5-10 meters or every 3-5 seconds) to avoid draining the battery or overwhelming the server.
-*   [x] **Local Buffer & Retries:** Temporarily store points in local storage (`AsyncStorage` or SQLite) in case the skier loses mountain coverage, sending them once connection is restored.
-*   [ ] **UI Session Controls:** Screen or floating button for "Start Activity", "Pause/Resume", and "Finish Session".
-
----
-
-### Phase 2: Backend Ingestion and Storage
-*Objective: Receive and securely store massive coordinate streams.*
-
-*   [x] **Session Endpoints:**
-    *   `POST /ski-sessions` (Starts a new ski session).
-    *   `POST /ski-sessions/{id}/points` (Receives coordinate batches: `[ {lat, lon, altitude, speed, timestamp}, ... ]`).
-    *   `POST /ski-sessions/{id}/finish` (Closes the session and triggers background processing).
-*   [x] **Database Schema:**
-    *   `ski_sessions` table: ID, user, start, end, global metrics.
-    *   `session_points` table: ID, session_id, geographic point (type `GEOMETRY(Point, 4326)` or lat/lon), altitude, speed, timestamp.
+* [x] **Servicio en Segundo Plano:** Implementar el seguimiento de ubicación usando librerías compatibles con Expo (`expo-location` con `startLocationUpdatesAsync`).
+* [x] **Configuración de Precisión:** Ajustar intervalos óptimos (por ejemplo, actualizar cada 5-10 metros o cada 3-5 segundos) para no agotar la batería ni saturar el servidor.
+* [x] **Buffer Local y Reintentos:** Guardar temporalmente los puntos en almacenamiento local (`AsyncStorage` o SQLite) por si el esquiador pierde cobertura en la montaña, enviándolos al recuperar conexión.
+* [ ] **Controles de Sesión en la UI:** Pantalla o botón flotante para "Iniciar Actividad", "Pausar/Reanudar" y "Finalizar Sesión".
 
 ---
 
-### Phase 3: Run Detection Algorithm (Backend Core)
-*Objective: Translate an unordered list of GPS points into separate "Runs" (descents) separated from "Lifts" (ascents).*
+### Fase 2: Ingesta y Almacenamiento en Backend
+*Objetivo: Recibir y almacenar de forma segura flujos masivos de coordenadas.*
 
-*   [x] **GPS Noise Filtering:** Apply a smoothing filter (such as a *Kalman Filter* or moving averages) to eliminate erroneous position jumps caused by signal bouncing in the mountains.
-*   [x] **Altitude and Slope Detection (Heuristics):**
-    *   **Ascent (Lift):** If the altitude trend is sustained positively over time, label the segment as `lift`.
-    *   **Descent (Run):** If the altitude trend is downward and speed exceeds a minimum threshold, label as a potential descent.
-*   [x] **Inactivity / Pause Cutoff:** If the user stops moving (speed close to 0 at a lodge or base) for more than X minutes, close the current run and start a new one when movement resumes.
-
----
-
-### Phase 4: Geospatial Enrichment & Run Matching
-*Objective: Accurately determine which ski runs the user traversed during their descent.*
-
-*   [x] **Spatial Indexing (PostGIS / GIS Engine):** Load the resort's ski trail polygons/lines (`pistesGeoJSON`) into the geospatial database.
-*   [x] **Map Matching:** Cross-reference the points of each detected run with the ski trail layer to identify which trail ID or resort matches the user's path.
-*   [x] **Final Metrics Calculation:**
-    *   Total run distance.
-    *   Maximum and average speed.
-    *   Cumulative elevation gain/loss (positive and negative).
-    *   Predominant run difficulty (based on the matched trails).
+* [x] **Endpoints de Sesión:**
+  * `POST /ski-sessions` (Inicia una nueva sesión de esquí).
+  * `POST /ski-sessions/{id}/points` (Recibe lotes de coordenadas: `[ {lat, lon, altitude, speed, timestamp}, ... ]`).
+  * `POST /ski-sessions/{id}/finish` (Cierra la sesión y activa el procesamiento en segundo plano).
+* [x] **Esquema de Base de Datos:**
+  * Tabla `ski_sessions`: ID, usuario, inicio, fin, métricas globales.
+  * Tabla `session_points`: ID, session_id, punto geográfico (tipo `GEOMETRY(Point, 4326)` o lat/lon), altitud, velocidad, timestamp.
 
 ---
 
-### Phase 5: Frontend Results Visualization
-*Objective: Display a detailed summary of the day and each individual run to the user.*
+### Fase 3: Algoritmo de Detección de Bajadas (Núcleo del Backend)
+*Objetivo: Transformar una lista desordenada de puntos GPS en "Bajadas" (descensos) separadas de "Remontes" (ascensos).*
 
-*   [x] **Session History Screen:** Chronologically grouped list of runs (Run 1, Run 2, etc.).
-*   [x] **Map Trace Rendering:** Render the exact path line of the run over your `InteractiveSkiMap` component with distinct or highlighted colors.
-*   [x] **Statistics Panel:** Show speed vs. altitude graphs for each selected run.
+* [x] **Filtrado de Ruido GPS:** Aplicar un filtro de suavizado (como un *Filtro de Kalman* o medias móviles) para eliminar saltos erróneos de posición provocados por el rebote de señal en la montaña.
+* [x] **Detección de Altitud y Pendiente (Heurística):**
+  * **Ascenso (Remonte):** Si la tendencia de altitud es sostenidamente positiva en el tiempo, clasificar el segmento como `lift`.
+  * **Descenso (Bajada):** Si la tendencia de altitud es descendente y la velocidad supera un umbral mínimo, clasificar como posible bajada.
+* [x] **Corte por Inactividad / Paradas:** Si el usuario se detiene (velocidad cercana a 0 en una cafetería o base) durante más de X minutos, cerrar la bajada actual e iniciar una nueva al reanudar el movimiento.
+
+---
+
+### Fase 4: Enriquecimiento Geoespacial y Matching de Pistas
+*Objetivo: Determinar con precisión qué pistas de esquí recorrió el usuario durante su descenso.*
+
+* [x] **Indexación Espacial (PostGIS / Motor GIS):** Cargar los polígonos/líneas de las pistas de la estación (`pistesGeoJSON`) en la base de datos geoespacial.
+* [x] **Map Matching:** Cruzar los puntos de cada bajada detectada con la capa de pistas para identificar qué ID de pista o estación coincide con la trayectoria del usuario.
+* [x] **Cálculo de Métricas Finales:**
+  * Distancia total recorrida.
+  * Velocidad máxima y media.
+  * Desnivel acumulado (positivo y negativo).
+  * Dificultad predominante de la bajada (según las pistas emparejadas).
+
+---
+
+### Fase 5: Visualización de Resultados en Frontend
+*Objetivo: Mostrar al usuario un resumen detallado del día y de cada bajada individual.*
+
+* [x] **Pantalla de Historial de Sesiones:** Lista agrupada cronológicamente de bajadas (Bajada 1, Bajada 2, etc.).
+* [x] **Renderizado del Track en el Mapa:** Dibujar la línea exacta de la trayectoria sobre el componente `InteractiveSkiMap` con colores destacados o diferenciados.
+* [x] **Panel de Estadísticas:** Mostrar gráficos de velocidad vs. altitud para cada bajada seleccionada.

@@ -45,6 +45,9 @@ build-web: ## Build web production
 ota-publish: ## Export and publish Expo OTA update to server
 	./scripts/publish-ota.sh $(ARGS)
 
+apk-publish: ## Publish native Android APK release to server
+	./scripts/publish-apk.sh $(ARGS)
+
 # ============================================================================
 # Database
 # ============================================================================

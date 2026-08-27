@@ -17,11 +17,16 @@ interface FavoritesContextType {
 const FavoritesContext = createContext<FavoritesContextType | undefined>(undefined);
 
 export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { token } = useAuth();
+  const { token, isLoading: isAuthLoading } = useAuth();
   const [favorites, setFavorites] = useState<Resort[]>([]);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
 
   const fetchFavorites = useCallback(async () => {
+    if (isAuthLoading) {
+      setIsLoadingFavorites(true);
+      return;
+    }
+
     if (!token) {
       setFavorites([]);
       setIsLoadingFavorites(false);
@@ -39,7 +44,7 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       setIsLoadingFavorites(false);
     }
-  }, [token]);
+  }, [token, isAuthLoading]);
 
   useEffect(() => {
     fetchFavorites();

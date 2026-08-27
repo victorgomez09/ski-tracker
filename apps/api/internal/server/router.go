@@ -73,7 +73,16 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			}
 			middleware.Auth(deps.JWTManager)(c)
 		}
-		apiV1.POST("/ota/publish", otaPublishAuth, otaHandler.Publish)
+		// Native App Release routes (for self-hosted APK updates)
+		appReleaseHandler := v1.NewAppReleaseHandler(deps.Services.AppRelease, deps.APIPublicURL)
+		apiV1.GET("/app/check-update", appReleaseHandler.CheckUpdate)
+		apiV1.GET("/app/latest", appReleaseHandler.GetLatest)
+		apiV1.GET("/app/download/:platform/latest", appReleaseHandler.DownloadLatest)
+		apiV1.POST("/app/publish", otaPublishAuth, appReleaseHandler.Publish)
+
+		// Ski session photos route (public: images and browser downloads do not send Authorization headers)
+		skiSessionHandler := v1.NewSkiSessionHandler(deps.Services.SkiSession, deps.Store)
+		apiV1.GET("/ski-sessions/photos/*path", skiSessionHandler.GetPhoto)
 
 		protected := apiV1.Group("")
 		protected.Use(middleware.Auth(deps.JWTManager))
@@ -90,14 +99,12 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.GET("/resorts/closeness", skiResortHandler.GetByCloseness)
 
 			// Ski session routes
-			skiSessionHandler := v1.NewSkiSessionHandler(deps.Services.SkiSession, deps.Store)
 			protected.GET("/ski-sessions", skiSessionHandler.List)
 			protected.GET("/ski-sessions/by-resort", skiSessionHandler.ListByResort)
 			protected.GET("/ski-sessions/:id", skiSessionHandler.GetSession)
 			protected.POST("/ski-sessions", skiSessionHandler.StartSession)
 			protected.POST("/ski-sessions/:id/points", skiSessionHandler.AddPoints)
 			protected.POST("/ski-sessions/:id/finish", skiSessionHandler.FinishSession)
-			protected.GET("/ski-sessions/photos/*path", skiSessionHandler.GetPhoto)
 
 			// User routes
 			userHandler := v1.NewUserHandler(deps.Services.User, deps.Store)

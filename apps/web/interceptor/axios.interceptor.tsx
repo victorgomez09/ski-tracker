@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 
@@ -26,6 +27,10 @@ export function AxiosInterceptor({ children }: { children: React.ReactNode }) {
     const interceptor = api.interceptors.response.use(
       (response) => response,
       async (error) => {
+        if (axios.isCancel(error) || error?.code === 'ERR_CANCELED' || error?.message === 'canceled') {
+          return Promise.reject(error);
+        }
+
         console.log('🔴 [AxiosInterceptor] Error detectado:', {
           message: error.message,
           status: error.response?.status,

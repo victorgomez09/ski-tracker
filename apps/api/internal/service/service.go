@@ -17,6 +17,7 @@ type Container struct {
 	SkiSession *SkiSessionService
 	Weather    *WeatherService
 	OTA        *OTAService
+	AppRelease *AppReleaseService
 }
 
 // NewContainer creates all services with shared dependencies.
@@ -38,5 +39,6 @@ func NewContainer(
 		SkiSession: NewSkiSessionService(s, jwtManager, logger, minioClient),
 		Weather:    NewWeatherService(logger),
 		OTA:        NewOTAService(minioClient, otaBucket, apiPublicURL, logger),
+		AppRelease: NewAppReleaseService(minioClient, otaBucket, apiPublicURL, logger),
 	}
 }
