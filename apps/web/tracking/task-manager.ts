@@ -23,7 +23,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
     try {
       // 1. Abrir base de datos y leer AsyncStorage UNA sola vez fuera del bucle
       const resortId = await AsyncStorage.getItem('ACTIVE_RESORT_ID');
-      const database = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
+      const database = await SQLite.openDatabaseAsync('ski_tracker.db');
 
       for (const location of locations) {
         console.log('GPS guardado en SQLite:', location.coords.latitude, location.coords.longitude);

@@ -1,4 +1,6 @@
 {
+  "offline_warning_title": "Mountain Warning",
+  "offline_warning_message": "Network coverage may fail on the slopes. Do you want to download the map of {{resortName}} for offline use?",
   "loading_slopes": "Loading slopes and map...",
   "session_analyser": "Session Analyser",
   "date": "Date",
@@ -231,10 +233,15 @@
   "failed_fetch_resorts": "Error searching for ski resorts.",
   "failed_fetch_sessions": "Error loading resort sessions or weather.",
   "failed_load_session": "Could not load session on map.",
+  "location_permission_required": "Location permissions are required to center the map on your position and record the session.",
+  "location_disabled_error": "Could not get your current location. Please check that GPS is enabled.",
   "ios": {
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Ski Tracker to use your location to record your runs.",
     "NSLocationWhenInUseUsageDescription": "Allow Ski Tracker to use your location to record your runs.",
     "NSCameraUsageDescription": "Allow Ski Tracker to access your camera to take photos.",
     "NSMicrophoneUsageDescription": "Allow Ski Tracker to access your microphone to record audio."
-  }
+  },
+  "gps_required": "GPS Required",
+  "gps_required_desc": "You must enable device location and grant permissions to the app in order to use the Tracker.",
+  "check_again": "Check Again"
 }

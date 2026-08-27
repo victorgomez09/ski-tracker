@@ -4,19 +4,35 @@ import {
     GeoJSONSource as NativeGeoJSONSource,
     Layer as NativeLayer,
     Map as NativeMap,
+    UserLocation,
     type CameraRef,
 } from '@maplibre/maplibre-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
+import { useIsFocused } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import * as TaskManager from 'expo-task-manager';
-import { Activity, Camera as CameraIcon, Download, Pause, Play, Square, Upload } from 'lucide-react-native';
+import * as Location from 'expo-location';
+import { Activity, Camera as CameraIcon, Download, Pause, Play, Square, Upload, Share2, AlertTriangle } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View, Alert, Share } from 'react-native';
+
+const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in km
+};
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
+import { CoverageWarningModal } from 'components/tracking/coverage-warning-modal';
 import { API_BASE_URL } from 'constants/constants';
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from 'constants/theme';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
@@ -100,6 +116,12 @@ export default function InteractiveSkiMapNative() {
     const [isLoading, setIsLoading] = useState(false);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
     const [isPublic, setIsPublic] = useState(true);
+    const [hasShownCoverageWarning, setHasShownCoverageWarning] = useState(false);
+    const [showCoverageWarningModal, setShowCoverageWarningModal] = useState(false);
+    const [locationReady, setLocationReady] = useState(false);
+    const [checkingLocation, setCheckingLocation] = useState(true);
+    
+    const isFocused = useIsFocused();
 
     const initialLat = searchParams.lat ? parseFloat(searchParams.lat as string) : DEFAULT_LAT;
     const initialLng = searchParams.lng ? parseFloat(searchParams.lng as string) : DEFAULT_LON;
@@ -143,6 +165,8 @@ export default function InteractiveSkiMapNative() {
                 if (location) {
                     latitude = location.coords.latitude;
                     longitude = location.coords.longitude;
+                } else {
+                    showToast(t('location_permission_required'), 'info');
                 }
             }
 
@@ -165,6 +189,21 @@ export default function InteractiveSkiMapNative() {
                 }
                 latitude = DEFAULT_LAT;
                 longitude = DEFAULT_LON;
+            } else if (latitude !== undefined && longitude !== undefined) {
+                // If we got real coordinates, move camera to them
+                const targetLat = latitude;
+                const targetLon = longitude;
+                setViewState(prev => ({
+                    ...prev,
+                    latitude: targetLat,
+                    longitude: targetLon,
+                    zoom: 13
+                }));
+                cameraRef.current?.easeTo({
+                    center: [targetLon, targetLat],
+                    zoom: 13,
+                    duration: 400,
+                });
             }
 
             const request = await api.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
@@ -194,7 +233,7 @@ export default function InteractiveSkiMapNative() {
         } finally {
             isFetchingRef.current = false;
         }
-    }, [searchParams.lat, searchParams.lng]);
+    }, [searchParams.lat, searchParams.lng, showToast, t]);
 
     useEffect(() => {
         const lastInternal = lastInternalParamsRef.current;
@@ -238,6 +277,58 @@ export default function InteractiveSkiMapNative() {
         fetchResortDetails();
     }, []);
 
+    // --- Enforce Location Services ---
+    const hasCenteredMapRef = useRef(false);
+
+    const checkLocationServices = useCallback(async () => {
+        try {
+            const enabled = await Location.hasServicesEnabledAsync();
+            const { status } = await Location.getForegroundPermissionsAsync();
+            
+            if (enabled && status === 'granted') {
+                setLocationReady(true);
+                // Center map on user
+                if (!hasCenteredMapRef.current) {
+                    const location = await getCurrentLocation();
+                    if (location) {
+                        const { latitude, longitude } = location.coords;
+                        setViewState(prev => ({ ...prev, latitude, longitude, zoom: 14 }));
+                        try {
+                            cameraRef.current?.easeTo({ center: [longitude, latitude], zoom: 14, duration: 1000 });
+                            hasCenteredMapRef.current = true;
+                        } catch (e) {}
+                    }
+                }
+            } else {
+                setLocationReady(false);
+                if (status !== 'granted') {
+                    await Location.requestForegroundPermissionsAsync();
+                }
+            }
+        } catch (e) {
+            setLocationReady(false);
+        } finally {
+            setCheckingLocation(false);
+        }
+    }, [getCurrentLocation]);
+
+    useEffect(() => {
+        checkLocationServices();
+        const interval = setInterval(checkLocationServices, 3000);
+        return () => clearInterval(interval);
+    }, [checkLocationServices]);
+
+    // --- Coverage warning for offline maps ---
+    useEffect(() => {
+        if (resort?.ID && resort?.Name && !hasShownCoverageWarning) {
+            const isDownloaded = packs.some(p => p.name === resort.Name);
+            if (!isDownloaded) {
+                setShowCoverageWarningModal(true);
+                setHasShownCoverageWarning(true);
+            }
+        }
+    }, [resort, hasShownCoverageWarning, packs]);
+
     // --- Polling to refresh track points in real-time while recording ---
     useEffect(() => {
         let interval: any;
@@ -253,7 +344,7 @@ export default function InteractiveSkiMapNative() {
 
     const setupDatabaseAndCheckStatus = async () => {
         try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
+            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
             await initDB(db);
 
             if (Platform.OS !== 'web') {
@@ -268,7 +359,7 @@ export default function InteractiveSkiMapNative() {
 
     const loadTrackPoints = async () => {
         try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
+            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
             const points = await getAllPoints(db);
             setTrackPoints(points);
             setHasTrackData(points.length > 0);
@@ -300,7 +391,7 @@ export default function InteractiveSkiMapNative() {
                 }
             }
 
-            const resortIdToUse = resort.ID || "sierra-nevada";
+            const resortIdToUse = resort.ID || "";
             try {
                 const started = await startTracking(resortIdToUse, trackingTime);
                 if (!started) {
@@ -329,7 +420,7 @@ export default function InteractiveSkiMapNative() {
             if (cachedTime) {
                 trackingTime = parseInt(cachedTime, 10);
             }
-            const resortIdToUse = resort.ID || "sierra-nevada";
+            const resortIdToUse = resort.ID || "";
             try {
                 const started = await startTracking(resortIdToUse, trackingTime);
                 if (started) {
@@ -350,7 +441,7 @@ export default function InteractiveSkiMapNative() {
     const handleUploadTrack = async () => {
         setIsLoading(true);
         try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
+            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
             const points = await getAllPoints(db);
             const photos = await getAllPhotos(db);
 
@@ -361,7 +452,7 @@ export default function InteractiveSkiMapNative() {
             }
 
             const formData = new FormData();
-            const resortIdToUse = resort.ID || points[0].resort_id || "sierra-nevada";
+            const resortIdToUse = resort.ID || points[0].resort_id || "";
 
             // 1. Start session
             const startResponse = await api.post(`${API_BASE_URL}/ski-sessions`, {
@@ -454,56 +545,49 @@ export default function InteractiveSkiMapNative() {
         sourceID: 'pistes-source',
         type: 'symbol',
         layout: {
-            'symbol-placement': 'line-center',
-            'symbol-spacing': 220,
+            'symbol-placement': 'line',
+            'symbol-spacing': 250,
             'text-field': ['get', 'name'],
-            'text-size': 9.5,
-            'text-offset': [0, -0],
-            'text-allow-overlap': false,
-            'text-ignore-placement': false,
-            'text-optional': true,
-            'text-rotation-alignment': 'map',
-            'text-max-angle': 30
+            'text-size': 11,
+            'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+            'text-letter-spacing': 0.05,
+            'text-max-angle': 30,
+            'text-keep-upright': false
         },
         paint: {
-            'text-color': [
-                'match', ['get', 'difficulty'],
-                'novice', '#81c784',
-                'easy', '#90caf9',
-                'intermediate', '#ef9a9a',
-                'advanced', '#757575',
-                '#cccccc'
-            ],
+            'text-color': '#000000',
             'text-halo-color': '#ffffff',
-            'text-halo-width': 1
+            'text-halo-width': 1.5,
+            'text-halo-blur': 0.5
         }
     };
 
     const pisteDirectionStyle: any = {
-        id: 'piste-directions',
+        id: 'piste-direction-arrows',
         sourceID: 'pistes-source',
         type: 'symbol',
+        minZoom: 13,
         layout: {
             'symbol-placement': 'line',
-            'symbol-spacing': 150,
-            'text-field': '>',
-            'text-size': 12,
-            'text-rotation-alignment': 'map',
+            'symbol-spacing': 80,
+            'text-field': '▶',
+            'text-size': 10,
+            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
             'text-keep-upright': false,
-            'text-allow-overlap': false,
-            'text-ignore-placement': false
+            'text-allow-overlap': true,
+            'text-ignore-placement': true
         },
         paint: {
             'text-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#81c784',
-                'easy', '#90caf9',
-                'intermediate', '#ef9a9a',
-                'advanced', '#757575',
-                '#cccccc'
+                'novice', '#2e7d32',
+                'easy', '#1565c0',
+                'intermediate', '#c62828',
+                'advanced', '#212121',
+                '#424242'
             ],
             'text-halo-color': '#ffffff',
-            'text-halo-width': 1.5
+            'text-halo-width': 1
         }
     };
 
@@ -513,19 +597,14 @@ export default function InteractiveSkiMapNative() {
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': [
-                'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], '#2557C7',
-                ['==', ['get', 'id'], hoveredFeatureId || ''], '#3B76F6',
-                '#8e44ad'
-            ],
+            'line-color': '#424242',
+            'line-dasharray': [2, 2],
             'line-width': [
                 'case',
-                ['==', ['get', 'id'], selectedFeature?.ID || ''], 6,
+                ['==', ['get', 'id'], selectedFeature?.ID || ''], 5,
                 ['==', ['get', 'id'], hoveredFeatureId || ''], 5,
                 3
-            ],
-            'line-dasharray': [2, 2]
+            ]
         }
     };
 
@@ -534,62 +613,55 @@ export default function InteractiveSkiMapNative() {
         sourceID: 'lifts-source',
         type: 'symbol',
         layout: {
-            'symbol-placement': 'line-center',
-            'symbol-spacing': 220,
+            'symbol-placement': 'line',
+            'symbol-spacing': 300,
             'text-field': ['get', 'name'],
-            'text-size': 9.5,
-            'text-offset': [0, -0],
-            'text-allow-overlap': false,
-            'text-ignore-placement': false,
-            'text-optional': true,
-            'text-rotation-alignment': 'map',
+            'text-size': 10,
+            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            'text-letter-spacing': 0.05,
             'text-max-angle': 30
         },
         paint: {
-            'text-color': '#8e44ad',
+            'text-color': '#424242',
             'text-halo-color': '#ffffff',
-            'text-halo-width': 2
+            'text-halo-width': 1.5
         }
     };
 
     const trackLineStyle: any = {
-        id: 'track-line',
+        id: 'user-track-line',
         sourceID: 'track-source',
         type: 'line',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-            'line-color': '#8e44ad',
-            'line-width': 5
+            'line-color': '#e11d48',
+            'line-width': 5,
+            'line-opacity': 0.8
         }
     };
 
     const trackDirectionStyle: any = {
-        id: 'track-arrows',
+        id: 'track-direction-arrow',
         sourceID: 'track-direction-source',
         type: 'symbol',
         layout: {
-            'symbol-placement': 'point',
-            'text-field': '>>',
-            'text-size': 11,
-            'text-rotation-alignment': 'map',
+            'text-field': '▶',
+            'text-size': 14,
             'text-rotate': ['get', 'rotation'],
-            'text-anchor': 'center',
+            'text-rotation-alignment': 'map',
             'text-allow-overlap': true,
-            'text-ignore-placement': true,
-            'text-offset': [0, -0.25]
+            'text-ignore-placement': true
         },
         paint: {
-            'text-color': '#8e44ad',
+            'text-color': '#e11d48',
             'text-halo-color': '#ffffff',
-            'text-halo-width': 1.2,
-            'text-opacity': 0.95
+            'text-halo-width': 1.5
         }
     };
 
+    // --- GeoJSON sources memoization ---
     const pistesGeoJSON = useMemo(() => {
-        if (!resort || !resort.pistes || !Array.isArray(resort.pistes)) {
-            return { type: 'FeatureCollection' as const, features: [] };
-        }
+        if (!resort || !resort.pistes) return { type: 'FeatureCollection' as const, features: [] };
         const features = resort.pistes.map(piste => {
             const baseGeom = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
             if (!baseGeom) return null;
@@ -600,7 +672,7 @@ export default function InteractiveSkiMapNative() {
                 properties: {
                     id: piste.ID,
                     resortId: resort.ID,
-                    name: piste.Name || `Piste #${piste.ID.slice(0, 4)}`,
+                    name: piste.Name || 'Piste',
                     difficulty: piste.Difficulty?.toLowerCase() || 'novice',
                     pisteType: piste.PisteType?.toLowerCase() || 'downhill',
                     grooming: piste.Grooming?.toLowerCase() || 'classic'
@@ -608,31 +680,94 @@ export default function InteractiveSkiMapNative() {
                 geometry: geom
             };
         }).filter((f): f is NonNullable<typeof f> => Boolean(f));
-
         return { type: 'FeatureCollection' as const, features: features as any };
     }, [resort]);
 
     const liftsGeoJSON = useMemo(() => {
-        if (!resort || !resort.lifts || !Array.isArray(resort.lifts)) {
-            return { type: 'FeatureCollection' as const, features: [] };
-        }
-        const features = resort.lifts.flatMap(lift => {
+        if (!resort || !resort.lifts) return { type: 'FeatureCollection' as const, features: [] };
+        const features = resort.lifts.map(lift => {
             const geometry = normalizeGeoJSONLine(lift.GeometryGeoJSON) || normalizeGeoJSONLine(lift.Waypoints);
-            if (!geometry) return [];
-            return [{
+            if (!geometry) return null;
+            return {
                 type: 'Feature' as const,
                 properties: {
                     id: lift.ID,
                     resortId: resort.ID,
-                    name: lift.Name || `Lift #${lift.ID.slice(0, 4)}`,
+                    name: lift.Name || 'Lift',
                     liftType: lift.LiftType?.toLowerCase() || 'chair_lift'
                 },
                 geometry
-            }];
-        });
-
+            };
+        }).filter((f): f is NonNullable<typeof f> => Boolean(f));
         return { type: 'FeatureCollection' as const, features: features as any };
     }, [resort]);
+
+    const handleSOS = () => {
+        if (viewState.latitude && viewState.longitude) {
+            const url = `https://www.google.com/maps/search/?api=1&query=${viewState.latitude},${viewState.longitude}`;
+            Share.share({
+                message: t('sos_message', '¡Emergencia / SOS! Ésta es mi ubicación actual en la montaña: {{url}}', { url })
+            });
+        } else {
+            showToast(t('no_location', 'No se ha podido obtener la ubicación para enviar.'));
+        }
+    };
+
+    const liveStats = useMemo(() => {
+        if (!trackPoints || trackPoints.length === 0) return null;
+        const latest = trackPoints[trackPoints.length - 1];
+        const first = trackPoints[0];
+        const durationSeconds = (latest.timestamp - first.timestamp) / 1000;
+        
+        let totalDistance = 0;
+        let maxSpeed = 0;
+        for (let i = 1; i < trackPoints.length; i++) {
+            const prev = trackPoints[i - 1];
+            const curr = trackPoints[i];
+            totalDistance += getDistanceFromLatLonInKm(prev.lat, prev.lon, curr.lat, curr.lon);
+            if (curr.speed > maxSpeed) maxSpeed = curr.speed;
+        }
+
+        return {
+            currentSpeed: latest.speed * 3.6, // m/s to km/h
+            maxSpeed: maxSpeed * 3.6,
+            altitude: latest.alt,
+            distance: totalDistance, // in km
+            duration: durationSeconds
+        };
+    }, [trackPoints]);
+
+    const formatDuration = (seconds: number) => {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        if (h > 0) return `${h}h ${m}m`;
+        return `${m}m ${s}s`;
+    };
+
+    const renderLiveStats = () => {
+        if (!isTracking || !liveStats) return null;
+        return (
+            <View style={styles.liveStatsContainer}>
+                <View style={styles.statBox}>
+                    <Text style={styles.statValue}>{liveStats.currentSpeed.toFixed(1)} <Text style={styles.statUnit}>km/h</Text></Text>
+                    <Text style={styles.statLabel}>{t('speed', 'Speed')}</Text>
+                </View>
+                <View style={styles.statBox}>
+                    <Text style={styles.statValue}>{liveStats.altitude.toFixed(0)} <Text style={styles.statUnit}>m</Text></Text>
+                    <Text style={styles.statLabel}>{t('altitude', 'Alt')}</Text>
+                </View>
+                <View style={styles.statBox}>
+                    <Text style={styles.statValue}>{liveStats.distance.toFixed(2)} <Text style={styles.statUnit}>km</Text></Text>
+                    <Text style={styles.statLabel}>{t('distance', 'Dist')}</Text>
+                </View>
+                <View style={styles.statBox}>
+                    <Text style={styles.statValue}>{formatDuration(liveStats.duration)}</Text>
+                    <Text style={styles.statLabel}>{t('duration', 'Time')}</Text>
+                </View>
+            </View>
+        );
+    };
 
     const trackGeoJSON = useMemo(() => {
         if (trackPoints.length === 0) return { type: 'FeatureCollection' as const, features: [] };
@@ -726,6 +861,10 @@ export default function InteractiveSkiMapNative() {
         downloadRegion(customName, bounds, 10, 16);
     };
 
+    if (!isFocused) {
+        return <View style={[styles.container, { backgroundColor: colors.background }]} />;
+    }
+
     return (
         <View style={styles.container}>
             {takePictureMode && (
@@ -734,7 +873,7 @@ export default function InteractiveSkiMapNative() {
                         onClose={() => setTakePictureMode(false)} 
                         onSavePhoto={async (uri) => {
                             try {
-                                const db = await SQLite.openDatabaseAsync('ski_tracker.db', {useNewConnection: true});
+                                const db = await SQLite.openDatabaseAsync('ski_tracker.db');
                                 await savePhotoToLocalDB(uri, db);
                             } catch (e) {
                                 console.error("Error saving photo locally:", e);
@@ -744,28 +883,90 @@ export default function InteractiveSkiMapNative() {
                 </View>
             )}
 
+            <NativeMap
+                style={{ flex: 1 }}
+                mapStyle={mapStyleUrl}
+                onRegionDidChange={handleNativeRegionDidChange}
+                attribution={false}
+                logo={false}
+                androidView="texture"
+            >
+                <UserLocation heading={true} />
+                <NativeCamera
+                    ref={cameraRef}
+                    minZoom={10}
+                    maxZoom={17}
+                    initialViewState={{
+                        center: [firstViewStateRef.current.longitude, firstViewStateRef.current.latitude],
+                        zoom: firstViewStateRef.current.zoom,
+                    }}
+                />
+
+                {viewState.zoom >= 10 && (
+                    <>
+                        {resort && resort.pistes && resort.pistes.length > 0 && (
+                            <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                                <NativeLayer {...pisteLineStyle} />
+                                <NativeLayer {...pisteLabelStyle} />
+                                <NativeLayer {...pisteDirectionStyle} />
+                            </NativeGeoJSONSource>
+                        )}
+
+                        {resort && resort.lifts && resort.lifts.length > 0 && (
+                            <NativeGeoJSONSource id="lifts-source" data={liftsGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                                <NativeLayer {...liftLineStyle} />
+                                <NativeLayer {...liftLabelStyle} />
+                            </NativeGeoJSONSource>
+                        )}
+
+                        {trackPoints.length > 0 && (
+                            <>
+                                <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
+                                    <NativeLayer {...trackLineStyle} />
+                                </NativeGeoJSONSource>
+                                {trackPoints.length > 1 && (
+                                    <NativeGeoJSONSource id="track-direction-source" data={trackDirectionGeoJSON}>
+                                        <NativeLayer {...trackDirectionStyle} />
+                                    </NativeGeoJSONSource>
+                                )}
+                            </>
+                        )}
+                    </>
+                )}
+            </NativeMap>
+
             {!takePictureMode && (
                 <>
+                    {renderLiveStats()}
+                    
                     {selectedFeature && (
                         <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
                     )}
 
                     <View style={styles.floatingControls}>
                         {isTracking && (
-                            <TouchableOpacity
-                                style={styles.cameraButton}
-                                onPress={() => setTakePictureMode(true)}
-                            >
-                                <CameraIcon size={20} color={colors.textOnPrimary} />
-                            </TouchableOpacity>
+                            <>
+                                <TouchableOpacity
+                                    style={[styles.cameraButton, { backgroundColor: '#e11d48' }]}
+                                    onPress={handleSOS}
+                                >
+                                    <AlertTriangle size={20} color={colors.textOnPrimary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.cameraButton, { marginTop: 10 }]}
+                                    onPress={() => setTakePictureMode(true)}
+                                >
+                                    <CameraIcon size={20} color={colors.textOnPrimary} />
+                                </TouchableOpacity>
+                            </>
                         )}
 
-                        {isTracking && !hasTrackData && (
+                        {!hasTrackData && (
                             <TouchableOpacity
                                 style={[styles.trackingButton, isTracking ? styles.trackingButtonActive : styles.trackingButtonInactive]}
                                 onPress={handleToggleTracking}
                             >
-                                {isTracking ? <Square size={20} color={colors.textOnPrimary} /> : <Play size={20} color={colors.textOnPrimary} />}
+                                {isTracking ? <Square size={20} color={colors.textOnPrimary} /> : <Play size={20} color={colors.primary} />}
                             </TouchableOpacity>
                         )}
 
@@ -778,7 +979,7 @@ export default function InteractiveSkiMapNative() {
                             </TouchableOpacity>
                         )}
 
-                        {isTracking && !hasTrackData && (
+                        {!hasTrackData && (
                             <TouchableOpacity
                                 onPress={() => setShowOfflineModal(true)}
                                 style={styles.offlineButton}
@@ -812,7 +1013,7 @@ export default function InteractiveSkiMapNative() {
                                         <Text style={styles.panelTitle}>{t('session_recorded')}</Text>
                                     </View>
                                     <Text style={styles.panelSubtitle}>
-                                        {t('points_recorded', { count: trackPoints.length, resortName: resort?.Name || "Sierra Nevada" })}
+                                        {t('points_recorded', { count: trackPoints.length, resortName: resort?.Name || "" })}
                                     </Text>
                                 </View>
 
@@ -841,57 +1042,38 @@ export default function InteractiveSkiMapNative() {
                             </View>
                         )}
                     </View>
-
-                    <NativeMap
-                        style={{ flex: 1 }}
-                        mapStyle={mapStyleUrl}
-                        onRegionDidChange={handleNativeRegionDidChange}
-                        attribution={false}
-                        logo={false}
-                    >
-                        <NativeCamera
-                            ref={cameraRef}
-                            minZoom={10}
-                            maxZoom={17}
-                            initialViewState={{
-                                center: [firstViewStateRef.current.longitude, firstViewStateRef.current.latitude],
-                                zoom: firstViewStateRef.current.zoom,
-                            }}
-                        />
-
-                        {viewState.zoom >= 10 && (
-                            <>
-                                {resort && resort.pistes && resort.pistes.length > 0 && (
-                                    <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-                                        <NativeLayer {...pisteLineStyle} />
-                                        <NativeLayer {...pisteLabelStyle} />
-                                        <NativeLayer {...pisteDirectionStyle} />
-                                    </NativeGeoJSONSource>
-                                )}
-
-                                {resort && resort.lifts && resort.lifts.length > 0 && (
-                                    <NativeGeoJSONSource id="lifts-source" data={liftsGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-                                        <NativeLayer {...liftLineStyle} />
-                                        <NativeLayer {...liftLabelStyle} />
-                                    </NativeGeoJSONSource>
-                                )}
-
-                                {trackPoints.length > 0 && (
-                                    <>
-                                        <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
-                                            <NativeLayer {...trackLineStyle} />
-                                        </NativeGeoJSONSource>
-                                        {trackPoints.length > 1 && (
-                                            <NativeGeoJSONSource id="track-direction-source" data={trackDirectionGeoJSON}>
-                                                <NativeLayer {...trackDirectionStyle} />
-                                            </NativeGeoJSONSource>
-                                        )}
-                                    </>
-                                )}
-                            </>
-                        )}
-                    </NativeMap>
                 </>
+            )}
+
+            {showCoverageWarningModal && resort?.Name && (
+                <CoverageWarningModal
+                    resortName={resort.Name}
+                    onDismiss={() => setShowCoverageWarningModal(false)}
+                    onDownload={() => {
+                        setShowCoverageWarningModal(false);
+                        setShowOfflineModal(true);
+                    }}
+                />
+            )}
+
+            {!locationReady && !checkingLocation && (
+                <View style={[styles.locationOverlay, { backgroundColor: colors.background }]}>
+                    <AlertTriangle size={64} color={colors.warning} style={{ marginBottom: SPACING.lg }} />
+                    <Text style={[styles.locationOverlayTitle, { color: colors.textPrimary }]}>
+                        {t('gps_required', 'GPS Required')}
+                    </Text>
+                    <Text style={[styles.locationOverlayText, { color: colors.textSecondary }]}>
+                        {t('gps_required_desc', 'You must enable device location and grant permissions to the app in order to use the Tracker.')}
+                    </Text>
+                    <TouchableOpacity
+                        style={[styles.locationOverlayButton, { backgroundColor: colors.primary }]}
+                        onPress={checkLocationServices}
+                    >
+                        <Text style={[styles.locationOverlayButtonText, { color: colors.textOnPrimary }]}>
+                            {t('check_again', 'Check Again')}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
             )}
         </View>
     );
@@ -1053,5 +1235,67 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         color: colors.textOnPrimary,
         fontWeight: '700',
         fontSize: 12,
+    },
+    liveStatsContainer: {
+        position: 'absolute',
+        top: 60,
+        left: SPACING.md,
+        right: SPACING.md,
+        backgroundColor: colors.surface,
+        borderRadius: BORDER_RADIUS.lg,
+        padding: SPACING.md,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        ...SHADOWS.md,
+    },
+    statBox: {
+        alignItems: 'center',
+    },
+    statValue: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+    },
+    statUnit: {
+        fontSize: 10,
+        color: colors.textSecondary,
+    },
+    statLabel: {
+        fontSize: 10,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    locationOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: SPACING.xl,
+        zIndex: 9999,
+    },
+    locationOverlayTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        marginBottom: SPACING.md,
+        textAlign: 'center',
+    },
+    locationOverlayText: {
+        fontSize: 16,
+        textAlign: 'center',
+        marginBottom: SPACING.xl,
+        lineHeight: 24,
+    },
+    locationOverlayButton: {
+        paddingVertical: SPACING.md,
+        paddingHorizontal: SPACING.xl,
+        borderRadius: BORDER_RADIUS.md,
+        ...SHADOWS.md,
+    },
+    locationOverlayButtonText: {
+        fontSize: 16,
+        fontWeight: 'bold',
     },
 });

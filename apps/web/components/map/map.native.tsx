@@ -1089,8 +1089,90 @@ export default function InteractiveSkiMapNative() {
 
     return (
         <View style={styles.container}>
+            <NativeMap
+                style={styles.flex1}
+                mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+                onRegionDidChange={handleNativeRegionDidChange}
+                onPress={handleNativeMapPress}
+                attribution={false}
+                logo={false}
+            >
+                <NativeCamera
+                    ref={cameraRef}
+                    maxZoom={16}
+                    initialViewState={{
+                        zoom: firstViewStateRef.current.zoom,
+                        center: [firstViewStateRef.current.longitude, firstViewStateRef.current.latitude],
+                    }}
+                />
+                {resorts.map((resort) => (
+                    <NativeMarker
+                        key={resort.ID}
+                        id={resort.ID}
+                        lngLat={[resort.Longitude, resort.Latitude]}
+                        onPress={() => setSelectedResort(resort)}
+                    >
+                        <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => setSelectedResort(resort)}
+                            style={styles.markerContainer}
+                        >
+                            {(viewState.zoom >= 10 || hoveredResortId === resort.ID || selectedResort?.ID === resort.ID) && (
+                                <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: 'bold',
+                                    color: colors.primary,
+                                    textShadowColor: '#ffffff',
+                                    textShadowOffset: { width: 0, height: 0 },
+                                    textShadowRadius: 3,
+                                    marginBottom: 2
+                                }}>
+                                    {resort.Name}
+                                </Text>
+                            )}
+                            <View style={styles.markerPin}>
+                                <MapPin size={14} color="#ffffff" />
+                            </View>
+                        </TouchableOpacity>
+                    </NativeMarker>
+                ))}
+
+                {viewState.zoom >= 10 && (
+                    <>
+                        <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                            <NativeLayer {...pisteCasingStyle} />
+                            <NativeLayer {...pisteLineStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...pisteLabelStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...pisteDirectionStyle} onPress={handleNativeFeaturePress} />
+                        </NativeGeoJSONSource>
+
+                        <NativeGeoJSONSource id="lifts-source" data={liftsGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                            <NativeLayer {...liftLineStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...liftLabelStyle} onPress={handleNativeFeaturePress} />
+                        </NativeGeoJSONSource>
+
+                        {trackPoints.length > 0 && (
+                            <>
+                                <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
+                                    <NativeLayer {...trackLineStyle} />
+                                </NativeGeoJSONSource>
+                                <NativeGeoJSONSource id="track-direction-source" data={trackDirectionGeoJSON}>
+                                    <NativeLayer {...trackDirectionStyle} />
+                                </NativeGeoJSONSource>
+                                {(hoveredRun || selectedRun) && (
+                                    <NativeGeoJSONSource id="highlighted-run-source" data={highlightedRunGeoJSON}>
+                                        <NativeLayer {...highlightedRunCaseStyle} />
+                                        <NativeLayer {...highlightedRunLineStyle} />
+                                    </NativeGeoJSONSource>
+                                )}
+                            </>
+                        )}
+                    </>
+                )}
+            </NativeMap>
+
             {isLoadingResorts && (
-                <View style={styles.loadingBanner}>
+                <View style={styles.loadingBanner} pointerEvents="none">
                     <ActivityIndicator size="small" color={colors.primary} />
                     <Text style={styles.loadingBannerText}>{t('loading_slopes')}</Text>
                 </View>
@@ -1245,88 +1327,6 @@ export default function InteractiveSkiMapNative() {
                     )}
                 </View>
             )}
-
-            <NativeMap
-                style={styles.flex1}
-                mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
-                onRegionDidChange={handleNativeRegionDidChange}
-                onPress={handleNativeMapPress}
-                attribution={false}
-                logo={false}
-            >
-                <NativeCamera
-                    ref={cameraRef}
-                    maxZoom={16}
-                    initialViewState={{
-                        zoom: firstViewStateRef.current.zoom,
-                        center: [firstViewStateRef.current.longitude, firstViewStateRef.current.latitude],
-                    }}
-                />
-                {resorts.map((resort) => (
-                    <NativeMarker
-                        key={resort.ID}
-                        id={resort.ID}
-                        lngLat={[resort.Longitude, resort.Latitude]}
-                        onPress={() => setSelectedResort(resort)}
-                    >
-                        <TouchableOpacity
-                            activeOpacity={0.8}
-                            onPress={() => setSelectedResort(resort)}
-                            style={styles.markerContainer}
-                        >
-                            {(viewState.zoom >= 10 || hoveredResortId === resort.ID || selectedResort?.ID === resort.ID) && (
-                                <Text style={{
-                                    fontSize: 11,
-                                    fontWeight: 'bold',
-                                    color: colors.primary,
-                                    textShadowColor: '#ffffff',
-                                    textShadowOffset: { width: 0, height: 0 },
-                                    textShadowRadius: 3,
-                                    marginBottom: 2
-                                }}>
-                                    {resort.Name}
-                                </Text>
-                            )}
-                            <View style={styles.markerPin}>
-                                <MapPin size={14} color="#ffffff" />
-                            </View>
-                        </TouchableOpacity>
-                    </NativeMarker>
-                ))}
-
-                {viewState.zoom >= 10 && (
-                    <>
-                        <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-                            <NativeLayer {...pisteCasingStyle} />
-                            <NativeLayer {...pisteLineStyle} onPress={handleNativeFeaturePress} />
-                            <NativeLayer {...pisteLabelStyle} onPress={handleNativeFeaturePress} />
-                            <NativeLayer {...pisteDirectionStyle} onPress={handleNativeFeaturePress} />
-                        </NativeGeoJSONSource>
-
-                        <NativeGeoJSONSource id="lifts-source" data={liftsGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-                            <NativeLayer {...liftLineStyle} onPress={handleNativeFeaturePress} />
-                            <NativeLayer {...liftLabelStyle} onPress={handleNativeFeaturePress} />
-                        </NativeGeoJSONSource>
-
-                        {trackPoints.length > 0 && (
-                            <>
-                                <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
-                                    <NativeLayer {...trackLineStyle} />
-                                </NativeGeoJSONSource>
-                                <NativeGeoJSONSource id="track-direction-source" data={trackDirectionGeoJSON}>
-                                    <NativeLayer {...trackDirectionStyle} />
-                                </NativeGeoJSONSource>
-                                {(hoveredRun || selectedRun) && (
-                                    <NativeGeoJSONSource id="highlighted-run-source" data={highlightedRunGeoJSON}>
-                                        <NativeLayer {...highlightedRunCaseStyle} />
-                                        <NativeLayer {...highlightedRunLineStyle} />
-                                    </NativeGeoJSONSource>
-                                )}
-                            </>
-                        )}
-                    </>
-                )}
-            </NativeMap>
         </View>
     );
 }

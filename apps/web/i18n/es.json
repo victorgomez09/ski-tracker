@@ -1,5 +1,7 @@
 {
   "loading_slopes": "Cargando pistas y mapa...",
+  "offline_warning_title": "Atención en Montaña",
+  "offline_warning_message": "La cobertura puede fallar en las pistas. ¿Deseas descargar el mapa de {{resortName}} para usarlo sin conexión?",
   "session_analyser": "Analizador de Sesión",
   "date": "Fecha",
   "back_to_runs": "Volver a las bajadas",
@@ -231,10 +233,15 @@
   "failed_fetch_resorts": "Error al buscar estaciones de esquí.",
   "failed_fetch_sessions": "Error al cargar las sesiones o el tiempo de la estación.",
   "failed_load_session": "No se pudo cargar la sesión en el mapa.",
+  "location_permission_required": "Se requieren permisos de ubicación para centrar el mapa en tu posición y registrar la sesión.",
+  "location_disabled_error": "No se pudo obtener tu ubicación actual. Comprueba que el GPS esté activo.",
   "ios": {
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Permite que Ski Tracker use tu ubicación para registrar tus bajadas.",
     "NSLocationWhenInUseUsageDescription": "Permite que Ski Tracker use tu ubicación para registrar tus bajadas.",
     "NSCameraUsageDescription": "Permite que Ski Tracker acceda a tu cámara para tomar fotos.",
     "NSMicrophoneUsageDescription": "Permite que Ski Tracker acceda a tu micrófono para grabar audio."
-  }
+  },
+  "gps_required": "GPS Requerido",
+  "gps_required_desc": "Debes activar la ubicación del dispositivo y dar permisos a la app para poder usar el Tracker.",
+  "check_again": "Comprobar de nuevo"
 }

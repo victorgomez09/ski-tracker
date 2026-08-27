@@ -90,6 +90,7 @@ func (s *skiResortStore) GetByCloseness(ctx context.Context, latitude, longitude
 	err := s.db.NewSelect().
 		Model(&resort).
 		Where("name IS NOT NULL AND name != ? AND tags->>'status' = ?", "No name", "operating").
+		Where(distanceFormula+" <= ?", latitude, longitude, latitude, 15.0).
 		OrderExpr(distanceFormula+" ASC", latitude, longitude, latitude).
 		Limit(1).
 		Scan(ctx)
