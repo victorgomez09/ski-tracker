@@ -90,7 +90,19 @@ func (s *skiResortStore) GetByCloseness(ctx context.Context, latitude, longitude
 	err := s.db.NewSelect().
 		Model(&resort).
 		Where("name IS NOT NULL AND name != ? AND tags->>'status' = ?", "No name", "operating").
-		Where(distanceFormula+" <= ?", latitude, longitude, latitude, 15.0).
+		Where(
+			distanceFormula+` <= 5.0 OR EXISTS (
+				SELECT 1 FROM ski_pistes p 
+				WHERE p.resort_id = sr.id 
+				AND ST_DWithin(
+					ST_SetSRID(ST_GeomFromGeoJSON(p.geometry_geojson::text), 4326)::geography,
+					ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+					5000
+				)
+			)`,
+			latitude, longitude, latitude,
+			longitude, latitude,
+		).
 		OrderExpr(distanceFormula+" ASC", latitude, longitude, latitude).
 		Limit(1).
 		Scan(ctx)
