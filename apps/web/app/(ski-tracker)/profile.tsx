@@ -47,6 +47,7 @@ import type { User as UserType } from 'models/user.model';
 import appConfig from '../../app.json';
 
 const appVersion = Constants.expoConfig?.version ?? appConfig.expo.version ?? '1.0.0';
+const runtimeVersion = Constants.expoConfig?.runtimeVersion ?? appConfig.expo.runtimeVersion ?? '1.0.0';
 
 export type ProfileFormValues = {
   first_name: string;
@@ -597,6 +598,7 @@ export default function ProfileView() {
           {/* App Version */}
           <View style={styles.versionContainer}>
             <Text style={styles.versionText}>v{appVersion}</Text>
+            <Text style={styles.versionText}>vr{runtimeVersion.toString()}</Text>
           </View>
         </View>
       </ScrollView>
@@ -962,6 +964,8 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
       fontSize: 16,
     },
     versionContainer: {
+      display: 'flex',
+      flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: SPACING.xs,

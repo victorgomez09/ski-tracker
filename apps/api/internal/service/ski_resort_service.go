@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"math"
 	"strconv"
@@ -340,7 +341,7 @@ func (s *SkiResortService) GetByCloseness(ctx context.Context, latStr, lngStr st
 
 	resort, err := s.store.SkiResort().GetByCloseness(ctx, userLat, userLng)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err

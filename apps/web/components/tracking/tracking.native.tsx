@@ -211,15 +211,20 @@ export default function InteractiveSkiMapNative() {
             const request = await api.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
                 params: { lat: latitude, lon: longitude },
             });
-            if (request.status === 200 && request.data) {
-                setResort(request.data);
-                await AsyncStorage.setItem('LAST_RESORT_DETAILS', JSON.stringify(request.data));
-                if (!preventCameraMove && request.data.Latitude && request.data.Longitude) {
-                    cameraRef.current?.easeTo({
-                        center: [request.data.Longitude, request.data.Latitude],
-                        zoom: 13,
-                        duration: 400,
-                    });
+            if (request.status === 200) {
+                if (request.data) {
+                    setResort(request.data);
+                    await AsyncStorage.setItem('LAST_RESORT_DETAILS', JSON.stringify(request.data));
+                    if (!preventCameraMove && request.data.Latitude && request.data.Longitude) {
+                        cameraRef.current?.easeTo({
+                            center: [request.data.Longitude, request.data.Latitude],
+                            zoom: 13,
+                            duration: 400,
+                        });
+                    }
+                } else {
+                    setResort({} as ResortDetail);
+                    await AsyncStorage.removeItem('LAST_RESORT_DETAILS');
                 }
             }
         } catch (error) {
@@ -352,8 +357,8 @@ export default function InteractiveSkiMapNative() {
             await initDB(db);
 
             if (Platform.OS !== 'web') {
-                const registered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
-                setIsTracking(registered);
+                const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+                setIsTracking(isRunning);
             }
             await loadTrackPoints();
         } catch (e) {
