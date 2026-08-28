@@ -12,7 +12,7 @@ type SkiSession struct {
 
 	ID            uuid.UUID  `bun:"id,pk,default:gen_random_uuid()" json:"id"`
 	UserID        uuid.UUID  `bun:"user_id,notnull" json:"user_id"`
-	ResortID      string     `bun:"resort_id,notnull" json:"resort_id"`
+	ResortID      *string    `bun:"resort_id" json:"resort_id"`
 	StartTime     time.Time  `bun:"start_time,default:current_timestamp" json:"start_time"`
 	EndTime       *time.Time `bun:"end_time" json:"end_time"`
 	TotalDistance float64    `bun:"total_distance,default:0" json:"total_distance"`

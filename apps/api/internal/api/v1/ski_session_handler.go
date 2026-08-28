@@ -76,7 +76,7 @@ func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 
 	// Expect JSON body: { "resortId": "<uuid>", "isPublic": true }
 	var payload struct {
-		ResortID string `json:"resortId" binding:"required"`
+		ResortID string `json:"resortId"`
 		IsPublic *bool  `json:"isPublic"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {

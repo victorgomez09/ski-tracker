@@ -91,9 +91,13 @@ func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, 
 	if user == nil {
 		return nil, fmt.Errorf("user not found")
 	}
+	var resortIDPtr *string
+	if resortID != "" {
+		resortIDPtr = &resortID
+	}
 	session := &models.SkiSession{
 		UserID:       userID,
-		ResortID:     resortID,
+		ResortID:     resortIDPtr,
 		StartTime:    time.Now(),
 		ActivityType: user.ActivityType,
 		IsPublic:     isPublic,
