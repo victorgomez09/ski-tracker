@@ -137,7 +137,7 @@ function AppContent() {
                         <ToastProvider>
                             <AxiosInterceptor>
                                 <OtaGate>
-                                    <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+                                    <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
                                     <Slot />
                                 </OtaGate>
                             </AxiosInterceptor>
