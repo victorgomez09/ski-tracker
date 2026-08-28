@@ -1,8 +1,9 @@
 import { Lift, Piste } from 'models/ski-resort.model';
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Platform, processColor, StyleSheet } from 'react-native';
-import { X } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, ScrollView, Platform, processColor, StyleSheet, Modal, SafeAreaView } from 'react-native';
+import { X, Maximize2 } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 
 let LineChart: any = null;
@@ -280,6 +281,7 @@ export const ElevationChart: React.FC<{
 }> = ({ data, height = 160 }) => {
     const { t } = useTranslation();
     const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -291,52 +293,68 @@ export const ElevationChart: React.FC<{
         setSelectedIndex(prev => (prev === null || prev >= data.length ? Math.floor(data.length / 2) : prev));
     }, [data]);
 
+    const enterFullscreen = async () => {
+        setIsFullscreen(true);
+        if (Platform.OS !== 'web') {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        }
+    };
+
+    const exitFullscreen = async () => {
+        setIsFullscreen(false);
+        if (Platform.OS !== 'web') {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        }
+    };
+
+    // Detect screen rotation to portrait to exit fullscreen automatically
+    useEffect(() => {
+        if (!isFullscreen || Platform.OS === 'web') return;
+
+        const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
+            const orientation = event.orientationInfo.orientation;
+            if (
+                orientation === ScreenOrientation.Orientation.PORTRAIT_UP ||
+                orientation === ScreenOrientation.Orientation.PORTRAIT_DOWN
+            ) {
+                exitFullscreen();
+            }
+        });
+
+        return () => {
+            subscription.remove();
+        };
+    }, [isFullscreen]);
+
     if (!data || data.length === 0) return null;
 
     const minElev = Math.min(...data.map(d => d.elevation));
     const maxElev = Math.max(...data.map(d => d.elevation));
     const selectedDatum = selectedIndex !== null ? data[selectedIndex] : null;
 
-    return (
-        <View style={styles.chartWrapper}>
-            {selectedDatum && (
-                <View style={styles.tooltipContainer}>
-                    <Text style={styles.tooltipTextPrimary}>
-                        {t('alt', { elevation: selectedDatum.elevation })}
-                    </Text>
-                    <Text style={styles.tooltipTextSecondary}>
-                        {t('dist', { distance: selectedDatum.distance.toFixed(1) })}
-                    </Text>
-                    <Text style={styles.tooltipTextTertiary}>
-                        {t('slope', { slopeDeg: selectedDatum.slopeDeg, slopePct: selectedDatum.slopePct })}
-                    </Text>
-                </View>
-            )}
+    const renderChartContent = (chartHeight: number) => {
+        return Platform.OS === 'web' ? (
+            <WebChart
+                data={data}
+                height={chartHeight}
+                selectedIndex={selectedIndex}
+                onSelectIndex={setSelectedIndex}
+                colors={colors}
+                styles={styles}
+            />
+        ) : (
+            <NativeChart
+                data={data}
+                height={chartHeight}
+                onSelectIndex={setSelectedIndex}
+                colors={colors}
+                styles={styles}
+            />
+        );
+    };
 
-            {Platform.OS === 'web' ? (
-                <WebChart
-                    data={data}
-                    height={height}
-                    selectedIndex={selectedIndex}
-                    onSelectIndex={setSelectedIndex}
-                    colors={colors}
-                    styles={styles}
-                />
-            ) : (
-                <NativeChart
-                    data={data}
-                    height={height}
-                    onSelectIndex={setSelectedIndex}
-                    colors={colors}
-                    styles={styles}
-                />
-            )}
-
-            <View style={styles.minMaxContainer}>
-                <Text style={styles.minMaxText}>{t('min_label', { minElev })}</Text>
-                <Text style={styles.minMaxText}>{t('max_label', { maxElev })}</Text>
-            </View>
-
+    const renderLegend = () => {
+        return (
             <View style={styles.legendContainer}>
                 <View style={styles.legendItem}>
                     <View style={[styles.legendBox, styles.legendNovice]} />
@@ -355,6 +373,77 @@ export const ElevationChart: React.FC<{
                     <Text style={styles.legendLabel}>{t('expert_slope_desc')}</Text>
                 </View>
             </View>
+        );
+    };
+
+    return (
+        <View style={styles.chartWrapper}>
+            <TouchableOpacity style={styles.fullscreenButton} onPress={enterFullscreen}>
+                <Maximize2 size={14} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            {selectedDatum && (
+                <View style={styles.tooltipContainer}>
+                    <Text style={styles.tooltipTextPrimary}>
+                        {t('alt', { elevation: selectedDatum.elevation })}
+                    </Text>
+                    <Text style={styles.tooltipTextSecondary}>
+                        {t('dist', { distance: selectedDatum.distance.toFixed(1) })}
+                    </Text>
+                    <Text style={styles.tooltipTextTertiary}>
+                        {t('slope', { slopeDeg: selectedDatum.slopeDeg, slopePct: selectedDatum.slopePct })}
+                    </Text>
+                </View>
+            )}
+
+            {renderChartContent(height)}
+
+            <View style={styles.minMaxContainer}>
+                <Text style={styles.minMaxText}>{t('min_label', { minElev })}</Text>
+                <Text style={styles.minMaxText}>{t('max_label', { maxElev })}</Text>
+            </View>
+
+            {renderLegend()}
+
+            <Modal
+                visible={isFullscreen}
+                transparent={false}
+                animationType="fade"
+                onRequestClose={exitFullscreen}
+            >
+                <SafeAreaView style={[styles.fullscreenContainer, { backgroundColor: colors.background }]}>
+                    <View style={styles.fullscreenHeader}>
+                        {selectedDatum && (
+                            <View style={styles.tooltipContainerFullscreen}>
+                                <Text style={styles.tooltipTextPrimary}>
+                                    {t('alt', { elevation: selectedDatum.elevation })}
+                                </Text>
+                                <Text style={styles.tooltipTextSecondary}>
+                                    {t('dist', { distance: selectedDatum.distance.toFixed(1) })}
+                                </Text>
+                                <Text style={styles.tooltipTextTertiary}>
+                                    {t('slope', { slopeDeg: selectedDatum.slopeDeg, slopePct: selectedDatum.slopePct })}
+                                </Text>
+                            </View>
+                        )}
+                        <TouchableOpacity style={styles.closeButtonFullscreen} onPress={exitFullscreen}>
+                            <X size={18} color={colors.textPrimary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.fullscreenChartBody}>
+                        {renderChartContent(220)}
+                    </View>
+
+                    <View style={styles.fullscreenFooter}>
+                        <View style={styles.minMaxContainer}>
+                            <Text style={styles.minMaxText}>{t('min_label', { minElev })}</Text>
+                            <Text style={styles.minMaxText}>{t('max_label', { maxElev })}</Text>
+                        </View>
+                        {renderLegend()}
+                    </View>
+                </SafeAreaView>
+            </Modal>
         </View>
     );
 };
@@ -678,6 +767,7 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         borderRadius: BORDER_RADIUS.md,
         borderWidth: 1,
         borderColor: colors.border,
+        position: 'relative',
     },
     tooltipContainer: {
         flexDirection: 'row',
@@ -691,6 +781,57 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         borderWidth: 1,
         borderColor: colors.border,
         ...SHADOWS.sm,
+    },
+    fullscreenContainer: {
+        flex: 1,
+        padding: SPACING.md,
+        flexDirection: 'column',
+    },
+    fullscreenHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: SPACING.md,
+    },
+    tooltipContainerFullscreen: {
+        flex: 1,
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        paddingHorizontal: SPACING.sm,
+        paddingVertical: 8,
+        marginRight: SPACING.md,
+        borderRadius: BORDER_RADIUS.sm,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        ...SHADOWS.sm,
+    },
+    closeButtonFullscreen: {
+        padding: 8,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    fullscreenChartBody: {
+        flex: 1,
+        marginVertical: SPACING.sm,
+    },
+    fullscreenFooter: {
+        flexDirection: 'column',
+        gap: SPACING.sm,
+    },
+    fullscreenButton: {
+        position: 'absolute',
+        top: SPACING.sm,
+        right: SPACING.sm,
+        zIndex: 10,
+        padding: 6,
+        borderRadius: BORDER_RADIUS.sm,
+        backgroundColor: colors.surface + 'D9',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     tooltipTextPrimary: {
         fontSize: 10,

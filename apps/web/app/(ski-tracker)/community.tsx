@@ -15,6 +15,8 @@ import { useTranslation } from "react-i18next";
 import { Image } from 'expo-image';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Activity, Calendar, ChevronDown, ChevronUp, MapIcon, Ruler, TrendingDown, Users, Zap } from "lucide-react-native";
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 
 import { API_BASE_URL } from "constants/constants";
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
@@ -174,6 +176,7 @@ export default function CommunityView() {
 
 const SkiSessionCard = ({ session }: { session: Session }) => {
   const { t } = useTranslation();
+  const { showToast } = useToast();
   const router = useRouter();
   const { token } = useAuth();
   const [expanded, setExpanded] = useState(false);
@@ -458,18 +461,44 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
                       window.open(selectedPhotoUrl, '_blank');
                     }
                   } else {
-                    Linking.openURL(selectedPhotoUrl);
+                    try {
+                      const filename = selectedPhotoUrl.split('/').pop() || 'photo.jpg';
+                      const localUri = `${FileSystem.cacheDirectory}${filename}`;
+                      const headers: Record<string, string> = {};
+                      if (token) {
+                        headers['Authorization'] = `Bearer ${token}`;
+                      }
+
+                      const downloadResult = await FileSystem.downloadAsync(
+                        selectedPhotoUrl,
+                        localUri,
+                        { headers }
+                      );
+
+                      if (downloadResult.status === 200) {
+                        if (await Sharing.isAvailableAsync()) {
+                          await Sharing.shareAsync(downloadResult.uri);
+                        } else {
+                          showToast(t('sharing_unavailable', 'No se puede compartir o guardar archivos en este dispositivo'), 'error');
+                        }
+                      } else {
+                        showToast(t('download_error_status', 'Error al descargar la imagen: {{status}}', { status: downloadResult.status }), 'error');
+                      }
+                    } catch (error) {
+                      console.error("Failed to download image on mobile:", error);
+                      showToast(t('download_error', 'Error al descargar la imagen'), 'error');
+                    }
                   }
                 }}
               >
-                <Text style={styles.modalButtonText}>Descargar</Text>
+                <Text style={styles.modalButtonText}>{t('download', 'Descargar')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.modalButton, styles.closeButton]}
                 onPress={() => setSelectedPhotoUrl(null)}
               >
-                <Text style={styles.modalButtonText}>Cerrar</Text>
+                <Text style={styles.modalButtonText}>{t('close', 'Cerrar')}</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -2,8 +2,8 @@
   "expo": {
     "name": "Ski tracker",
     "slug": "ski-tracker",
-    "version": "1.2.2",
-    "runtimeVersion": "1.2.1",
+    "version": "1.3.2",
+    "runtimeVersion": "1.3.1",
     "updates": {
       "url": "https://api-ski-tracker.viti-tech.es/api/v1/ota/manifest",
       "enabled": true,
@@ -60,7 +60,8 @@
       "expo-localization",
       "expo-updates",
       "expo-font",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-sharing"
     ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",

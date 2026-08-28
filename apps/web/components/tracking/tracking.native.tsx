@@ -965,7 +965,7 @@ export default function InteractiveSkiMapNative() {
                             </>
                         )}
 
-                        {!hasTrackData && (
+                        {(!hasTrackData || isTracking) && (
                             <TouchableOpacity
                                 style={[styles.trackingButton, isTracking ? styles.trackingButtonActive : styles.trackingButtonInactive]}
                                 onPress={handleToggleTracking}
