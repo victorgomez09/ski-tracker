@@ -11,24 +11,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useIsFocused } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
-import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { Activity, Camera as CameraIcon, Download, Pause, Play, Square, Upload, Share2, AlertTriangle } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet, Text, TouchableOpacity, View, Alert, Share } from 'react-native';
-
-const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371; // Radius of the earth in km
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
-};
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
@@ -48,6 +35,18 @@ const LOCATION_TASK_NAME = 'ski-background-location-task';
 const DEFAULT_LAT = 40.797891;
 const DEFAULT_LON = -3.971953;
 const DEFAULT_ZOOM = 13;
+
+const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in km
+};
 
 const orientLineDownhill = (coords: any[]): any[] => {
     if (!coords || coords.length < 2) return coords;
@@ -106,6 +105,7 @@ export default function InteractiveSkiMapNative() {
 
     const [resort, setResort] = useState<ResortDetail>({} as ResortDetail);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
+    const [chartHoverPoint, setChartHoverPoint] = useState<[number, number] | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
     const [takePictureMode, setTakePictureMode] = useState(false);
 
@@ -794,6 +794,33 @@ export default function InteractiveSkiMapNative() {
         };
     }, [trackPoints]);
 
+    const chartHoverGeoJSON = useMemo(() => {
+        if (!chartHoverPoint) return null;
+        return {
+            type: 'FeatureCollection' as const,
+            features: [{
+                type: 'Feature' as const,
+                properties: {},
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: chartHoverPoint
+                }
+            }]
+        };
+    }, [chartHoverPoint]);
+
+    const chartHoverPointStyle = useMemo(() => ({
+        id: 'chart-hover-point-layer',
+        type: 'circle' as const,
+        style: {
+            circleRadius: 8,
+            circleColor: 'transparent',
+            circleStrokeWidth: 3,
+            circleStrokeColor: '#000000',
+            circlePitchAlignment: 'map' as const,
+        }
+    }), []);
+
     const trackDirectionGeoJSON = useMemo(() => {
         if (trackPoints.length < 2) return { type: 'FeatureCollection' as const, features: [] };
 
@@ -942,6 +969,11 @@ export default function InteractiveSkiMapNative() {
                         )}
                     </>
                 )}
+                {chartHoverGeoJSON && (
+                    <NativeGeoJSONSource id="chart-hover-source" data={chartHoverGeoJSON}>
+                        <NativeLayer {...chartHoverPointStyle} />
+                    </NativeGeoJSONSource>
+                )}
             </NativeMap>
 
             {!takePictureMode && (
@@ -949,7 +981,11 @@ export default function InteractiveSkiMapNative() {
                     {renderLiveStats()}
                     
                     {selectedFeature && (
-                        <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
+                        <MapDetailPanel 
+                            data={selectedFeature} 
+                            onClose={() => { setSelectedFeature(null); setChartHoverPoint(null); }}
+                            onChartPointSelected={setChartHoverPoint}
+                        />
                     )}
 
                     <View style={styles.floatingControls}>

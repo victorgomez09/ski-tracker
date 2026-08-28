@@ -311,6 +311,7 @@ export default function InteractiveSkiMapNative() {
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
+    const [chartHoverPoint, setChartHoverPoint] = useState<[number, number] | null>(null);
     const [selectedResort, setSelectedResort] = useState<Resort | ResortDetail | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
@@ -995,6 +996,33 @@ export default function InteractiveSkiMapNative() {
         };
     }, [activeHighlightedRun]);
 
+    const chartHoverGeoJSON = useMemo(() => {
+        if (!chartHoverPoint) return null;
+        return {
+            type: 'FeatureCollection' as const,
+            features: [{
+                type: 'Feature' as const,
+                properties: {},
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: chartHoverPoint
+                }
+            }]
+        };
+    }, [chartHoverPoint]);
+
+    const chartHoverPointStyle = useMemo(() => ({
+        id: 'chart-hover-point-layer',
+        type: 'circle' as const,
+        style: {
+            circleRadius: 8,
+            circleColor: 'transparent',
+            circleStrokeWidth: 3,
+            circleStrokeColor: '#000000',
+            circlePitchAlignment: 'map' as const,
+        }
+    }), []);
+
     // --- Handlers ---
     const handleNativeFeaturePress = useCallback((e: any) => {
         const found = getFeatureFromEvent(e);
@@ -1190,6 +1218,11 @@ export default function InteractiveSkiMapNative() {
                         )}
                     </>
                 )}
+                {chartHoverGeoJSON && (
+                    <NativeGeoJSONSource id="chart-hover-source" data={chartHoverGeoJSON}>
+                        <NativeLayer {...chartHoverPointStyle} />
+                    </NativeGeoJSONSource>
+                )}
             </NativeMap>
 
             {isLoadingResorts && (
@@ -1237,7 +1270,11 @@ export default function InteractiveSkiMapNative() {
             )}
 
             {selectedFeature && (
-                <MapDetailPanel data={selectedFeature} onClose={() => setSelectedFeature(null)} />
+                <MapDetailPanel 
+                    data={selectedFeature} 
+                    onClose={() => { setSelectedFeature(null); setChartHoverPoint(null); }}
+                    onChartPointSelected={setChartHoverPoint}
+                />
             )}
 
             {selectedResort && (

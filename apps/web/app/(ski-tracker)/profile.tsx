@@ -597,8 +597,7 @@ export default function ProfileView() {
 
           {/* App Version */}
           <View style={styles.versionContainer}>
-            <Text style={styles.versionText}>v{appVersion}</Text>
-            <Text style={styles.versionText}>vr{runtimeVersion.toString()}</Text>
+            <Text style={styles.versionText}>v{appVersion}({runtimeVersion.toString()})</Text>
           </View>
         </View>
       </ScrollView>
@@ -964,8 +963,6 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
       fontSize: 16,
     },
     versionContainer: {
-      display: 'flex',
-      flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: SPACING.xs,

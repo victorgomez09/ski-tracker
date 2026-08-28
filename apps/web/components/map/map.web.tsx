@@ -289,6 +289,7 @@ export default function InteractiveSkiMap() {
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
+    const [chartHoverPoint, setChartHoverPoint] = useState<[number, number] | null>(null);
     const [selectedResort, setSelectedResort] = useState<Resort | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
@@ -909,6 +910,33 @@ export default function InteractiveSkiMap() {
         };
     }, [hoveredRun, selectedRun]);
 
+    const chartHoverGeoJSON = useMemo(() => {
+        if (!chartHoverPoint) return null;
+        return {
+            type: 'FeatureCollection' as const,
+            features: [{
+                type: 'Feature' as const,
+                properties: {},
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: chartHoverPoint
+                }
+            }]
+        };
+    }, [chartHoverPoint]);
+
+    const chartHoverPointStyle = useMemo(() => ({
+        id: 'chart-hover-point-layer',
+        type: 'circle' as const,
+        paint: {
+            'circle-radius': 8,
+            'circle-color': 'transparent',
+            'circle-stroke-width': 3,
+            'circle-stroke-color': '#000000',
+            'circle-pitch-alignment': 'map' as const,
+        }
+    }), []);
+
     // --- Fetchers ---
     const fetchResortsByBounds = async (bounds: maplibregl.LngLatBounds) => {
         const sw = bounds.getSouthWest();
@@ -1111,7 +1139,8 @@ export default function InteractiveSkiMap() {
             {selectedFeature && (
                 <MapDetailPanel
                     data={selectedFeature}
-                    onClose={() => setSelectedFeature(null)}
+                    onClose={() => { setSelectedFeature(null); setChartHoverPoint(null); }}
+                    onChartPointSelected={setChartHoverPoint}
                 />
             )}
             {selectedResort && (
@@ -1228,6 +1257,11 @@ export default function InteractiveSkiMap() {
                             </>
                         )}
                     </>
+                )}
+                {chartHoverGeoJSON && (
+                    <Source id="chart-hover-source" type="geojson" data={chartHoverGeoJSON as any}>
+                        <Layer {...chartHoverPointStyle} />
+                    </Source>
                 )}
             </Map>
 

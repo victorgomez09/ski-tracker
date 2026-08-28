@@ -15,6 +15,7 @@ if (Platform.OS !== 'web') {
 interface MapDetailPanelProps {
     data: Piste | Lift;
     onClose: () => void;
+    onChartPointSelected?: (coord: [number, number] | null) => void;
 }
 
 interface ChartDatum {
@@ -258,6 +259,8 @@ const NativeChart: React.FC<{
                 chartDescription={{ text: '' }}
                 touchEnabled={true}
                 dragEnabled={true}
+                highlightPerDragEnabled={true}
+                highlightPerTapEnabled={true}
                 scaleEnabled={false}
                 scaleXEnabled={false}
                 scaleYEnabled={false}
@@ -266,7 +269,7 @@ const NativeChart: React.FC<{
                 onSelect={(event: any) => {
                     const entry = event.nativeEvent;
                     if (entry && typeof entry.x === 'number') {
-                        const index = data.findIndex(d => Math.abs(d.distance - entry.x) < 0.05);
+                        const index = data.findIndex(d => Math.abs(d.distance - entry.x) < 0.001);
                         if (index !== -1) onSelectIndex(index);
                     }
                 }}
@@ -281,11 +284,18 @@ export const ElevationChart: React.FC<{
     height?: number;
     isFullscreen?: boolean;
     exitFullscreen?: () => void;
-}> = ({ data, height = 160, isFullscreen, exitFullscreen }) => {
+    onSelectedIndexChange?: (index: number | null) => void;
+}> = ({ data, height = 160, isFullscreen, exitFullscreen, onSelectedIndexChange }) => {
     const { t } = useTranslation();
     const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
+
+    useEffect(() => {
+        if (onSelectedIndexChange) {
+            onSelectedIndexChange(selectedIndex);
+        }
+    }, [selectedIndex, onSelectedIndexChange]);
 
     useEffect(() => {
         if (!data || data.length === 0) {
@@ -434,7 +444,42 @@ export const ElevationChart: React.FC<{
     );
 };
 
-export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose }) => {
+const getDistanceFromLatLonInM = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3;
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = 
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
+
+const getCoordinateAtDistance = (coords: number[][], targetDistM: number): [number, number] | null => {
+    if (!coords || coords.length === 0) return null;
+    if (coords.length === 1) return [coords[0][0], coords[0][1]];
+    if (targetDistM <= 0) return [coords[0][0], coords[0][1]];
+
+    let currentDist = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+        const [lon1, lat1] = coords[i];
+        const [lon2, lat2] = coords[i+1];
+        const segDist = getDistanceFromLatLonInM(lat1, lon1, lat2, lon2);
+        
+        if (currentDist + segDist >= targetDistM) {
+            const ratio = segDist > 0 ? (targetDistM - currentDist) / segDist : 0;
+            const interpLon = lon1 + (lon2 - lon1) * ratio;
+            const interpLat = lat1 + (lat2 - lat1) * ratio;
+            return [interpLon, interpLat];
+        }
+        currentDist += segDist;
+    }
+    const last = coords[coords.length - 1];
+    return [last[0], last[1]];
+};
+
+export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, onChartPointSelected }) => {
     const isWeb = Platform.OS === 'web';
     const { t } = useTranslation();
     const colors = useThemeColors();
@@ -531,6 +576,18 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
         }
     };
 
+    const handleIndexChange = (index: number | null) => {
+        if (!onChartPointSelected) return;
+        const coords = data.GeometryGeoJSON?.coordinates as number[][];
+        if (index === null || !coords || coords.length === 0) {
+            onChartPointSelected(null);
+            return;
+        }
+        const targetDist = index * resolution;
+        const point = getCoordinateAtDistance(coords, targetDist);
+        onChartPointSelected(point);
+    };
+
     if (!data) return null;
 
     return (
@@ -596,7 +653,12 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
                                     </TouchableOpacity>
                                 </View>
                                 {chartData.length > 0 ? (
-                                    <ElevationChart data={chartData} isFullscreen={isFullscreen} exitFullscreen={exitFullscreen} />
+                                    <ElevationChart 
+                                        data={chartData} 
+                                        isFullscreen={isFullscreen} 
+                                        exitFullscreen={exitFullscreen} 
+                                        onSelectedIndexChange={handleIndexChange}
+                                    />
                                 ) : (
                                     <View style={styles.noDataContainer}>
                                         <Text style={styles.noDataText}>{t('no_elevation_data')}</Text>

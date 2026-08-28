@@ -95,8 +95,12 @@ func (s *skiResortStore) GetByCloseness(ctx context.Context, latitude, longitude
 			distanceFormula+` <= 5.0 OR EXISTS (
 				SELECT 1 FROM ski_pistes p 
 				WHERE p.resort_id = sr.id 
+				AND p.geometry_geojson->>'type' = 'LineString'
 				AND ST_DWithin(
-					ST_SetSRID(ST_GeomFromGeoJSON(p.geometry_geojson::text), 4326)::geography,
+					ST_SetSRID(ST_MakePoint(
+						(p.geometry_geojson->'coordinates'->0->>0)::float8,
+						(p.geometry_geojson->'coordinates'->0->>1)::float8
+					), 4326)::geography,
 					ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
 					5000
 				)
