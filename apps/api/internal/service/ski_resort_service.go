@@ -444,6 +444,24 @@ func mergeContiguousPistes(pistes []models.SkiPiste) []models.SkiPiste {
 			continue
 		}
 
+		type gpItem struct {
+			piste models.SkiPiste
+			start PistePoint
+			end   PistePoint
+			ok    bool
+		}
+
+		gPistes := make([]gpItem, len(group))
+		for idx, p := range group {
+			start, end, ok := getEndpoints(p)
+			gPistes[idx] = gpItem{
+				piste: p,
+				start: start,
+				end:   end,
+				ok:    ok,
+			}
+		}
+
 		// Keep track of which pistes have been merged
 		visited := make(map[int]bool)
 
@@ -453,8 +471,12 @@ func mergeContiguousPistes(pistes []models.SkiPiste) []models.SkiPiste {
 			}
 
 			// Start a new line segment chain with current piste
-			chain := []models.SkiPiste{group[i]}
+			chain := []models.SkiPiste{gPistes[i].piste}
 			visited[i] = true
+			chainStart := gPistes[i].start
+			chainEnd := gPistes[i].end
+			okStart := gPistes[i].ok
+			okEnd := gPistes[i].ok
 
 			// Keep searching for other segments in the group to connect to the chain
 			for {
@@ -464,39 +486,39 @@ func mergeContiguousPistes(pistes []models.SkiPiste) []models.SkiPiste {
 						continue
 					}
 
-					// Get start and end points of our current chain
-					chainStart, _, okStart := getEndpoints(chain[0])
-					_, chainEnd, okEnd := getEndpoints(chain[len(chain)-1])
-					segStart, segEnd, okSeg := getEndpoints(group[j])
-
-					if !okStart || !okEnd || !okSeg {
+					seg := gPistes[j]
+					if !okStart || !okEnd || !seg.ok {
 						continue
 					}
 
-					// Let's see if we can append or prepend group[j]
-					if pointsClose(chainEnd, segStart) {
+					// Let's see if we can append or prepend seg
+					if pointsClose(chainEnd, seg.start) {
 						// Append segment to the end
-						chain = append(chain, group[j])
+						chain = append(chain, seg.piste)
+						chainEnd = seg.end
 						visited[j] = true
 						added = true
 						break
-					} else if pointsClose(chainEnd, segEnd) {
+					} else if pointsClose(chainEnd, seg.end) {
 						// Append segment to the end, but reverse its coordinates first
-						reversed := reverseCoordinates(group[j])
+						reversed := reverseCoordinates(seg.piste)
 						chain = append(chain, reversed)
+						chainEnd = seg.start
 						visited[j] = true
 						added = true
 						break
-					} else if pointsClose(chainStart, segEnd) {
+					} else if pointsClose(chainStart, seg.end) {
 						// Prepend segment to the start
-						chain = append([]models.SkiPiste{group[j]}, chain...)
+						chain = append([]models.SkiPiste{seg.piste}, chain...)
+						chainStart = seg.start
 						visited[j] = true
 						added = true
 						break
-					} else if pointsClose(chainStart, segStart) {
+					} else if pointsClose(chainStart, seg.start) {
 						// Prepend segment to the start, but reverse its coordinates first
-						reversed := reverseCoordinates(group[j])
+						reversed := reverseCoordinates(seg.piste)
 						chain = append([]models.SkiPiste{reversed}, chain...)
+						chainStart = seg.end
 						visited[j] = true
 						added = true
 						break

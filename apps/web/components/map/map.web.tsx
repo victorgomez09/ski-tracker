@@ -283,8 +283,9 @@ export default function InteractiveSkiMap() {
     const searchParams = useLocalSearchParams();
     const mapRef = useRef<MapRef>(null);
     const isInternalMoveRef = useRef(false);
+    const isFetchingRef = useRef(false);
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
-    const [isLoadingResorts, setIsLoadingResorts] = useState<boolean>(false);
+    const [isLoadingResorts, setIsLoadingResorts] = useState<boolean>(true);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
@@ -498,6 +499,7 @@ export default function InteractiveSkiMap() {
                     return;
                 }
 
+                isFetchingRef.current = true;
                 setIsLoadingResorts(true);
                 try {
                     // Calculate padded bounds (50% larger than viewport to cache surrounding areas)
@@ -535,9 +537,20 @@ export default function InteractiveSkiMap() {
                 } catch (error) {
                     if (!axios.isCancel(error)) {
                         console.error("Error fetching resorts:", error);
+                        setIsLoadingResorts(false);
+                    } else if (!signal.aborted) {
+                        setIsLoadingResorts(false);
                     }
                 } finally {
-                    setIsLoadingResorts(false);
+                    if (!signal.aborted) {
+                        isFetchingRef.current = false;
+                        setTimeout(() => {
+                            const map = mapRef.current?.getMap();
+                            if (!map || map.isIdle()) {
+                                setIsLoadingResorts(false);
+                            }
+                        }, 200);
+                    }
                 }
             } else {
                 // Check if we already fetched nearby coordinates and if distance is < 15km
@@ -550,6 +563,7 @@ export default function InteractiveSkiMap() {
                     return;
                 }
 
+                isFetchingRef.current = true;
                 setIsLoadingResorts(true);
                 try {
                     const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
@@ -572,9 +586,20 @@ export default function InteractiveSkiMap() {
                 } catch (error) {
                     if (!axios.isCancel(error)) {
                         console.error("Error fetching resorts:", error);
+                        setIsLoadingResorts(false);
+                    } else if (!signal.aborted) {
+                        setIsLoadingResorts(false);
                     }
                 } finally {
-                    setIsLoadingResorts(false);
+                    if (!signal.aborted) {
+                        isFetchingRef.current = false;
+                        setTimeout(() => {
+                            const map = mapRef.current?.getMap();
+                            if (!map || map.isIdle()) {
+                                setIsLoadingResorts(false);
+                            }
+                        }, 200);
+                    }
                 }
             }
         }, 300);
@@ -918,6 +943,8 @@ export default function InteractiveSkiMap() {
     };
 
     const fetchResortWithDetails = async (resortId: string) => {
+        isFetchingRef.current = true;
+        setIsLoadingResorts(true);
         try {
             const request = await api.get<Resort>(`${API_BASE_URL}/resorts/by-id/${resortId}`);
             if (request.status !== 200) {
@@ -956,6 +983,15 @@ export default function InteractiveSkiMap() {
             }
         } catch (error) {
             console.error("Error fetching resort details:", error);
+            setIsLoadingResorts(false);
+        } finally {
+            isFetchingRef.current = false;
+            setTimeout(() => {
+                const map = mapRef.current?.getMap();
+                if (!map || map.isIdle()) {
+                    setIsLoadingResorts(false);
+                }
+            }, 200);
         }
     };
 
@@ -1092,6 +1128,11 @@ export default function InteractiveSkiMap() {
                 onMoveEnd={handleMoveEnd}
                 onMouseLeave={handleMouseLeave}
                 onClick={handleMapClick}
+                onIdle={() => {
+                    if (!isFetchingRef.current) {
+                        setIsLoadingResorts(false);
+                    }
+                }}
                 interactiveLayerIds={['piste-lines', 'lift-lines']}
                 style={{ width: '100%', height: '100%' }}
                 mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
@@ -1177,7 +1218,6 @@ export default function InteractiveSkiMap() {
                             <>
                                 <Source id="track-source" type="geojson" data={trackGeoJSON}>
                                     <Layer {...trackLineStyle} />
-                                    <Layer {...trackDirectionStyle} />
                                 </Source>
                                 {(hoveredRun || selectedRun) && (
                                     <Source id="highlighted-run-source" type="geojson" data={highlightedRunGeoJSON}>

@@ -91,8 +91,6 @@ function AppContent() {
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
-
-
     useEffect(() => {
         const initDatabase = async () => {
             try {

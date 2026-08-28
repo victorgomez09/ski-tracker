@@ -297,6 +297,7 @@ export default function InteractiveSkiMapNative() {
     const lastFetchedZoomRef = useRef<number | null>(null);
     const lastFetchedBoundsRef = useRef<{ minLon: number; minLat: number; maxLon: number; maxLat: number } | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const isFetchingRef = useRef(false);
 
     useEffect(() => {
         return () => {
@@ -306,7 +307,7 @@ export default function InteractiveSkiMapNative() {
         };
     }, []);
     const [resorts, setResorts] = useState<ResortDetail[]>([]);
-    const [isLoadingResorts, setIsLoadingResorts] = useState<boolean>(false);
+    const [isLoadingResorts, setIsLoadingResorts] = useState<boolean>(true);
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
@@ -441,6 +442,7 @@ export default function InteractiveSkiMapNative() {
                 return;
             }
 
+            isFetchingRef.current = true;
             setIsLoadingResorts(true);
             try {
                 // Calculate padded bounds (50% larger than viewport to cache surrounding areas)
@@ -477,9 +479,17 @@ export default function InteractiveSkiMapNative() {
             } catch (error) {
                 if (!axios.isCancel(error)) {
                     console.error("Error fetching resorts:", error);
+                    setIsLoadingResorts(false);
+                } else if (!signal.aborted) {
+                    setIsLoadingResorts(false);
                 }
             } finally {
-                setIsLoadingResorts(false);
+                if (!signal.aborted) {
+                    isFetchingRef.current = false;
+                    setTimeout(() => {
+                        setIsLoadingResorts(false);
+                    }, 250);
+                }
             }
         } else {
             // Check if we already fetched nearby coordinates and if distance is < 15km
@@ -492,6 +502,7 @@ export default function InteractiveSkiMapNative() {
                 return;
             }
 
+            isFetchingRef.current = true;
             setIsLoadingResorts(true);
             try {
                 const request = await api.get<ResortDetail[]>(`${API_BASE_URL}/resorts/nearby`, {
@@ -513,9 +524,17 @@ export default function InteractiveSkiMapNative() {
             } catch (error) {
                 if (!axios.isCancel(error)) {
                     console.error("Error fetching resorts:", error);
+                    setIsLoadingResorts(false);
+                } else if (!signal.aborted) {
+                    setIsLoadingResorts(false);
                 }
             } finally {
-                setIsLoadingResorts(false);
+                if (!signal.aborted) {
+                    isFetchingRef.current = false;
+                    setTimeout(() => {
+                        setIsLoadingResorts(false);
+                    }, 250);
+                }
             }
         }
     }, []);
@@ -1096,6 +1115,11 @@ export default function InteractiveSkiMapNative() {
                 onPress={handleNativeMapPress}
                 attribution={false}
                 logo={false}
+                onDidFinishRenderingMapFully={() => {
+                    if (!isFetchingRef.current) {
+                        setIsLoadingResorts(false);
+                    }
+                }}
             >
                 <NativeCamera
                     ref={cameraRef}
@@ -1155,9 +1179,6 @@ export default function InteractiveSkiMapNative() {
                             <>
                                 <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
                                     <NativeLayer {...trackLineStyle} />
-                                </NativeGeoJSONSource>
-                                <NativeGeoJSONSource id="track-direction-source" data={trackDirectionGeoJSON}>
-                                    <NativeLayer {...trackDirectionStyle} />
                                 </NativeGeoJSONSource>
                                 {(hoveredRun || selectedRun) && (
                                     <NativeGeoJSONSource id="highlighted-run-source" data={highlightedRunGeoJSON}>
