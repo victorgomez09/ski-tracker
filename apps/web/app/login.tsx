@@ -4,6 +4,7 @@ import axios from "axios";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from "react-native";
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { API_BASE_URL } from "constants/constants";
 import { useAuth } from "context/auth.context";
@@ -69,93 +70,95 @@ export default function LoginView() {
     const isButtonDisabled = isSubmitting || Object.keys(errors).length > 0;
 
     return (
-        <ScrollView 
-            contentContainerStyle={styles.scrollContent} 
-            style={styles.scrollView}
-        >
-            <View style={styles.card}>
-                <Text style={styles.title}>{t('login')}</Text>
+        <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.background }}>
+            <ScrollView 
+                contentContainerStyle={styles.scrollContent} 
+                style={styles.scrollView}
+            >
+                <View style={styles.card}>
+                    <Text style={styles.title}>{t('login')}</Text>
 
-                {/* EMAIL */}
-                <Text style={styles.label}>{t('email')}</Text>
-                <Controller
-                    control={control}
-                    name="email"
-                    rules={{
-                        required: t('email_required') as string,
-                        pattern: {
-                            value: /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/,
-                            message: t('invalid_email') as string
-                        }
-                    }}
-                    render={({ field: { onChange, onBlur, value } }) => (
-                        <TextInput
-                            style={[
-                                styles.input,
-                                errors.email ? styles.inputError : styles.inputNormal
-                            ]}
-                            placeholder={t('email') as string}
-                            placeholderTextColor={colors.textLight}
-                            keyboardType="email-address"
-                            autoCapitalize="none"
-                            onBlur={onBlur}
-                            onChangeText={onChange}
-                            value={value}
-                        />
+                    {/* EMAIL */}
+                    <Text style={styles.label}>{t('email')}</Text>
+                    <Controller
+                        control={control}
+                        name="email"
+                        rules={{
+                            required: t('email_required') as string,
+                            pattern: {
+                                value: /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/,
+                                message: t('invalid_email') as string
+                            }
+                        }}
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <TextInput
+                                style={[
+                                    styles.input,
+                                    errors.email ? styles.inputError : styles.inputNormal
+                                ]}
+                                placeholder={t('email') as string}
+                                placeholderTextColor={colors.textLight}
+                                keyboardType="email-address"
+                                autoCapitalize="none"
+                                onBlur={onBlur}
+                                onChangeText={onChange}
+                                value={value}
+                            />
+                        )}
+                    />
+                    {errors.email && (
+                        <Text style={styles.errorText}>{errors.email.message}</Text>
                     )}
-                />
-                {errors.email && (
-                    <Text style={styles.errorText}>{errors.email.message}</Text>
-                )}
 
-                {/* PASSWORD */}
-                <Text style={[styles.label, styles.labelSpacing]}>{t('password')}</Text>
-                <Controller
-                    control={control}
-                    name="password"
-                    rules={{ required: t('password_required') as string }}
-                    render={({ field: { onChange, onBlur, value } }) => (
-                        <TextInput
-                            style={[
-                                styles.input,
-                                errors.password ? styles.inputError : styles.inputNormal
-                            ]}
-                            placeholder={t('password') as string}
-                            placeholderTextColor={colors.textLight}
-                            secureTextEntry
-                            onBlur={onBlur}
-                            onChangeText={onChange}
-                            value={value}
-                        />
+                    {/* PASSWORD */}
+                    <Text style={[styles.label, styles.labelSpacing]}>{t('password')}</Text>
+                    <Controller
+                        control={control}
+                        name="password"
+                        rules={{ required: t('password_required') as string }}
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <TextInput
+                                style={[
+                                    styles.input,
+                                    errors.password ? styles.inputError : styles.inputNormal
+                                ]}
+                                placeholder={t('password') as string}
+                                placeholderTextColor={colors.textLight}
+                                secureTextEntry
+                                onBlur={onBlur}
+                                onChangeText={onChange}
+                                value={value}
+                            />
+                        )}
+                    />
+                    {errors.password && (
+                        <Text style={styles.errorText}>{errors.password.message}</Text>
                     )}
-                />
-                {errors.password && (
-                    <Text style={styles.errorText}>{errors.password.message}</Text>
-                )}
 
-                {/* SUBMIT */}
-                <TouchableOpacity
-                    style={[
-                        styles.submitButton,
-                        isButtonDisabled && styles.submitButtonDisabled
-                    ]}
-                    onPress={handleSubmit(onSubmit)}
-                    disabled={isButtonDisabled}
-                >
-                    {isSubmitting ? (
-                        <ActivityIndicator color={colors.textOnPrimary} />
-                    ) : (
-                        <Text style={styles.submitButtonText}>{t('login')}</Text>
-                    )}
-                </TouchableOpacity>
+                    {/* SUBMIT */}
+                    <TouchableOpacity
+                        style={[
+                            styles.submitButton,
+                            isButtonDisabled && styles.submitButtonDisabled
+                        ]}
+                        onPress={handleSubmit(onSubmit)}
+                        disabled={isButtonDisabled}
+                    >
+                        {isSubmitting ? (
+                            <ActivityIndicator color={colors.textOnPrimary} />
+                        ) : (
+                            <Text style={styles.submitButtonText}>{t('login')}</Text>
+                        )}
+                    </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => router.push("/register")} style={styles.linkButton}>
-                    <Text style={styles.linkText}>
-                        {t('no_account_register')}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-        </ScrollView>
+                    <TouchableOpacity onPress={() => router.push("/register")} style={styles.linkButton}>
+                        <Text style={styles.linkText}>
+                            {t('no_account_register')}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </ScrollView>
+        </SafeAreaView>
     );
 }
 

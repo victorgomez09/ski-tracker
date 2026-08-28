@@ -419,6 +419,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
         transparent={true}
         animationType="fade"
         onRequestClose={() => setSelectedPhotoUrl(null)}
+        statusBarTranslucent={true}
       >
         <View style={styles.modalBackground}>
           <TouchableOpacity

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 let ComponentToRender: React.ComponentType<any>;
 
@@ -10,5 +11,12 @@ if (Platform.OS === 'web') {
 }
 
 export default function InteractiveSkiMap(props: any) {
-    return <ComponentToRender {...props} />;
+    return (
+        <SafeAreaView
+            edges={['top']}
+            style={{ flex: 1, backgroundColor: 'transparent' }}
+        >
+            <ComponentToRender {...props} />
+        </SafeAreaView>
+    );
 }

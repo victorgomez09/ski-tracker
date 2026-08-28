@@ -754,7 +754,8 @@ export default function ResortsView() {
         <Modal
           visible={!!selectedResort}
           animationType="slide"
-          onRequestClose={() => setSelectedResortWithCache(null)}>
+          onRequestClose={() => setSelectedResortWithCache(null)}
+          statusBarTranslucent={true}>
           <View style={styles.modalContainer}>{renderDetailsContent()}</View>
         </Modal>
       </View>

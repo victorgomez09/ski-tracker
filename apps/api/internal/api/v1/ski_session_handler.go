@@ -3,7 +3,9 @@ package v1
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -93,7 +95,12 @@ func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	session, err := h.svc.StartSession(ctx, userID, payload.ResortID, isPublic)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error creating ski session"})
+		slog.Error("failed to start session", slog.Any("error", err), slog.String("user_id", userID.String()))
+		if strings.Contains(err.Error(), "user not found") {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found, please log in again"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error creating ski session: %v", err)})
 		return
 	}
 

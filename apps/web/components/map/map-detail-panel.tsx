@@ -1,6 +1,7 @@
 import { Lift, Piste } from 'models/ski-resort.model';
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Platform, processColor, StyleSheet, Modal, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Platform, processColor, StyleSheet, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, Maximize2 } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -86,8 +87,8 @@ const WebChart: React.FC<{
     });
 
     return (
-        <View 
-            style={[{ height }, styles.wFull]} 
+        <View
+            style={[{ height }, styles.wFull]}
             onLayout={(e) => {
                 const w = e.nativeEvent.layout.width;
                 if (w > 0 && Math.abs(w - containerWidth) > 1) {
@@ -96,10 +97,10 @@ const WebChart: React.FC<{
             }}
         >
             {containerWidth > 0 && (
-                <svg 
-                    width="100%" 
-                    height="100%" 
-                    viewBox={`0 0 ${svgWidth} ${svgHeight}`} 
+                <svg
+                    width="100%"
+                    height="100%"
+                    viewBox={`0 0 ${svgWidth} ${svgHeight}`}
                     style={{ overflow: 'visible' }}
                 >
                     {[0, 0.5, 1].map((ratio, i) => {
@@ -278,10 +279,11 @@ const NativeChart: React.FC<{
 export const ElevationChart: React.FC<{
     data: ChartDatum[];
     height?: number;
-}> = ({ data, height = 160 }) => {
+    isFullscreen?: boolean;
+    exitFullscreen?: () => void;
+}> = ({ data, height = 160, isFullscreen, exitFullscreen }) => {
     const { t } = useTranslation();
     const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-    const [isFullscreen, setIsFullscreen] = useState(false);
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -293,19 +295,6 @@ export const ElevationChart: React.FC<{
         setSelectedIndex(prev => (prev === null || prev >= data.length ? Math.floor(data.length / 2) : prev));
     }, [data]);
 
-    const enterFullscreen = async () => {
-        setIsFullscreen(true);
-        if (Platform.OS !== 'web') {
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-        }
-    };
-
-    const exitFullscreen = async () => {
-        setIsFullscreen(false);
-        if (Platform.OS !== 'web') {
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-        }
-    };
 
     // Detect screen rotation to portrait to exit fullscreen automatically
     useEffect(() => {
@@ -317,7 +306,7 @@ export const ElevationChart: React.FC<{
                 orientation === ScreenOrientation.Orientation.PORTRAIT_UP ||
                 orientation === ScreenOrientation.Orientation.PORTRAIT_DOWN
             ) {
-                exitFullscreen();
+                exitFullscreen?.();
             }
         });
 
@@ -378,10 +367,6 @@ export const ElevationChart: React.FC<{
 
     return (
         <View style={styles.chartWrapper}>
-            <TouchableOpacity style={styles.fullscreenButton} onPress={enterFullscreen}>
-                <Maximize2 size={14} color={colors.textSecondary} />
-            </TouchableOpacity>
-
             {selectedDatum && (
                 <View style={styles.tooltipContainer}>
                     <Text style={styles.tooltipTextPrimary}>
@@ -410,6 +395,7 @@ export const ElevationChart: React.FC<{
                 transparent={false}
                 animationType="fade"
                 onRequestClose={exitFullscreen}
+                statusBarTranslucent={true}
             >
                 <SafeAreaView style={[styles.fullscreenContainer, { backgroundColor: colors.background }]}>
                     <View style={styles.fullscreenHeader}>
@@ -452,6 +438,7 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
     const isWeb = Platform.OS === 'web';
     const { t } = useTranslation();
     const colors = useThemeColors();
+    const [isFullscreen, setIsFullscreen] = useState(false);
     const styles = useMemo(() => getStyles(colors), [colors]);
 
     const tags = data?.Tags || {};
@@ -530,6 +517,20 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
         }
     };
 
+    const enterFullscreen = async () => {
+        setIsFullscreen(true);
+        if (Platform.OS !== 'web') {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        }
+    };
+
+    const exitFullscreen = async () => {
+        setIsFullscreen(false);
+        if (Platform.OS !== 'web') {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        }
+    };
+
     if (!data) return null;
 
     return (
@@ -588,9 +589,14 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose })
                             </View>
 
                             <View style={styles.elevationSection}>
-                                <Text style={styles.sectionHeader}>{t('elevation_profile_title')}</Text>
+                                <View style={styles.sectionHeaderContainer}>
+                                    <Text style={styles.sectionHeader}>{t('elevation_profile_title')}</Text>
+                                    <TouchableOpacity style={styles.fullscreenButton} onPress={enterFullscreen}>
+                                        <Maximize2 size={14} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                </View>
                                 {chartData.length > 0 ? (
-                                    <ElevationChart data={chartData} />
+                                    <ElevationChart data={chartData} isFullscreen={isFullscreen} exitFullscreen={exitFullscreen} />
                                 ) : (
                                     <View style={styles.noDataContainer}>
                                         <Text style={styles.noDataText}>{t('no_elevation_data')}</Text>
@@ -754,12 +760,17 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     elevationSection: {
         marginTop: SPACING.xs,
     },
+    sectionHeaderContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: SPACING.sm,
+    },
     sectionHeader: {
         fontSize: 12,
         fontWeight: 'bold',
         color: colors.textSecondary,
         textTransform: 'uppercase',
-        marginBottom: SPACING.sm,
     },
     chartWrapper: {
         backgroundColor: colors.surface,
@@ -823,10 +834,6 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         gap: SPACING.sm,
     },
     fullscreenButton: {
-        position: 'absolute',
-        top: SPACING.sm,
-        right: SPACING.sm,
-        zIndex: 10,
         padding: 6,
         borderRadius: BORDER_RADIUS.sm,
         backgroundColor: colors.surface + 'D9',

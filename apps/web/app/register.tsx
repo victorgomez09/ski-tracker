@@ -5,6 +5,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator,
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useToast } from "context/toast.context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from "constants/theme";
 
 interface Register {
@@ -66,165 +67,167 @@ export default function RegisterView() {
     const isButtonDisabled = isSubmitting || Object.keys(errors).length > 0;
 
     return (
-        <ScrollView 
-            contentContainerStyle={styles.scrollContent} 
-            style={styles.scrollView}
-        >
-            <View style={styles.card}>
-                <Text style={styles.title}>{t('register')}</Text>
+        <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.background }}>
+            <ScrollView 
+                contentContainerStyle={styles.scrollContent} 
+                style={styles.scrollView}
+            >
+                <View style={styles.card}>
+                    <Text style={styles.title}>{t('register')}</Text>
 
-                {/* FIRST NAME */}
-                <Text style={styles.label}>{t('first_name')}</Text>
-                <Controller
-                    control={control}
-                    name="first_name"
-                    rules={{ required: t('first_name_required') as string }}
-                    render={({ field: { onChange, onBlur, value } }) => (
-                        <TextInput
-                            style={[
-                                styles.input,
-                                errors.first_name ? styles.inputError : styles.inputNormal
-                            ]}
-                            placeholder={t('first_name') as string}
-                            placeholderTextColor={colors.textLight}
-                            onBlur={onBlur}
-                            onChangeText={onChange}
-                            value={value}
-                        />
+                    {/* FIRST NAME */}
+                    <Text style={styles.label}>{t('first_name')}</Text>
+                    <Controller
+                        control={control}
+                        name="first_name"
+                        rules={{ required: t('first_name_required') as string }}
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <TextInput
+                                style={[
+                                    styles.input,
+                                    errors.first_name ? styles.inputError : styles.inputNormal
+                                ]}
+                                placeholder={t('first_name') as string}
+                                placeholderTextColor={colors.textLight}
+                                onBlur={onBlur}
+                                onChangeText={onChange}
+                                value={value}
+                            />
+                        )}
+                    />
+                    {errors.first_name && (
+                        <Text style={styles.errorText}>{errors.first_name.message}</Text>
                     )}
-                />
-                {errors.first_name && (
-                    <Text style={styles.errorText}>{errors.first_name.message}</Text>
-                )}
 
-                {/* LAST NAME */}
-                <Text style={[styles.label, styles.labelSpacing]}>{t('last_name')}</Text>
-                <Controller
-                    control={control}
-                    name="last_name"
-                    rules={{ required: t('last_name_required') as string }}
-                    render={({ field: { onChange, onBlur, value } }) => (
-                        <TextInput
-                            style={[
-                                styles.input,
-                                errors.last_name ? styles.inputError : styles.inputNormal
-                            ]}
-                            placeholder={t('last_name') as string}
-                            placeholderTextColor={colors.textLight}
-                            onBlur={onBlur}
-                            onChangeText={onChange}
-                            value={value}
-                        />
+                    {/* LAST NAME */}
+                    <Text style={[styles.label, styles.labelSpacing]}>{t('last_name')}</Text>
+                    <Controller
+                        control={control}
+                        name="last_name"
+                        rules={{ required: t('last_name_required') as string }}
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <TextInput
+                                style={[
+                                    styles.input,
+                                    errors.last_name ? styles.inputError : styles.inputNormal
+                                ]}
+                                placeholder={t('last_name') as string}
+                                placeholderTextColor={colors.textLight}
+                                onBlur={onBlur}
+                                onChangeText={onChange}
+                                value={value}
+                            />
+                        )}
+                    />
+                    {errors.last_name && (
+                        <Text style={styles.errorText}>{errors.last_name.message}</Text>
                     )}
-                />
-                {errors.last_name && (
-                    <Text style={styles.errorText}>{errors.last_name.message}</Text>
-                )}
 
-                {/* DISPLAY NAME */}
-                <Text style={[styles.label, styles.labelSpacing]}>{t('display_name')}</Text>
-                <Controller
-                    control={control}
-                    name="display_name"
-                    rules={{ required: t('display_name_required') as string }}
-                    render={({ field: { onChange, onBlur, value } }) => (
-                        <TextInput
-                            style={[
-                                styles.input,
-                                errors.display_name ? styles.inputError : styles.inputNormal
-                            ]}
-                            placeholder={t('display_name') as string}
-                            placeholderTextColor={colors.textLight}
-                            onBlur={onBlur}
-                            onChangeText={onChange}
-                            value={value}
-                        />
+                    {/* DISPLAY NAME */}
+                    <Text style={[styles.label, styles.labelSpacing]}>{t('display_name')}</Text>
+                    <Controller
+                        control={control}
+                        name="display_name"
+                        rules={{ required: t('display_name_required') as string }}
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <TextInput
+                                style={[
+                                    styles.input,
+                                    errors.display_name ? styles.inputError : styles.inputNormal
+                                ]}
+                                placeholder={t('display_name') as string}
+                                placeholderTextColor={colors.textLight}
+                                onBlur={onBlur}
+                                onChangeText={onChange}
+                                value={value}
+                            />
+                        )}
+                    />
+                    {errors.display_name && (
+                        <Text style={styles.errorText}>{errors.display_name.message}</Text>
                     )}
-                />
-                {errors.display_name && (
-                    <Text style={styles.errorText}>{errors.display_name.message}</Text>
-                )}
 
-                {/* EMAIL */}
-                <Text style={[styles.label, styles.labelSpacing]}>{t('email')}</Text>
-                <Controller
-                    control={control}
-                    name="email"
-                    rules={{
-                        required: t('email_required') as string,
-                        pattern: {
-                            value: /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/,
-                            message: t('invalid_email') as string
-                        }
-                    }}
-                    render={({ field: { onChange, onBlur, value } }) => (
-                        <TextInput
-                            style={[
-                                styles.input,
-                                errors.email ? styles.inputError : styles.inputNormal
-                            ]}
-                            placeholder={t('email') as string}
-                            placeholderTextColor={colors.textLight}
-                            keyboardType="email-address"
-                            autoCapitalize="none"
-                            onBlur={onBlur}
-                            onChangeText={onChange}
-                            value={value}
-                        />
+                    {/* EMAIL */}
+                    <Text style={[styles.label, styles.labelSpacing]}>{t('email')}</Text>
+                    <Controller
+                        control={control}
+                        name="email"
+                        rules={{
+                            required: t('email_required') as string,
+                            pattern: {
+                                value: /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/,
+                                message: t('invalid_email') as string
+                            }
+                        }}
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <TextInput
+                                style={[
+                                    styles.input,
+                                    errors.email ? styles.inputError : styles.inputNormal
+                                ]}
+                                placeholder={t('email') as string}
+                                placeholderTextColor={colors.textLight}
+                                keyboardType="email-address"
+                                autoCapitalize="none"
+                                onBlur={onBlur}
+                                onChangeText={onChange}
+                                value={value}
+                            />
+                        )}
+                    />
+                    {errors.email && (
+                        <Text style={styles.errorText}>{errors.email.message}</Text>
                     )}
-                />
-                {errors.email && (
-                    <Text style={styles.errorText}>{errors.email.message}</Text>
-                )}
 
-                {/* PASSWORD */}
-                <Text style={[styles.label, styles.labelSpacing]}>{t('password')}</Text>
-                <Controller
-                    control={control}
-                    name="password"
-                    rules={{ required: t('password_required') as string }}
-                    render={({ field: { onChange, onBlur, value } }) => (
-                        <TextInput
-                            style={[
-                                styles.input,
-                                errors.password ? styles.inputError : styles.inputNormal
-                            ]}
-                            placeholder={t('password') as string}
-                            placeholderTextColor={colors.textLight}
-                            secureTextEntry
-                            onBlur={onBlur}
-                            onChangeText={onChange}
-                            value={value}
-                        />
+                    {/* PASSWORD */}
+                    <Text style={[styles.label, styles.labelSpacing]}>{t('password')}</Text>
+                    <Controller
+                        control={control}
+                        name="password"
+                        rules={{ required: t('password_required') as string }}
+                        render={({ field: { onChange, onBlur, value } }) => (
+                            <TextInput
+                                style={[
+                                    styles.input,
+                                    errors.password ? styles.inputError : styles.inputNormal
+                                ]}
+                                placeholder={t('password') as string}
+                                placeholderTextColor={colors.textLight}
+                                secureTextEntry
+                                onBlur={onBlur}
+                                onChangeText={onChange}
+                                value={value}
+                            />
+                        )}
+                    />
+                    {errors.password && (
+                        <Text style={styles.errorText}>{errors.password.message}</Text>
                     )}
-                />
-                {errors.password && (
-                    <Text style={styles.errorText}>{errors.password.message}</Text>
-                )}
 
-                {/* SUBMIT */}
-                <TouchableOpacity
-                    style={[
-                        styles.submitButton,
-                        isButtonDisabled && styles.submitButtonDisabled
-                    ]}
-                    onPress={handleSubmit(onSubmit)}
-                    disabled={isButtonDisabled}
-                >
-                    {isSubmitting ? (
-                        <ActivityIndicator color={colors.textOnPrimary} />
-                    ) : (
-                        <Text style={styles.submitButtonText}>{t('register')}</Text>
-                    )}
-                </TouchableOpacity>
+                    {/* SUBMIT */}
+                    <TouchableOpacity
+                        style={[
+                            styles.submitButton,
+                            isButtonDisabled && styles.submitButtonDisabled
+                        ]}
+                        onPress={handleSubmit(onSubmit)}
+                        disabled={isButtonDisabled}
+                    >
+                        {isSubmitting ? (
+                            <ActivityIndicator color={colors.textOnPrimary} />
+                        ) : (
+                            <Text style={styles.submitButtonText}>{t('register')}</Text>
+                        )}
+                    </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => router.push("/login")} style={styles.linkButton}>
-                    <Text style={styles.linkText}>
-                        {t('already_account_login')}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-        </ScrollView>
+                    <TouchableOpacity onPress={() => router.push("/login")} style={styles.linkButton}>
+                        <Text style={styles.linkText}>
+                            {t('already_account_login')}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </ScrollView>
+        </SafeAreaView>
     );
 }
 

@@ -3,7 +3,7 @@ import { Slot } from 'expo-router';
 import 'i18n';
 import '../styles/global.css';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Text, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, Text, View, StyleSheet, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SQLite from 'expo-sqlite';
 import { useEffect, useState, useMemo } from 'react';
@@ -137,6 +137,7 @@ function AppContent() {
                         <ToastProvider>
                             <AxiosInterceptor>
                                 <OtaGate>
+                                    <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
                                     <Slot />
                                 </OtaGate>
                             </AxiosInterceptor>
