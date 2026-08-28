@@ -509,7 +509,7 @@ export default function InteractiveSkiMapNative() {
                     params: {
                         lat: lat,
                         lon: lon,
-                        radius: 50
+                        radius: 15
                     },
                     signal
                 });

@@ -570,7 +570,7 @@ export default function InteractiveSkiMap() {
                         params: {
                             lat: lat,
                             lon: lon,
-                            radius: 50
+                            radius: 15
                         },
                         signal
                     });
@@ -959,7 +959,7 @@ export default function InteractiveSkiMap() {
                 params: {
                     lat: lat,
                     lon: lon,
-                    radius: 50
+                    radius: 15
                 },
             });
             if (requestResorts.status !== 200) {
