@@ -1,7 +1,10 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import * as SQLite from 'expo-sqlite';
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import i18n from 'i18n';
 
 import { savePointToLocalDB } from './database';
 
@@ -65,22 +68,39 @@ export const startTracking = async (resortId: string, trackingTime: number): Pro
       return false;
     }
 
-    // 3. Verificar si la tarea ya está activa antes de volver a registrarla
+    // 3. Solicitar permiso de notificaciones (Requerido para Android 13+ e iOS)
+    const { status: notificationStatus } = await Notifications.requestPermissionsAsync();
+    if (notificationStatus !== 'granted') {
+      console.warn('Permiso de notificaciones denegado.');
+    }
+
+    // 4. Crear canal de notificaciones con alta importancia para mostrarlo en el lock screen (Solo Android)
+    if (Platform.OS === 'android') {
+      const channelId = `com.vira.skitracker:${LOCATION_TASK_NAME}`;
+      await Notifications.setNotificationChannelAsync(channelId, {
+        name: i18n.t('tracking', 'Seguimiento'),
+        importance: Notifications.AndroidImportance.HIGH,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        sound: 'default',
+      });
+    }
+
+    // 5. Verificar si la tarea ya está activa antes de volver a registrarla
     const isAlreadyStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
     if (isAlreadyStarted) {
       console.log('El servicio de rastreo ya estaba iniciado.');
       return true;
     }
 
-    // 4. Iniciar servicio en segundo plano
+    // 6. Iniciar servicio en segundo plano
     await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
       accuracy: Location.Accuracy.High,
       timeInterval: trackingTime,
       distanceInterval: 10,
       showsBackgroundLocationIndicator: true, // Solo aplica a iOS
       foregroundService: {
-        notificationTitle: "Monitoreando tu sesión de esquí",
-        notificationBody: "Tu sesión de esquí está activa en segundo plano",
+        notificationTitle: i18n.t('monitoring_session', 'Monitoreando tu sesión de esquí'),
+        notificationBody: i18n.t('session_in_progress', 'Tu sesión de esquí está activa en segundo plano'),
         // killWithApp: false, // Evita que el servicio muera si el usuario desliza y cierra la app
       },
     });
@@ -90,7 +110,7 @@ export const startTracking = async (resortId: string, trackingTime: number): Pro
     const message = err instanceof Error ? err.message : String(err);
     console.error('Error al iniciar startTracking:', err);
 
-    if (message.includes('Foreground service permissions')) {
+    if (message.indexOf('Foreground service permissions') !== -1) {
       throw new Error(
         'FOREGROUND_SERVICE_MISSING: El tracking en segundo plano requiere un build nativo con permisos de foreground service. ' +
         'No funciona en Expo Go. Ejecuta "npx expo run:android" para generar e instalar la app.'
