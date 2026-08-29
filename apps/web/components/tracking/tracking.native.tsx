@@ -397,17 +397,12 @@ export default function InteractiveSkiMapNative() {
         } else {
             let trackingTime = 5000;
             try {
-                const userRequest = await api.get<User>('/users/me');
-                if (userRequest.status === 200 && userRequest.data) {
-                    trackingTime = userRequest.data.time_tracking || 5000;
-                    await AsyncStorage.setItem('CACHED_TIME_TRACKING', trackingTime.toString());
-                }
-            } catch (e) {
-                console.warn("Could not fetch user settings for tracking time, loading from cache:", e);
                 const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
                 if (cachedTime) {
                     trackingTime = parseInt(cachedTime, 10);
                 }
+            } catch (e) {
+                console.warn("Could not load tracking time from cache:", e);
             }
 
             const resortIdToUse = resort.ID || "";
