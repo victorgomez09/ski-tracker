@@ -156,10 +156,9 @@ export default function InteractiveSkiMapNative() {
     const fetchResortDetails = useCallback(async (lon?: number, lat?: number, preventCameraMove: boolean = false) => {
         if (isFetchingRef.current) return;
         isFetchingRef.current = true;
+        let latitude = lat ?? (searchParams.lat ? parseFloat(searchParams.lat as string) : undefined);
+        let longitude = lon ?? (searchParams.lng ? parseFloat(searchParams.lng as string) : undefined);
         try {
-            let latitude = lat ?? (searchParams.lat ? parseFloat(searchParams.lat as string) : undefined);
-            let longitude = lon ?? (searchParams.lng ? parseFloat(searchParams.lng as string) : undefined);
-
             if (latitude === undefined || longitude === undefined || isNaN(latitude) || isNaN(longitude)) {
                 const location = await getCurrentLocation();
                 if (location) {
@@ -232,7 +231,18 @@ export default function InteractiveSkiMapNative() {
             const cached = await AsyncStorage.getItem('LAST_RESORT_DETAILS');
             if (cached) {
                 try {
-                    setResort(JSON.parse(cached));
+                    const parsed = JSON.parse(cached);
+                    if (parsed.Latitude && parsed.Longitude && latitude !== undefined && longitude !== undefined) {
+                        const dist = getDistanceFromLatLonInKm(latitude, longitude, parsed.Latitude, parsed.Longitude);
+                        if (dist <= 15) {
+                            setResort(parsed);
+                        } else {
+                            console.log("Cached resort is too far away (" + dist + "km), ignoring.");
+                            setResort({} as ResortDetail);
+                        }
+                    } else {
+                        setResort(parsed);
+                    }
                 } catch (e) {
                     console.error("Error parsing cached resort details:", e);
                 }
@@ -853,9 +863,9 @@ export default function InteractiveSkiMapNative() {
         if (feature && feature.properties?.id) {
             const featureId = feature.properties.id;
             const foundLift = resort.lifts?.find(l => l.ID === featureId);
-            if (foundLift) { setSelectedFeature(foundLift); return; }
+            if (foundLift) { setChartHoverPoint(null); setSelectedFeature(foundLift); return; }
             const foundPiste = resort.pistes?.find(p => p.ID === featureId);
-            if (foundPiste) { setSelectedFeature(foundPiste); return; }
+            if (foundPiste) { setChartHoverPoint(null); setSelectedFeature(foundPiste); return; }
         }
     }, [resort]);
 

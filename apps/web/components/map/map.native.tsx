@@ -1023,19 +1023,23 @@ export default function InteractiveSkiMapNative() {
         }
     }), []);
 
-    // --- Handlers ---
     const handleNativeFeaturePress = useCallback((e: any) => {
         const found = getFeatureFromEvent(e);
-        if (found) setSelectedFeature(found);
+        if (found) {
+            setChartHoverPoint(null);
+            setSelectedFeature(found);
+        }
     }, [getFeatureFromEvent]);
 
     const handleNativeMapPress = useCallback((e: any) => {
         const found = getFeatureFromEvent(e);
         if (found) {
+            setChartHoverPoint(null);
             setSelectedFeature(found);
             return;
         }
         setSelectedFeature(null);
+        setChartHoverPoint(null);
     }, [getFeatureFromEvent]);
 
     const handleNativeRegionDidChange = useCallback((e: any) => {

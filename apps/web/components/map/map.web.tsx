@@ -1063,6 +1063,7 @@ export default function InteractiveSkiMap() {
 
             if (!features.length) {
                 setSelectedFeature(null);
+                setChartHoverPoint(null);
                 setSelectedResort(null);
                 return;
             }
