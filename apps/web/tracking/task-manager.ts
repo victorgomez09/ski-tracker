@@ -96,11 +96,11 @@ export const startTracking = async (resortId: string, trackingTime: number): Pro
     await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
       accuracy: Location.Accuracy.High,
       timeInterval: trackingTime,
-      distanceInterval: 10,
+      distanceInterval: 0,
       showsBackgroundLocationIndicator: true, // Solo aplica a iOS
       foregroundService: {
-        notificationTitle: i18n.t('monitoring_session', 'Monitoreando tu sesión de esquí'),
-        notificationBody: i18n.t('session_in_progress', 'Tu sesión de esquí está activa en segundo plano'),
+        notificationTitle: i18n.t('monitoring_session', 'Monitoreando tu sesión'),
+        notificationBody: i18n.t('session_in_progress', 'Tu sesión está activa en segundo plano'),
         // killWithApp: false, // Evita que el servicio muera si el usuario desliza y cierra la app
       },
     });

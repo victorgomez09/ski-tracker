@@ -2,6 +2,9 @@ package pg
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"math"
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
@@ -80,43 +83,79 @@ func (s *skiResortStore) ListByBBox(ctx context.Context, filter store.SkiResortB
 }
 
 func (s *skiResortStore) GetByCloseness(ctx context.Context, latitude, longitude float64) (*models.SkiResort, error) {
-	var resort models.SkiResort
+	var resorts []models.SkiResort
 	distanceFormula := `6371 * acos(
 		cos(radians(?)) * cos(radians(latitude)) * 
 		cos(radians(longitude) - radians(?)) + 
 		sin(radians(?)) * sin(radians(latitude))
 	)`
 
+	// Step 1: Find all resorts within 50.0 km
 	err := s.db.NewSelect().
-		Model(&resort).
+		Model(&resorts).
 		Where("name IS NOT NULL AND name != ? AND tags->>'status' = ?", "No name", "operating").
-		Where(distanceFormula+" <= 50.0", latitude, longitude, latitude). // Pre-filter resorts to optimize PostGIS execution
-		Where(
-			distanceFormula+` <= 5.0 OR EXISTS (
-				SELECT 1 FROM ski_pistes p 
-				WHERE p.resort_id = sr.id 
-				AND p.geometry_geojson->>'type' = 'LineString'
-				AND ST_DWithin(
-					ST_SetSRID(ST_MakePoint(
-						(p.geometry_geojson->'coordinates'->0->>0)::float8,
-						(p.geometry_geojson->'coordinates'->0->>1)::float8
-					), 4326)::geography,
-					ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
-					5000
-				)
-			)`,
-			latitude, longitude, latitude,
-			longitude, latitude,
-		).
+		Where(distanceFormula+" <= 50.0", latitude, longitude, latitude).
 		OrderExpr(distanceFormula+" ASC", latitude, longitude, latitude).
-		Limit(1).
 		Scan(ctx)
 
 	if err != nil {
 		return nil, err
 	}
+	if len(resorts) == 0 {
+		return nil, sql.ErrNoRows
+	}
 
-	return &resort, nil
+	// Step 2: Check which of these resorts is <= 5km from center OR has a piste <= 5km
+	var validResortIDs []string
+	for _, r := range resorts {
+		validResortIDs = append(validResortIDs, r.ID)
+	}
+
+	var pisteMatchResortIDs []string
+	err = s.db.NewSelect().
+		TableExpr("ski_pistes AS p").
+		ColumnExpr("p.resort_id").
+		Where("p.resort_id IN (?)", bun.In(validResortIDs)).
+		Where("p.geometry_geojson->>'type' = 'LineString'").
+		Where(`ST_DWithin(
+			ST_SetSRID(ST_MakePoint(
+				(p.geometry_geojson->'coordinates'->0->>0)::float8,
+				(p.geometry_geojson->'coordinates'->0->>1)::float8
+			), 4326)::geography,
+			ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+			5000
+		)`, longitude, latitude).
+		GroupExpr("p.resort_id").
+		Scan(ctx, &pisteMatchResortIDs)
+
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	// Fast lookup for resorts that have a piste nearby
+	hasPisteNearby := make(map[string]bool)
+	for _, id := range pisteMatchResortIDs {
+		hasPisteNearby[id] = true
+	}
+
+	// Evaluate conditions:
+	// Since resorts are already sorted by center distance, we just pick the first one that matches:
+	// 1. Center distance <= 5.0 km
+	// 2. OR it has a piste within 5.0 km
+	for _, r := range resorts {
+		// Calculate precise center distance in Go to avoid re-querying
+		rad := math.Pi / 180
+		dLat := (r.Latitude - latitude) * rad
+		dLon := (r.Longitude - longitude) * rad
+		a := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(latitude*rad)*math.Cos(r.Latitude*rad)*math.Sin(dLon/2)*math.Sin(dLon/2)
+		dist := 6371 * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+		if dist <= 5.0 || hasPisteNearby[r.ID] {
+			return &r, nil
+		}
+	}
+
+	return nil, sql.ErrNoRows
 }
 
 func (s *skiResortStore) ListFavorites(ctx context.Context, userID uuid.UUID) ([]models.SkiResort, error) {

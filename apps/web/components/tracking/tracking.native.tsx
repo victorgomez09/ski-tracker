@@ -12,14 +12,15 @@ import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useIsFocused } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import * as Location from 'expo-location';
-import { Activity, Camera as CameraIcon, Download, Pause, Play, Square, Upload, Share2, AlertTriangle } from 'lucide-react-native';
+import { Activity, MapPin, Camera as CameraIcon, Download, Pause, Play, Square, Upload, Share2, AlertTriangle, X, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Platform, StyleSheet, Text, TouchableOpacity, View, Alert, Share } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View, Alert, Share, ActivityIndicator, Modal } from 'react-native';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
 import { CoverageWarningModal } from 'components/tracking/coverage-warning-modal';
+import { ResortSearchModal } from './resort-search-modal';
 import { API_BASE_URL } from 'constants/constants';
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from 'constants/theme';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
@@ -27,13 +28,13 @@ import api from 'interceptor/api';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
 import { User } from 'models/user.model';
 import { useToast } from 'context/toast.context';
-import { clearTrack, getAllPhotos, getAllPoints, initDB, savePhotoToLocalDB } from 'tracking/database';
+import { clearTrack, getAllPhotos, getAllPoints, initDB, savePhotoToLocalDB, savePointToLocalDB } from 'tracking/database';
 import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
 import { Camera } from './camera';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
-const DEFAULT_LAT = 40.797891;
-const DEFAULT_LON = -3.971953;
+const DEFAULT_LAT = 0;
+const DEFAULT_LON = 0;
 const DEFAULT_ZOOM = 13;
 
 const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -101,6 +102,7 @@ export default function InteractiveSkiMapNative() {
 
     const cameraRef = useRef<CameraRef>(null);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
+    const locationWatcherRef = useRef<Location.LocationSubscription | null>(null);
     const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
     const [resort, setResort] = useState<ResortDetail>({} as ResortDetail);
@@ -108,6 +110,9 @@ export default function InteractiveSkiMapNative() {
     const [chartHoverPoint, setChartHoverPoint] = useState<[number, number] | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
     const [takePictureMode, setTakePictureMode] = useState(false);
+    const [searchModalVisible, setSearchModalVisible] = useState(false);
+    const [isCheckingLocation, setIsCheckingLocation] = useState(false);
+    const [resortErrorVisible, setResortErrorVisible] = useState(false);
 
     // --- Tracking status ---
     const [isTracking, setIsTracking] = useState(false);
@@ -120,6 +125,8 @@ export default function InteractiveSkiMapNative() {
     const [showCoverageWarningModal, setShowCoverageWarningModal] = useState(false);
     const [locationReady, setLocationReady] = useState(false);
     const [checkingLocation, setCheckingLocation] = useState(true);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [showUploadModal, setShowUploadModal] = useState(false);
     
     const isFocused = useIsFocused();
 
@@ -149,108 +156,6 @@ export default function InteractiveSkiMapNative() {
         downloadRegion,
         deletePack,
     } = useOfflineMaps(mapStyleUrl);
-
-    const isFetchingRef = useRef(false);
-
-    // --- Fetchers ---
-    const fetchResortDetails = useCallback(async (lon?: number, lat?: number, preventCameraMove: boolean = false) => {
-        if (isFetchingRef.current) return;
-        isFetchingRef.current = true;
-        let latitude = lat ?? (searchParams.lat ? parseFloat(searchParams.lat as string) : undefined);
-        let longitude = lon ?? (searchParams.lng ? parseFloat(searchParams.lng as string) : undefined);
-        try {
-            if (latitude === undefined || longitude === undefined || isNaN(latitude) || isNaN(longitude)) {
-                const location = await getCurrentLocation();
-                if (location) {
-                    latitude = location.coords.latitude;
-                    longitude = location.coords.longitude;
-                } else {
-                    showToast(t('location_permission_required'), 'info');
-                }
-            }
-
-            if (latitude === undefined || longitude === undefined || isNaN(latitude) || isNaN(longitude)) {
-                const cached = await AsyncStorage.getItem('LAST_RESORT_DETAILS');
-                if (cached) {
-                    try {
-                        const parsed = JSON.parse(cached);
-                        setResort(parsed);
-                        if (!preventCameraMove && parsed.Latitude && parsed.Longitude) {
-                            cameraRef.current?.easeTo({
-                                center: [parsed.Longitude, parsed.Latitude],
-                                zoom: 13,
-                                duration: 300,
-                            });
-                        }
-                    } catch (e) {
-                        console.error("Error parsing cached resort details:", e);
-                    }
-                }
-                latitude = DEFAULT_LAT;
-                longitude = DEFAULT_LON;
-            } else if (latitude !== undefined && longitude !== undefined) {
-                // If we got real coordinates, move camera to them
-                const targetLat = latitude;
-                const targetLon = longitude;
-                setViewState(prev => ({
-                    ...prev,
-                    latitude: targetLat,
-                    longitude: targetLon,
-                    zoom: 13
-                }));
-                if (!preventCameraMove) {
-                    cameraRef.current?.easeTo({
-                        center: [targetLon, targetLat],
-                        zoom: 13,
-                        duration: 400,
-                    });
-                }
-            }
-
-            const request = await api.get<ResortDetail>(`${API_BASE_URL}/resorts/closeness`, {
-                params: { lat: latitude, lon: longitude },
-            });
-            if (request.status === 200) {
-                if (request.data) {
-                    setResort(request.data);
-                    await AsyncStorage.setItem('LAST_RESORT_DETAILS', JSON.stringify(request.data));
-                    if (!preventCameraMove && request.data.Latitude && request.data.Longitude) {
-                        cameraRef.current?.easeTo({
-                            center: [request.data.Longitude, request.data.Latitude],
-                            zoom: 13,
-                            duration: 400,
-                        });
-                    }
-                } else {
-                    setResort({} as ResortDetail);
-                    await AsyncStorage.removeItem('LAST_RESORT_DETAILS');
-                }
-            }
-        } catch (error) {
-            console.error("Error fetching resort details, trying cache:", error);
-            const cached = await AsyncStorage.getItem('LAST_RESORT_DETAILS');
-            if (cached) {
-                try {
-                    const parsed = JSON.parse(cached);
-                    if (parsed.Latitude && parsed.Longitude && latitude !== undefined && longitude !== undefined) {
-                        const dist = getDistanceFromLatLonInKm(latitude, longitude, parsed.Latitude, parsed.Longitude);
-                        if (dist <= 15) {
-                            setResort(parsed);
-                        } else {
-                            console.log("Cached resort is too far away (" + dist + "km), ignoring.");
-                            setResort({} as ResortDetail);
-                        }
-                    } else {
-                        setResort(parsed);
-                    }
-                } catch (e) {
-                    console.error("Error parsing cached resort details:", e);
-                }
-            }
-        } finally {
-            isFetchingRef.current = false;
-        }
-    }, [searchParams.lat, searchParams.lng, showToast, t]);
 
     useEffect(() => {
         const lastInternal = lastInternalParamsRef.current;
@@ -282,16 +187,13 @@ export default function InteractiveSkiMapNative() {
                 } catch {
                     // Camera not ready yet
                 }
-
-                fetchResortDetails(lng, lat);
             }
         }
-    }, [searchParams.lat, searchParams.lng, searchParams.zoom, fetchResortDetails]);
+    }, [searchParams.lat, searchParams.lng, searchParams.zoom]);
 
     // --- Database initialization and tracking status on mount ---
     useEffect(() => {
         setupDatabaseAndCheckStatus();
-        fetchResortDetails();
     }, []);
 
     // --- Enforce Location Services ---
@@ -313,8 +215,6 @@ export default function InteractiveSkiMapNative() {
                         try {
                             cameraRef.current?.easeTo({ center: [longitude, latitude], zoom: 14, duration: 1000 });
                             hasCenteredMapRef.current = true;
-                            // Fetch correct resort once we have the actual user location, but don't move camera again
-                            fetchResortDetails(longitude, latitude, true);
                         } catch (e) {}
                     }
                 }
@@ -329,7 +229,7 @@ export default function InteractiveSkiMapNative() {
         } finally {
             setCheckingLocation(false);
         }
-    }, [getCurrentLocation, fetchResortDetails]);
+    }, []);
 
     useEffect(() => {
         checkLocationServices();
@@ -337,16 +237,18 @@ export default function InteractiveSkiMapNative() {
         return () => clearInterval(interval);
     }, [checkLocationServices]);
 
-    // --- Coverage warning for offline maps ---
+    // --- Timer for live duration ---
     useEffect(() => {
-        if (resort?.ID && resort?.Name && !hasShownCoverageWarning) {
-            const isDownloaded = packs.some(p => p.name === resort.Name);
-            if (!isDownloaded) {
-                setShowCoverageWarningModal(true);
-                setHasShownCoverageWarning(true);
-            }
+        let timer: any;
+        if (isTracking && !isPaused) {
+            timer = setInterval(() => {
+                setElapsedSeconds(prev => prev + 1);
+            }, 1000);
         }
-    }, [resort, hasShownCoverageWarning, packs]);
+        return () => {
+            if (timer) clearInterval(timer);
+        };
+    }, [isTracking, isPaused]);
 
     // --- Polling to refresh track points in real-time while recording ---
     useEffect(() => {
@@ -354,12 +256,47 @@ export default function InteractiveSkiMapNative() {
         if (isTracking && !isPaused) {
             interval = setInterval(() => {
                 loadTrackPoints();
-            }, 5000);
+            }, 2000);
         }
         return () => {
             if (interval) clearInterval(interval);
         };
     }, [isTracking, isPaused]);
+
+    const handleSelectResort = async (selected: ResortDetail) => {
+        setSearchModalVisible(false);
+        setIsCheckingLocation(true);
+        try {
+            const loc = await getCurrentLocation();
+            if (loc && selected.Latitude && selected.Longitude) {
+                const dist = getDistanceFromLatLonInKm(loc.coords.latitude, loc.coords.longitude, selected.Latitude, selected.Longitude);
+                if (dist > 20) {
+                    setIsCheckingLocation(false);
+                    setResortErrorVisible(true);
+                    return;
+                }
+            }
+            
+            setResort(selected);
+            if (selected.Latitude && selected.Longitude) {
+                cameraRef.current?.easeTo({
+                    center: [selected.Longitude, selected.Latitude],
+                    zoom: 13,
+                    duration: 400,
+                });
+            }
+
+            const isDownloaded = packs.some(p => p.name === selected.Name);
+            if (!isDownloaded && !hasShownCoverageWarning) {
+                setShowCoverageWarningModal(true);
+                setHasShownCoverageWarning(true);
+            }
+        } catch (err) {
+            console.error("Error verifying resort distance:", err);
+        } finally {
+            setIsCheckingLocation(false);
+        }
+    };
 
     const setupDatabaseAndCheckStatus = async () => {
         try {
@@ -387,14 +324,77 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
+    const startForegroundWatcher = async (resortIdToUse: string) => {
+        try {
+            if (locationWatcherRef.current) {
+                locationWatcherRef.current.remove();
+                locationWatcherRef.current = null;
+            }
+            locationWatcherRef.current = await Location.watchPositionAsync(
+                {
+                    accuracy: Location.Accuracy.High,
+                    timeInterval: 1000,
+                    distanceInterval: 0,
+                },
+                async (loc) => {
+                    try {
+                        const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+                        await savePointToLocalDB(
+                            loc.coords.latitude,
+                            loc.coords.longitude,
+                            loc.coords.altitude || 0,
+                            loc.coords.speed || 0,
+                            null,
+                            resortIdToUse || null,
+                            loc.timestamp,
+                            db
+                        );
+                        const points = await getAllPoints(db);
+                        setTrackPoints(points);
+                        setHasTrackData(points.length > 0);
+                    } catch (err) {
+                        console.error("Error saving point in foreground watcher:", err);
+                    }
+                }
+            );
+        } catch (err) {
+            console.error("Error starting foreground location watcher:", err);
+        }
+    };
+
+    const stopForegroundWatcher = () => {
+        if (locationWatcherRef.current) {
+            locationWatcherRef.current.remove();
+            locationWatcherRef.current = null;
+        }
+    };
+
     // --- Tracking control ---
     const handleToggleTracking = async () => {
         if (isTracking) {
+            stopForegroundWatcher();
             await stopTracking();
             setIsTracking(false);
             setIsPaused(false);
-            await loadTrackPoints();
+            
+            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+            const points = await getAllPoints(db);
+            setTrackPoints(points);
+            setHasTrackData(points.length > 0);
+            
+            if (points.length > 0) {
+                setShowUploadModal(true);
+            } else {
+                showToast(t('no_points_recorded', 'Sesión detenida sin puntos grabados.'), 'info');
+            }
         } else {
+            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+            await clearTrack(db);
+            setTrackPoints([]);
+            setHasTrackData(false);
+            setElapsedSeconds(0);
+            setShowUploadModal(false);
+
             let trackingTime = 5000;
             try {
                 const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
@@ -405,13 +405,33 @@ export default function InteractiveSkiMapNative() {
                 console.warn("Could not load tracking time from cache:", e);
             }
 
-            const resortIdToUse = resort.ID || "";
+            const resortIdToUse = resort?.ID || "";
+            
+            // Record initial point immediately
+            const initialLoc = await getCurrentLocation();
+            if (initialLoc) {
+                await savePointToLocalDB(
+                    initialLoc.coords.latitude,
+                    initialLoc.coords.longitude,
+                    initialLoc.coords.altitude || 0,
+                    initialLoc.coords.speed || 0,
+                    null,
+                    resortIdToUse || null,
+                    initialLoc.timestamp,
+                    db
+                );
+                const initPoints = await getAllPoints(db);
+                setTrackPoints(initPoints);
+                setHasTrackData(initPoints.length > 0);
+            }
+
             try {
                 const started = await startTracking(resortIdToUse, trackingTime);
                 if (!started) {
                     showToast(t('tracking_start_permission_denied'), 'error');
                     return;
                 }
+                await startForegroundWatcher(resortIdToUse);
                 setIsTracking(true);
                 setIsPaused(false);
             } catch (err) {
@@ -434,10 +454,11 @@ export default function InteractiveSkiMapNative() {
             if (cachedTime) {
                 trackingTime = parseInt(cachedTime, 10);
             }
-            const resortIdToUse = resort.ID || "";
+            const resortIdToUse = resort?.ID || "";
             try {
                 const started = await startTracking(resortIdToUse, trackingTime);
                 if (started) {
+                    await startForegroundWatcher(resortIdToUse);
                     setIsPaused(false);
                 } else {
                     showToast(t('tracking_resume_failed'), 'error');
@@ -446,8 +467,23 @@ export default function InteractiveSkiMapNative() {
                 showToast(t('tracking_resume_failed'), 'error');
             }
         } else {
+            stopForegroundWatcher();
             await stopTracking();
             setIsPaused(true);
+        }
+    };
+
+    const handleDiscardTrack = async () => {
+        try {
+            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+            await clearTrack(db);
+            setTrackPoints([]);
+            setHasTrackData(false);
+            setShowUploadModal(false);
+            setElapsedSeconds(0);
+            showToast(t('track_discarded', 'Sesión descartada.'), 'info');
+        } catch (e) {
+            console.error("Error discarding track:", e);
         }
     };
 
@@ -462,17 +498,33 @@ export default function InteractiveSkiMapNative() {
             if (points.length === 0) {
                 showToast(t('no_tracking_data'), 'info');
                 setIsLoading(false);
+                setShowUploadModal(false);
                 return;
             }
 
             const formData = new FormData();
-            const resortIdToUse = resort.ID || points[0].resort_id || "";
+            const resortIdToUse = resort?.ID || points[0]?.resort_id || "";
 
             // 1. Start session
-            const startResponse = await api.post(`${API_BASE_URL}/ski-sessions`, {
-                resortId: resortIdToUse,
+            let userTrackingTime = 5000;
+            try {
+                const userRequest = await api.get<User>('/users/me');
+                if (userRequest.status === 200 && userRequest.data) {
+                    userTrackingTime = userRequest.data.time_tracking || 5000;
+                    await AsyncStorage.setItem('CACHED_TIME_TRACKING', userTrackingTime.toString());
+                }
+            } catch (e) {
+                console.warn("Could not fetch user settings during upload:", e);
+            }
+
+            const startPayload: any = {
                 isPublic: isPublic
-            });
+            };
+            if (resortIdToUse) {
+                startPayload.resortId = resortIdToUse;
+            }
+
+            const startResponse = await api.post(`${API_BASE_URL}/ski-sessions`, startPayload);
 
             if (startResponse.status !== 201) {
                 throw new Error("Failed to start session on backend");
@@ -520,6 +572,8 @@ export default function InteractiveSkiMapNative() {
                 setTrackPoints([]);
                 setHasTrackData(false);
                 setIsTracking(false);
+                setShowUploadModal(false);
+                setElapsedSeconds(0);
             }
         } catch (error) {
             console.error("Error uploading track:", error);
@@ -720,7 +774,7 @@ export default function InteractiveSkiMapNative() {
         if (viewState.latitude && viewState.longitude) {
             const url = `https://www.google.com/maps/search/?api=1&query=${viewState.latitude},${viewState.longitude}`;
             Share.share({
-                message: t('sos_message', '¡Emergencia / SOS! Ésta es mi ubicación actual en la montaña: {{url}}', { url })
+                message: t('sos_message', '¡Emergencia / SOS! Ésta es mi ubicación actual: {{url}}', { url })
             });
         } else {
             showToast(t('no_location', 'No se ha podido obtener la ubicación para enviar.'));
@@ -728,10 +782,8 @@ export default function InteractiveSkiMapNative() {
     };
 
     const liveStats = useMemo(() => {
-        if (!trackPoints || trackPoints.length === 0) return null;
-        const latest = trackPoints[trackPoints.length - 1];
-        const first = trackPoints[0];
-        const durationSeconds = (latest.timestamp - first.timestamp) / 1000;
+        if (!isTracking) return null;
+        const latest = trackPoints.length > 0 ? trackPoints[trackPoints.length - 1] : null;
         
         let totalDistance = 0;
         let maxSpeed = 0;
@@ -743,13 +795,13 @@ export default function InteractiveSkiMapNative() {
         }
 
         return {
-            currentSpeed: latest.speed * 3.6, // m/s to km/h
+            currentSpeed: latest ? latest.speed * 3.6 : 0, // m/s to km/h
             maxSpeed: maxSpeed * 3.6,
-            altitude: latest.alt,
+            altitude: latest ? latest.alt : 0,
             distance: totalDistance, // in km
-            duration: durationSeconds
+            duration: elapsedSeconds
         };
-    }, [trackPoints]);
+    }, [isTracking, trackPoints, elapsedSeconds]);
 
     const formatDuration = (seconds: number) => {
         const h = Math.floor(seconds / 3600);
@@ -785,7 +837,10 @@ export default function InteractiveSkiMapNative() {
 
     const trackGeoJSON = useMemo(() => {
         if (trackPoints.length === 0) return { type: 'FeatureCollection' as const, features: [] };
-        const coordinates = trackPoints.map(p => [p.lon, p.lat]);
+        let coordinates = trackPoints.map(p => [p.lon, p.lat]);
+        if (coordinates.length === 1) {
+            coordinates = [coordinates[0], coordinates[0]];
+        }
         return {
             type: 'FeatureCollection' as const,
             features: [{
@@ -908,6 +963,135 @@ export default function InteractiveSkiMapNative() {
 
     return (
         <View style={styles.container}>
+            {/* Top Bar - Select Resort button */}
+            {!takePictureMode && !isTracking && (
+                <View style={styles.topBar}>
+                    <TouchableOpacity 
+                        style={styles.resortSelectButton} 
+                        onPress={() => setSearchModalVisible(true)}
+                    >
+                        <MapPin size={18} color={colors.primary} />
+                        <Text style={styles.resortSelectText}>
+                            {resort?.ID ? resort.Name : t('select_resort_to_ski', 'Seleccionar estación para esquiar')}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Resort Search Modal */}
+            <ResortSearchModal 
+                visible={searchModalVisible} 
+                onClose={() => setSearchModalVisible(false)}
+                onSelect={handleSelectResort}
+            />
+
+            {/* Loading Location Check */}
+            {isCheckingLocation && (
+                <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                    <Text style={styles.loadingText}>{t('checking_location', 'Comprobando ubicación...')}</Text>
+                </View>
+            )}
+
+            {/* Resort Distance Error Modal */}
+            <Modal visible={resortErrorVisible} animationType="fade" transparent={true}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalPanel, Platform.OS === 'web' ? styles.modalPanelWeb : styles.modalPanelMobile]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>{t('not_in_resort_title', 'Estación incorrecta')}</Text>
+                            <TouchableOpacity onPress={() => setResortErrorVisible(false)} style={styles.modalCloseButton}>
+                                <X size={18} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+                        <View style={{ paddingVertical: SPACING.md }}>
+                            <Text style={{ color: colors.textPrimary, fontSize: 15, lineHeight: 22 }}>
+                                {t('not_in_resort_message', 'No te encuentras en la estación seleccionada. No se puede iniciar el trackeo para esta estación.')}
+                            </Text>
+                        </View>
+                        <TouchableOpacity 
+                            style={{ backgroundColor: colors.primary, padding: SPACING.md, borderRadius: BORDER_RADIUS.md, alignItems: 'center', marginTop: SPACING.xs }}
+                            onPress={() => setResortErrorVisible(false)}
+                        >
+                            <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>OK</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Upload Modal */}
+            <Modal visible={showUploadModal} animationType="fade" transparent={true}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalPanel, Platform.OS === 'web' ? styles.modalPanelWeb : styles.modalPanelMobile]}>
+                        <View style={styles.modalHeader}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Activity size={20} color={colors.primary} />
+                                <Text style={styles.modalTitle}>{t('session_summary', 'Resumen de la sesión')}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setShowUploadModal(false)} style={styles.modalCloseButton}>
+                                <X size={18} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={{ marginVertical: SPACING.md, gap: SPACING.sm }}>
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryLabel}>{t('resort_or_activity', 'Estación / Actividad')}:</Text>
+                                <Text style={styles.summaryValue}>{resort?.Name || t('free_activity', 'Actividad libre')}</Text>
+                            </View>
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryLabel}>{t('points', 'Puntos grabados')}:</Text>
+                                <Text style={styles.summaryValue}>{trackPoints.length}</Text>
+                            </View>
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryLabel}>{t('distance', 'Distancia')}:</Text>
+                                <Text style={styles.summaryValue}>{liveStats?.distance ? liveStats.distance.toFixed(2) : '0.00'} km</Text>
+                            </View>
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryLabel}>{t('duration', 'Duración')}:</Text>
+                                <Text style={styles.summaryValue}>{formatDuration(elapsedSeconds)}</Text>
+                            </View>
+
+                            <View style={styles.privacyRow}>
+                                <Text style={styles.privacyLabel}>¿Sesión pública?</Text>
+                                <TouchableOpacity
+                                    onPress={() => setIsPublic(!isPublic)}
+                                    style={[styles.privacyButton, isPublic ? styles.privacyButtonPublic : styles.privacyButtonPrivate]}
+                                >
+                                    <Text style={styles.privacyButtonText}>
+                                        {isPublic ? 'Pública' : 'Privada'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.xs }}>
+                            <TouchableOpacity
+                                style={styles.discardButton}
+                                onPress={handleDiscardTrack}
+                                disabled={isLoading}
+                            >
+                                <Trash2 size={16} color={colors.danger} />
+                                <Text style={styles.discardButtonText}>{t('discard', 'Descartar')}</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.modalUploadButton}
+                                onPress={handleUploadTrack}
+                                disabled={isLoading}
+                            >
+                                {isLoading ? (
+                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                ) : (
+                                    <>
+                                        <Upload size={16} color="#FFFFFF" />
+                                        <Text style={styles.modalUploadButtonText}>{t('upload_session', 'Subir sesión')}</Text>
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             {takePictureMode && (
                 <View style={styles.cameraOverlay}>
                     <Camera 
@@ -1011,14 +1195,12 @@ export default function InteractiveSkiMapNative() {
                             </>
                         )}
 
-                        {(!hasTrackData || isTracking) && (
-                            <TouchableOpacity
-                                style={[styles.trackingButton, isTracking ? styles.trackingButtonActive : styles.trackingButtonInactive]}
-                                onPress={handleToggleTracking}
-                            >
-                                {isTracking ? <Square size={20} color={colors.textOnPrimary} /> : <Play size={20} color={colors.primary} />}
-                            </TouchableOpacity>
-                        )}
+                        <TouchableOpacity
+                            style={[styles.trackingButton, isTracking ? styles.trackingButtonActive : styles.trackingButtonInactive]}
+                            onPress={handleToggleTracking}
+                        >
+                            {isTracking ? <Square size={20} color={colors.textOnPrimary} /> : <Play size={20} color={colors.primary} />}
+                        </TouchableOpacity>
 
                         {isTracking && (
                             <TouchableOpacity
@@ -1053,45 +1235,6 @@ export default function InteractiveSkiMapNative() {
                             currentResortName={resort?.Name}
                         />
                     )}
-
-                    <View style={styles.panelContainer}>
-                        {!isTracking && hasTrackData && (
-                            <View style={styles.uploadPanel}>
-                                <View style={styles.panelHeader}>
-                                    <View style={styles.panelHeaderTitleRow}>
-                                        <Activity size={16} color={colors.primary} />
-                                        <Text style={styles.panelTitle}>{t('session_recorded')}</Text>
-                                    </View>
-                                    <Text style={styles.panelSubtitle}>
-                                        {t('points_recorded', { count: trackPoints.length, resortName: resort?.Name || "" })}
-                                    </Text>
-                                </View>
-
-                                <View style={styles.privacyRow}>
-                                    <Text style={styles.privacyLabel}>¿Sesión pública?</Text>
-                                    <TouchableOpacity
-                                        onPress={() => setIsPublic(!isPublic)}
-                                        style={[styles.privacyButton, isPublic ? styles.privacyButtonPublic : styles.privacyButtonPrivate]}
-                                    >
-                                        <Text style={styles.privacyButtonText}>
-                                            {isPublic ? 'Pública' : 'Privada'}
-                                        </Text>
-                                    </TouchableOpacity>
-                                </View>
-
-                                <TouchableOpacity
-                                    style={styles.uploadButton}
-                                    onPress={handleUploadTrack}
-                                    disabled={isLoading}
-                                >
-                                    <Upload size={14} color={colors.textOnPrimary} />
-                                    <Text style={styles.uploadButtonText}>
-                                        {isLoading ? t('uploading') : t('upload_track')}
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-                    </View>
                 </>
             )}
 
@@ -1130,12 +1273,145 @@ export default function InteractiveSkiMapNative() {
 }
 
 const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: SPACING.md,
+    },
+    modalPanel: {
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: SPACING.md,
+        borderRadius: BORDER_RADIUS.xl,
+        ...SHADOWS.lg,
+        display: 'flex',
+    },
+    modalPanelWeb: {
+        width: 400,
+    },
+    modalPanelMobile: {
+        width: '95%',
+        maxWidth: 420,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+        flex: 1,
+    },
+    modalCloseButton: {
+        padding: SPACING.xs + 2,
+        borderRadius: BORDER_RADIUS.round,
+        backgroundColor: colors.surface,
+    },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        zIndex: 100,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: SPACING.md,
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
+    },
+    summaryRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 4,
+    },
+    summaryLabel: {
+        fontSize: 14,
+        color: colors.textSecondary,
+    },
+    summaryValue: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: colors.textPrimary,
+    },
+    discardButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 12,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: colors.danger,
+        backgroundColor: colors.surface,
+    },
+    discardButtonText: {
+        color: colors.danger,
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    modalUploadButton: {
+        flex: 2,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 12,
+        borderRadius: BORDER_RADIUS.md,
+        backgroundColor: colors.primary,
+    },
+    modalUploadButtonText: {
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
     container: {
         width: '100%',
         height: '100%',
         position: 'relative',
         flex: 1,
         backgroundColor: colors.background,
+    },
+    topBar: {
+        position: 'absolute',
+        top: SPACING.xl,
+        left: SPACING.md,
+        right: SPACING.md,
+        zIndex: 10,
+        flexDirection: 'row',
+        justifyContent: 'center',
+    },
+    resortSelectButton: {
+        backgroundColor: colors.background,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: SPACING.sm,
+        paddingHorizontal: SPACING.md,
+        borderRadius: BORDER_RADIUS.round,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    resortSelectText: {
+        marginLeft: SPACING.sm,
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     cameraOverlay: {
         position: 'absolute',
@@ -1203,44 +1479,6 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         borderRadius: BORDER_RADIUS.round,
         backgroundColor: colors.success,
     },
-    panelContainer: {
-        position: 'absolute',
-        bottom: 16,
-        left: 16,
-        zIndex: 40,
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 12,
-    },
-    uploadPanel: {
-        backgroundColor: colors.card,
-        borderColor: colors.border,
-        borderWidth: 1,
-        padding: SPACING.md,
-        borderRadius: BORDER_RADIUS.md,
-        ...SHADOWS.lg,
-        width: 288,
-        flexDirection: 'column',
-        gap: 12,
-    },
-    panelHeader: {
-        flexDirection: 'column',
-        gap: 2,
-    },
-    panelHeaderTitleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    panelTitle: {
-        fontWeight: '700',
-        fontSize: 14,
-        color: colors.textPrimary,
-    },
-    panelSubtitle: {
-        fontSize: 11,
-        color: colors.textSecondary,
-    },
     privacyRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1251,7 +1489,7 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         paddingVertical: 8,
     },
     privacyLabel: {
-        fontSize: 11,
+        fontSize: 12,
         color: colors.textPrimary,
         fontWeight: '500',
     },
@@ -1267,24 +1505,10 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         backgroundColor: colors.textSecondary,
     },
     privacyButtonText: {
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: '700',
         color: colors.textOnPrimary,
         textTransform: 'uppercase',
-    },
-    uploadButton: {
-        backgroundColor: colors.primary,
-        padding: 8,
-        borderRadius: BORDER_RADIUS.md,
-        alignItems: 'center',
-        flexDirection: 'row',
-        justifyContent: 'center',
-        gap: 8,
-    },
-    uploadButtonText: {
-        color: colors.textOnPrimary,
-        fontWeight: '700',
-        fontSize: 12,
     },
     liveStatsContainer: {
         position: 'absolute',
@@ -1297,6 +1521,7 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         ...SHADOWS.md,
+        zIndex: 20,
     },
     statBox: {
         alignItems: 'center',
