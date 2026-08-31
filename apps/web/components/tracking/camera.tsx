@@ -5,6 +5,7 @@ import {
 } from "expo-camera";
 import { Image } from "expo-image";
 import { Camera as CameraIcon, RotateCcw, X } from "lucide-react-native";
+import { useTranslation } from "react-i18next";
 import { useRef, useState } from "react";
 import { View, Text, TouchableOpacity, Pressable, StyleSheet } from "react-native";
 import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from "../../constants/theme";
@@ -15,6 +16,7 @@ interface CameraProps {
 }
 
 export const Camera = ({ onClose, onSavePhoto }: CameraProps) => {
+    const { t } = useTranslation();
     const [permission, requestPermission] = useCameraPermissions();
     const ref = useRef<CameraView>(null);
     const [uri, setUri] = useState<string | null>(null);
@@ -28,10 +30,10 @@ export const Camera = ({ onClose, onSavePhoto }: CameraProps) => {
         return (
             <View style={styles.permissionContainer}>
                 <Text style={styles.permissionText}>
-                    We need your permission to use the camera
+                    {t('camera_permission_required', 'We need your permission to use the camera')}
                 </Text>
                 <TouchableOpacity onPress={requestPermission} style={styles.button}>
-                    <Text style={styles.buttonText}>Grant permission</Text>
+                    <Text style={styles.buttonText}>{t('grant_permission', 'Grant permission')}</Text>
                 </TouchableOpacity>
             </View>
         );
@@ -56,7 +58,7 @@ export const Camera = ({ onClose, onSavePhoto }: CameraProps) => {
                 />
                 <View style={styles.actionRow}>
                     <TouchableOpacity onPress={() => setUri(null)} style={styles.secondaryButton}>
-                        <Text style={styles.secondaryButtonText}>Repetir</Text>
+                        <Text style={styles.secondaryButtonText}>{t('retake', 'Repetir')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
                         onPress={() => {
@@ -65,7 +67,7 @@ export const Camera = ({ onClose, onSavePhoto }: CameraProps) => {
                         }} 
                         style={styles.button}
                     >
-                        <Text style={styles.buttonText}>Guardar Foto</Text>
+                        <Text style={styles.buttonText}>{t('save_photo', 'Guardar Foto')}</Text>
                     </TouchableOpacity>
                 </View>
             </View>

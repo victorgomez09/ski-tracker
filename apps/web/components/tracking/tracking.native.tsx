@@ -1069,7 +1069,7 @@ export default function InteractiveSkiMapNative() {
                             style={{ backgroundColor: colors.primary, padding: SPACING.md, borderRadius: BORDER_RADIUS.md, alignItems: 'center', marginTop: SPACING.xs }}
                             onPress={() => setResortErrorVisible(false)}
                         >
-                            <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>OK</Text>
+                            <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>{t('ok', 'OK')}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -1108,13 +1108,13 @@ export default function InteractiveSkiMapNative() {
                             </View>
 
                             <View style={styles.privacyRow}>
-                                <Text style={styles.privacyLabel}>¿Sesión pública?</Text>
+                                <Text style={styles.privacyLabel}>{t('public_session_question', '¿Sesión pública?')}</Text>
                                 <TouchableOpacity
                                     onPress={() => setIsPublic(!isPublic)}
                                     style={[styles.privacyButton, isPublic ? styles.privacyButtonPublic : styles.privacyButtonPrivate]}
                                 >
                                     <Text style={styles.privacyButtonText}>
-                                        {isPublic ? 'Pública' : 'Privada'}
+                                        {isPublic ? t('public') : t('private')}
                                     </Text>
                                 </TouchableOpacity>
                             </View>

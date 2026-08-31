@@ -550,7 +550,7 @@ export default function ProfileView() {
             </View>
 
             <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>Tema de la Aplicación</Text>
+              <Text style={styles.settingLabel}>{t('app_theme')}</Text>
               <TouchableOpacity
                 style={styles.themeToggle}
                 onPress={toggleTheme}
@@ -558,12 +558,12 @@ export default function ProfileView() {
                 {isDark ? (
                   <>
                     <Moon size={16} color={colors.primary} />
-                    <Text style={styles.themeToggleText}>Oscuro</Text>
+                    <Text style={styles.themeToggleText}>{t('dark')}</Text>
                   </>
                 ) : (
                   <>
                     <Sun size={16} color={colors.warning || '#f59e0b'} />
-                    <Text style={styles.themeToggleText}>Claro</Text>
+                    <Text style={styles.themeToggleText}>{t('light')}</Text>
                   </>
                 )}
               </TouchableOpacity>

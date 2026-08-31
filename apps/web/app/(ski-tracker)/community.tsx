@@ -541,7 +541,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
               {/* ALL PHOTOS (when expanded) */}
               {session.photos && session.photos.length > 0 && (
                 <View style={{ marginBottom: 16, paddingTop: 8 }}>
-                  <Text style={styles.runsPhotosHeader}>Fotos de la Sesión</Text>
+                  <Text style={styles.runsPhotosHeader}>{t('session_photos')}</Text>
                   <View style={styles.runsPhotosList}>
                     {session.photos.map((photo) => {
                       const imageUrl = `${API_BASE_URL}/ski-sessions/photos/${photo.photo_url}`;
