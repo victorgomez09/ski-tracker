@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react-native";
 import { View, Text, TouchableOpacity, Platform, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useMemo } from 'react';
+import { useNetworkState } from 'expo-network';
 
 import { useOta } from "context/ota.context";
 import { useTranslation } from "react-i18next";
@@ -14,6 +15,8 @@ export default function BottomTabs({ state, descriptors, navigation }: BottomTab
     const { hasOptionalUpdate, openOptionalModal } = useOta();
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
+    const networkState = useNetworkState();
+    const isOffline = networkState?.isConnected === false;
 
     return (
         <SafeAreaView edges={['bottom']} style={styles.safeArea}>
@@ -34,6 +37,7 @@ export default function BottomTabs({ state, descriptors, navigation }: BottomTab
                     const descriptor = descriptors[route.key];
 
                     if (route.name === 'tracking' && isWeb) return null;
+                    if (isOffline && (route.name === 'community' || route.name === 'resorts')) return null;
 
                     const onPress = () => {
                         const event = navigation.emit({

@@ -243,5 +243,7 @@
   },
   "gps_required": "GPS Requerido",
   "gps_required_desc": "Debes activar la ubicación del dispositivo y dar permisos a la app para poder usar el Tracker.",
-  "check_again": "Comprobar de nuevo"
+  "check_again": "Comprobar de nuevo",
+  "offline_connection_required": "Se necesita conexión a internet para obtener la información básica de tu cuenta.",
+  "retry": "Reintentar"
 }

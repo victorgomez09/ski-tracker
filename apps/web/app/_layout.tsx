@@ -3,7 +3,7 @@ import { Slot } from 'expo-router';
 import 'i18n';
 import '../styles/global.css';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Text, View, StyleSheet, StatusBar } from 'react-native';
+import { ActivityIndicator, Text, View, StyleSheet, StatusBar, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SQLite from 'expo-sqlite';
 import { useEffect, useState, useMemo } from 'react';
@@ -11,12 +11,36 @@ import { useEffect, useState, useMemo } from 'react';
 import { initDB } from 'tracking/database';
 
 import { UpdateModal } from 'components/updates/update-modal';
-import { AuthProvider } from 'context/auth.context';
+import { AuthProvider, useAuth } from 'context/auth.context';
 import { FavoritesProvider } from 'context/favorites.context';
 import { OtaProvider, useOta } from 'context/ota.context';
 import { ToastProvider } from 'context/toast.context';
 import { AxiosInterceptor } from 'interceptor/axios.interceptor';
 import { useThemeColors, ThemeProvider, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from 'constants/theme';
+
+function ConnectionGate({ children }: { children: React.ReactNode }) {
+    const { connectionRequiredError, retryConnectionCheck } = useAuth();
+    const { t } = useTranslation();
+    const colors = useThemeColors();
+
+    if (connectionRequiredError) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, padding: 24 }}>
+                <Text style={{ fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 16, textAlign: 'center', lineHeight: 22 }}>
+                    {t('offline_connection_required')}
+                </Text>
+                <TouchableOpacity 
+                    onPress={retryConnectionCheck}
+                    style={{ backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 }}
+                >
+                    <Text style={{ color: '#ffffff', fontWeight: 'bold', fontSize: 14 }}>{t('retry')}</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
+    return <>{children}</>;
+}
 
 function OtaGate({ children }: { children: React.ReactNode }) {
     const { t } = useTranslation();
@@ -133,16 +157,18 @@ function AppContent() {
         <SafeAreaProvider>
             <OtaProvider>
                 <AuthProvider>
-                    <FavoritesProvider>
-                        <ToastProvider>
-                            <AxiosInterceptor>
-                                <OtaGate>
-                                    <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
-                                    <Slot />
-                                </OtaGate>
-                            </AxiosInterceptor>
-                        </ToastProvider>
-                    </FavoritesProvider>
+                    <ConnectionGate>
+                        <FavoritesProvider>
+                            <ToastProvider>
+                                <AxiosInterceptor>
+                                    <OtaGate>
+                                        <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+                                        <Slot />
+                                    </OtaGate>
+                                </AxiosInterceptor>
+                            </ToastProvider>
+                        </FavoritesProvider>
+                    </ConnectionGate>
                 </AuthProvider>
             </OtaProvider>
         </SafeAreaProvider>

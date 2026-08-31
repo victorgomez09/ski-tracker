@@ -1,5 +1,6 @@
 import { Checkbox } from 'expo-checkbox';
 import * as ImagePicker from 'expo-image-picker';
+import { useNetworkState } from 'expo-network';
 import {
   Camera,
   Check,
@@ -60,14 +61,16 @@ export type ProfileFormValues = {
 
 export default function ProfileView() {
   const { t } = useTranslation();
-  const { token, signOut } = useAuth();
+  const { token, signOut, user, updateUser, refreshUser } = useAuth();
   const { showToast } = useToast();
-  const [user, setUser] = useState<UserType | null>(null);
+  const networkState = useNetworkState();
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const colors = useThemeColors();
   const { isDark, toggleTheme } = useTheme();
   const styles = useMemo(() => getStyles(colors), [colors]);
+  
+  const isOffline = networkState?.isConnected === false;
 
   const {
     control,
@@ -104,30 +107,16 @@ export default function ProfileView() {
   }, [user, reset]);
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const response = await api.get<UserType>(`${API_BASE_URL}/users/me`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (response.status !== 200) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        setUser(response.data);
-      } catch (error) {
-        console.error('Error fetching profile:', error);
-      }
-    };
-
-    if (token) {
-      fetchProfile();
+    if (!isOffline && token) {
+      refreshUser();
     }
-  }, [token]);
+  }, [token, isOffline]);
 
   const updateActivityType = async (type: 'snow' | 'ski') => {
+    if (isOffline) {
+      showToast(t('offline_no_edit') || 'No puedes cambiar de modalidad sin conexión', 'info');
+      return;
+    }
     if (user) {
       try {
         const request = await api.put<UserType>(
@@ -144,7 +133,7 @@ export default function ProfileView() {
         );
 
         if (request.status === 200) {
-          setUser({ ...user, activity_type: type });
+          updateUser({ ...user, activity_type: type });
         }
       } catch (error) {
         console.error('Error updating activity type:', error);
@@ -153,6 +142,10 @@ export default function ProfileView() {
   };
 
   const handlePickImage = async () => {
+    if (isOffline) {
+      showToast(t('offline_no_edit') || 'No puedes editar el perfil sin conexión', 'info');
+      return;
+    }
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
       showToast(t('permission_denied_gallery'), 'error');
@@ -177,6 +170,10 @@ export default function ProfileView() {
   };
 
   const onSubmit = async (data: ProfileFormValues) => {
+    if (isOffline) {
+      showToast(t('offline_no_edit') || 'No puedes editar el perfil sin conexión', 'info');
+      return;
+    }
     try {
       setSaving(true);
       const response = await api.put<UserType>(`${API_BASE_URL}/users/${user?.id}`, {
@@ -190,7 +187,7 @@ export default function ProfileView() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      setUser(response.data);
+      updateUser(response.data);
       setIsEditing(false);
       showToast(t('profile_updated'), 'success');
     } catch (error) {
@@ -218,16 +215,18 @@ export default function ProfileView() {
             {/* Upper colorful accent bar */}
             <View style={[styles.heroAccentBar, { backgroundColor: colors.primary }]} />
 
-            <TouchableOpacity
-              onPress={() => (isEditing ? handleCancel() : setIsEditing(true))}
-              style={styles.editToggleButton}
-              activeOpacity={0.8}>
-              {isEditing ? (
-                <X size={18} color={colors.textSecondary} />
-              ) : (
-                <Pencil size={18} color={colors.primary} />
-              )}
-            </TouchableOpacity>
+            {!isOffline && (
+              <TouchableOpacity
+                onPress={() => (isEditing ? handleCancel() : setIsEditing(true))}
+                style={styles.editToggleButton}
+                activeOpacity={0.8}>
+                {isEditing ? (
+                  <X size={18} color={colors.textSecondary} />
+                ) : (
+                  <Pencil size={18} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            )}
 
             <View style={styles.avatarWrapper}>
               <View style={styles.avatarContainer}>

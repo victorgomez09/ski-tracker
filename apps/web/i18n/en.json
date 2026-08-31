@@ -243,5 +243,7 @@
   },
   "gps_required": "GPS Required",
   "gps_required_desc": "You must enable device location and grant permissions to the app in order to use the Tracker.",
-  "check_again": "Check Again"
+  "check_again": "Check Again",
+  "offline_connection_required": "Internet connection is required to retrieve basic account details.",
+  "retry": "Retry"
 }

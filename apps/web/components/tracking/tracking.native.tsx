@@ -31,6 +31,7 @@ import { useToast } from 'context/toast.context';
 import { clearTrack, getAllPhotos, getAllPoints, initDB, savePhotoToLocalDB, savePointToLocalDB } from 'tracking/database';
 import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
 import { Camera } from './camera';
+import { useAuth } from 'context/auth.context';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 const DEFAULT_LAT = 0;
@@ -98,8 +99,9 @@ export default function InteractiveSkiMapNative() {
     const { t } = useTranslation();
     const { showToast } = useToast();
     const colors = useThemeColors();
+    const { user } = useAuth();
+    
     const styles = useMemo(() => getStyles(colors), [colors]);
-
     const cameraRef = useRef<CameraRef>(null);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
     const locationWatcherRef = useRef<Location.LocationSubscription | null>(null);
@@ -395,7 +397,7 @@ export default function InteractiveSkiMapNative() {
             setElapsedSeconds(0);
             setShowUploadModal(false);
 
-            let trackingTime = 5000;
+            let trackingTime = user?.time_tracking || 5000;
             try {
                 const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
                 if (cachedTime) {
@@ -506,7 +508,7 @@ export default function InteractiveSkiMapNative() {
             const resortIdToUse = resort?.ID || points[0]?.resort_id || "";
 
             // 1. Start session
-            let userTrackingTime = 5000;
+            let userTrackingTime = user?.time_tracking || 5000;
             try {
                 const userRequest = await api.get<User>('/users/me');
                 if (userRequest.status === 200 && userRequest.data) {
@@ -812,23 +814,24 @@ export default function InteractiveSkiMapNative() {
     };
 
     const renderLiveStats = () => {
-        if (!isTracking || !liveStats) return null;
+        if (!isTracking) return null;
+
         return (
             <View style={styles.liveStatsContainer}>
                 <View style={styles.statBox}>
-                    <Text style={styles.statValue}>{liveStats.currentSpeed.toFixed(1)} <Text style={styles.statUnit}>km/h</Text></Text>
+                    <Text style={styles.statValue}>{liveStats?.currentSpeed.toFixed(1)} <Text style={styles.statUnit}>km/h</Text></Text>
                     <Text style={styles.statLabel}>{t('speed', 'Speed')}</Text>
                 </View>
                 <View style={styles.statBox}>
-                    <Text style={styles.statValue}>{liveStats.altitude.toFixed(0)} <Text style={styles.statUnit}>m</Text></Text>
+                    <Text style={styles.statValue}>{liveStats?.altitude.toFixed(0)} <Text style={styles.statUnit}>m</Text></Text>
                     <Text style={styles.statLabel}>{t('altitude', 'Alt')}</Text>
                 </View>
                 <View style={styles.statBox}>
-                    <Text style={styles.statValue}>{liveStats.distance.toFixed(2)} <Text style={styles.statUnit}>km</Text></Text>
+                    <Text style={styles.statValue}>{liveStats?.distance.toFixed(2)} <Text style={styles.statUnit}>km</Text></Text>
                     <Text style={styles.statLabel}>{t('distance', 'Dist')}</Text>
                 </View>
                 <View style={styles.statBox}>
-                    <Text style={styles.statValue}>{formatDuration(liveStats.duration)}</Text>
+                    <Text style={styles.statValue}>{formatDuration(liveStats?.duration ?? 0)}</Text>
                     <Text style={styles.statLabel}>{t('duration', 'Time')}</Text>
                 </View>
             </View>

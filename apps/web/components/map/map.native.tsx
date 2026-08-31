@@ -8,6 +8,7 @@ import {
     type CameraRef,
 } from '@maplibre/maplibre-react-native';
 import { useNetworkState } from 'expo-network';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
@@ -423,6 +424,35 @@ export default function InteractiveSkiMapNative() {
         zoom: number,
         bounds?: { minLon: number; minLat: number; maxLon: number; maxLat: number }
     ) => {
+        if (networkState?.isConnected === false) {
+            setIsLoadingResorts(false);
+            try {
+                const existingCached = await AsyncStorage.getItem('cached_resorts');
+                if (existingCached) {
+                    const parsed: ResortDetail[] = JSON.parse(existingCached);
+                    const offlineResorts = parsed.filter(resort => {
+                        return packs.some(pack => {
+                            if (!pack.bounds || pack.bounds.length < 2) return false;
+                            const [[west, south], [east, north]] = pack.bounds;
+                            return (
+                                resort.Longitude >= west &&
+                                resort.Longitude <= east &&
+                                resort.Latitude >= south &&
+                                resort.Latitude <= north
+                            );
+                        });
+                    });
+                    setResorts(offlineResorts);
+                } else {
+                    setResorts([]);
+                }
+            } catch (e) {
+                console.error('Error reading cached resorts offline:', e);
+                setResorts([]);
+            }
+            return;
+        }
+
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
         }
@@ -476,6 +506,25 @@ export default function InteractiveSkiMapNative() {
                     // Reset nearby cache since we moved to bbox mode
                     lastFetchedCenterRef.current = null;
                     lastFetchedZoomRef.current = zoom;
+
+                    // Cache resorts in AsyncStorage
+                    try {
+                        const existingCached = await AsyncStorage.getItem('cached_resorts');
+                        let resortsToCache = request.data;
+                        if (existingCached) {
+                            const parsed: ResortDetail[] = JSON.parse(existingCached);
+                            const merged = [...parsed];
+                            request.data.forEach(newResort => {
+                                if (!merged.some(r => r.ID === newResort.ID)) {
+                                    merged.push(newResort);
+                                }
+                            });
+                            resortsToCache = merged;
+                        }
+                        await AsyncStorage.setItem('cached_resorts', JSON.stringify(resortsToCache));
+                    } catch (e) {
+                        console.error('Error caching resorts:', e);
+                    }
                 }
             } catch (error) {
                 if (!axios.isCancel(error)) {
@@ -521,6 +570,25 @@ export default function InteractiveSkiMapNative() {
                     lastFetchedZoomRef.current = zoom;
                     // Reset bbox cache since we moved to nearby mode
                     lastFetchedBoundsRef.current = null;
+
+                    // Cache resorts in AsyncStorage
+                    try {
+                        const existingCached = await AsyncStorage.getItem('cached_resorts');
+                        let resortsToCache = request.data;
+                        if (existingCached) {
+                            const parsed: ResortDetail[] = JSON.parse(existingCached);
+                            const merged = [...parsed];
+                            request.data.forEach(newResort => {
+                                if (!merged.some(r => r.ID === newResort.ID)) {
+                                    merged.push(newResort);
+                                }
+                            });
+                            resortsToCache = merged;
+                        }
+                        await AsyncStorage.setItem('cached_resorts', JSON.stringify(resortsToCache));
+                    } catch (e) {
+                        console.error('Error caching resorts:', e);
+                    }
                 }
             } catch (error) {
                 if (!axios.isCancel(error)) {
@@ -538,7 +606,7 @@ export default function InteractiveSkiMapNative() {
                 }
             }
         }
-    }, []);
+    }, [networkState, packs]);
 
     useEffect(() => {
         const rawLat = searchParams.lat;
