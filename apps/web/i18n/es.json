@@ -324,5 +324,7 @@
   "retake": "Repetir",
   "save_photo": "Guardar Foto",
   "ok": "Aceptar",
-  "public_session_question": "¿Sesión pública?"
+  "public_session_question": "¿Sesión pública?",
+  "webcams": "Cámaras en directo",
+  "webview_unavailable": "WebView no disponible"
 }

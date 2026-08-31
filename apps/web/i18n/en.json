@@ -324,5 +324,7 @@
   "retake": "Retake",
   "save_photo": "Save Photo",
   "ok": "OK",
-  "public_session_question": "Public session?"
+  "public_session_question": "Public session?",
+  "webcams": "Live Webcams",
+  "webview_unavailable": "WebView not available"
 }

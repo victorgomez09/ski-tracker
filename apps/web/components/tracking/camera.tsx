@@ -8,6 +8,7 @@ import { Camera as CameraIcon, RotateCcw, X } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { useRef, useState } from "react";
 import { View, Text, TouchableOpacity, Pressable, StyleSheet } from "react-native";
+
 import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from "../../constants/theme";
 
 interface CameraProps {

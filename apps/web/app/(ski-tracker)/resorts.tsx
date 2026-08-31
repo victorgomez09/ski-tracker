@@ -15,7 +15,7 @@ import {
   Search,
   Star,
   Unlock,
-  X,
+  X
 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
