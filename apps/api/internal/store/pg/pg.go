@@ -92,3 +92,6 @@ func (s *Store) SessionPoint() store.SessionPointStore {
 func (s *Store) SkiRun() store.SkiRunStore {
 	return &skiRunStore{db: s.db}
 }
+func (s *Store) Friendship() store.FriendshipStore {
+	return &friendshipStore{db: s.db}
+}

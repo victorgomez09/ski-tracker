@@ -17,6 +17,7 @@ type Store interface {
 	SkiSession() SkiSessionStore
 	SessionPoint() SessionPointStore
 	SkiRun() SkiRunStore
+	Friendship() FriendshipStore
 }
 
 // Pagination request parameters.
@@ -93,6 +94,7 @@ type SkiSessionStore interface {
 	Update(ctx context.Context, sessionID uuid.UUID, now time.Time) error
 	UpdateMetrics(ctx context.Context, sessionID uuid.UUID, totalDistance, maxSpeed, verticalDrop float64) error
 	AddPhotos(ctx context.Context, photos []models.SessionPhoto) error
+	ListFriendsSessions(ctx context.Context, userID uuid.UUID) ([]models.SkiSession, error)
 }
 
 type SessionPointStore interface {
@@ -103,4 +105,17 @@ type SessionPointStore interface {
 
 type SkiRunStore interface {
 	Create(ctx context.Context, run *models.SkiRun) (*models.SkiRun, error)
+}
+
+type FriendshipStore interface {
+	ListFriends(ctx context.Context, userID uuid.UUID) ([]models.Friendship, error)
+	ListRequests(ctx context.Context, userID uuid.UUID) ([]models.Friendship, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Friendship, error)
+	GetByUsers(ctx context.Context, requesterID, addresseeID uuid.UUID) (*models.Friendship, error)
+	Create(ctx context.Context, friendship *models.Friendship) error
+	Update(ctx context.Context, friendship *models.Friendship) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	SearchUsers(ctx context.Context, query string, currentUserID uuid.UUID) ([]models.User, error)
+	GetFriendsLiveLocations(ctx context.Context, userID uuid.UUID, resortID string) ([]models.User, error)
+	GetFriendsLeaderboard(ctx context.Context, userID uuid.UUID, period string, metric string) ([]models.LeaderboardEntry, error)
 }

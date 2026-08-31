@@ -5,6 +5,7 @@ import {
     Layer as NativeLayer,
     Map as NativeMap,
     UserLocation,
+    Marker,
     type CameraRef,
 } from '@maplibre/maplibre-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,6 +13,8 @@ import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useIsFocused } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import * as Location from 'expo-location';
+import { useNetworkState } from 'expo-network';
+import { Image } from 'expo-image';
 import { Activity, MapPin, Camera as CameraIcon, Download, Pause, Play, Square, Upload, Share2, AlertTriangle, X, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -100,6 +103,8 @@ export default function InteractiveSkiMapNative() {
     const { showToast } = useToast();
     const colors = useThemeColors();
     const { user } = useAuth();
+    const networkState = useNetworkState();
+    const isOffline = networkState?.isConnected === false;
     
     const styles = useMemo(() => getStyles(colors), [colors]);
     const cameraRef = useRef<CameraRef>(null);
@@ -122,6 +127,7 @@ export default function InteractiveSkiMapNative() {
     const [hasTrackData, setHasTrackData] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [trackPoints, setTrackPoints] = useState<any[]>([]);
+    const [friendsLocations, setFriendsLocations] = useState<any[]>([]);
     const [isPublic, setIsPublic] = useState(true);
     const [hasShownCoverageWarning, setHasShownCoverageWarning] = useState(false);
     const [showCoverageWarningModal, setShowCoverageWarningModal] = useState(false);
@@ -264,6 +270,54 @@ export default function InteractiveSkiMapNative() {
             if (interval) clearInterval(interval);
         };
     }, [isTracking, isPaused]);
+
+    // --- Periodic upload of live location for friends ---
+    useEffect(() => {
+        let interval: any;
+        if (isTracking && !isPaused && trackPoints.length > 0 && isOffline === false) {
+            interval = setInterval(async () => {
+                const lastPoint = trackPoints[trackPoints.length - 1];
+                if (lastPoint && lastPoint.latitude && lastPoint.longitude && resort && resort.ID) {
+                    try {
+                        await api.post(`${API_BASE_URL}/users/live-location`, {
+                            latitude: lastPoint.latitude,
+                            longitude: lastPoint.longitude,
+                            resort_id: resort.ID.toString(),
+                        });
+                    } catch (err) {
+                        console.error('Error updating live location:', err);
+                    }
+                }
+            }, 30000);
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [isTracking, isPaused, trackPoints, resort, isOffline]);
+
+    // --- Fetch friends' live locations periodically ---
+    useEffect(() => {
+        let interval: any;
+        if (resort && resort.ID && isOffline === false) {
+            const fetchLocations = async () => {
+                try {
+                    const res = await api.get(`${API_BASE_URL}/friends/live-locations?resort_id=${resort.ID}`);
+                    if (res.status === 200) {
+                        setFriendsLocations(res.data || []);
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch friends live locations:', err);
+                }
+            };
+            fetchLocations();
+            interval = setInterval(fetchLocations, 15000);
+        } else {
+            setFriendsLocations([]);
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [resort, isOffline]);
 
     const handleSelectResort = async (selected: ResortDetail) => {
         setSearchModalVisible(false);
@@ -1166,6 +1220,37 @@ export default function InteractiveSkiMapNative() {
                         <NativeLayer {...chartHoverPointStyle} />
                     </NativeGeoJSONSource>
                 )}
+
+                {friendsLocations.map((friend) => {
+                    if (!friend.last_longitude || !friend.last_latitude) return null;
+                    return (
+                        <Marker
+                            key={friend.id}
+                            id={`friend-marker-${friend.id}`}
+                            lngLat={[friend.last_longitude, friend.last_latitude]}
+                        >
+                            <View style={styles.friendMarkerContainer}>
+                                {friend.avatar_url ? (
+                                    <Image
+                                        source={{ uri: friend.avatar_url }}
+                                        style={styles.friendMarkerAvatar}
+                                    />
+                                ) : (
+                                    <View style={styles.friendMarkerInitialsContainer}>
+                                        <Text style={styles.friendMarkerInitials}>
+                                            {((friend.display_name || friend.first_name || 'U')[0]).toUpperCase()}
+                                        </Text>
+                                    </View>
+                                )}
+                                <View style={styles.friendMarkerNameTag}>
+                                    <Text style={styles.friendMarkerNameText} numberOfLines={1}>
+                                        {friend.display_name || friend.first_name}
+                                    </Text>
+                                </View>
+                            </View>
+                        </Marker>
+                    );
+                })}
             </NativeMap>
 
             {!takePictureMode && (
@@ -1575,5 +1660,44 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     locationOverlayButtonText: {
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    friendMarkerContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    friendMarkerAvatar: {
+        width: 32,
+        height: 32,
+        borderRadius: BORDER_RADIUS.round,
+        borderWidth: 2,
+        borderColor: colors.primary,
+        backgroundColor: colors.surface,
+    },
+    friendMarkerInitialsContainer: {
+        width: 32,
+        height: 32,
+        borderRadius: BORDER_RADIUS.round,
+        borderWidth: 2,
+        borderColor: colors.primary,
+        backgroundColor: colors.primaryLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    friendMarkerInitials: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: colors.primaryDark,
+    },
+    friendMarkerNameTag: {
+        backgroundColor: 'rgba(0,0,0,0.75)',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: BORDER_RADIUS.sm,
+        marginTop: 2,
+    },
+    friendMarkerNameText: {
+        fontSize: 9,
+        color: '#ffffff',
+        fontWeight: '600',
     },
 });

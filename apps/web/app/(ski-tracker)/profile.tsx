@@ -14,6 +14,7 @@ import {
   Settings,
   Clock,
   Activity,
+  ShieldAlert,
 } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -57,6 +58,9 @@ export type ProfileFormValues = {
   email: string;
   avatar_url: string | null;
   time_tracking: number;
+  privacy_sessions: string;
+  privacy_live_location: string;
+  privacy_requests: string;
 };
 
 export default function ProfileView() {
@@ -87,6 +91,9 @@ export default function ProfileView() {
       email: '',
       avatar_url: null,
       time_tracking: 5000,
+      privacy_sessions: 'FRIENDS',
+      privacy_live_location: 'WHILE_RECORDING',
+      privacy_requests: 'EVERYONE',
     },
   });
 
@@ -102,6 +109,9 @@ export default function ProfileView() {
         email: user.email || '',
         avatar_url: user.avatar_url || null,
         time_tracking: user.time_tracking || 5000,
+        privacy_sessions: user.privacy_sessions || 'FRIENDS',
+        privacy_live_location: user.privacy_live_location || 'WHILE_RECORDING',
+        privacy_requests: user.privacy_requests || 'EVERYONE',
       });
     }
   }, [user, reset]);
@@ -560,6 +570,124 @@ export default function ProfileView() {
             </View>
           </View>
 
+          {/* Section: Privacy Settings */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <ShieldAlert size={18} color={colors.primary} />
+              <Text style={styles.sectionTitle}>{t('privacy_settings') || 'Ajustes de Privacidad'}</Text>
+            </View>
+
+            <View style={{ gap: 14 }}>
+              <View>
+                <Text style={styles.label}>{t('privacy_sessions')}</Text>
+                <Controller
+                  control={control}
+                  name="privacy_sessions"
+                  render={({ field: { onChange, value } }) => (
+                    <View style={styles.privacySelector}>
+                      <TouchableOpacity
+                        style={[styles.privacyPill, value === 'PUBLIC' && styles.privacyPillActive]}
+                        onPress={() => isEditing && onChange('PUBLIC')}
+                        disabled={!isEditing}
+                      >
+                        <Text style={[styles.privacyPillText, value === 'PUBLIC' && styles.privacyPillTextActive]}>
+                          {t('public')}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.privacyPill, value === 'FRIENDS' && styles.privacyPillActive]}
+                        onPress={() => isEditing && onChange('FRIENDS')}
+                        disabled={!isEditing}
+                      >
+                        <Text style={[styles.privacyPillText, value === 'FRIENDS' && styles.privacyPillTextActive]}>
+                          {t('only_friends')}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.privacyPill, value === 'PRIVATE' && styles.privacyPillActive]}
+                        onPress={() => isEditing && onChange('PRIVATE')}
+                        disabled={!isEditing}
+                      >
+                        <Text style={[styles.privacyPillText, value === 'PRIVATE' && styles.privacyPillTextActive]}>
+                          {t('private')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                />
+              </View>
+
+              <View>
+                <Text style={styles.label}>{t('privacy_live_location')}</Text>
+                <Controller
+                  control={control}
+                  name="privacy_live_location"
+                  render={({ field: { onChange, value } }) => (
+                    <View style={styles.privacySelector}>
+                      <TouchableOpacity
+                        style={[styles.privacyPill, value === 'ON' && styles.privacyPillActive]}
+                        onPress={() => isEditing && onChange('ON')}
+                        disabled={!isEditing}
+                      >
+                        <Text style={[styles.privacyPillText, value === 'ON' && styles.privacyPillTextActive]}>
+                          {t('on') || 'SÍ'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.privacyPill, value === 'WHILE_RECORDING' && styles.privacyPillActive]}
+                        onPress={() => isEditing && onChange('WHILE_RECORDING')}
+                        disabled={!isEditing}
+                      >
+                        <Text style={[styles.privacyPillText, value === 'WHILE_RECORDING' && styles.privacyPillTextActive]}>
+                          {t('while_recording')}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.privacyPill, value === 'OFF' && styles.privacyPillActive]}
+                        onPress={() => isEditing && onChange('OFF')}
+                        disabled={!isEditing}
+                      >
+                        <Text style={[styles.privacyPillText, value === 'OFF' && styles.privacyPillTextActive]}>
+                          {t('off') || 'NO'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                />
+              </View>
+
+              <View>
+                <Text style={styles.label}>{t('privacy_requests')}</Text>
+                <Controller
+                  control={control}
+                  name="privacy_requests"
+                  render={({ field: { onChange, value } }) => (
+                    <View style={styles.privacySelector}>
+                      <TouchableOpacity
+                        style={[styles.privacyPill, value === 'EVERYONE' && styles.privacyPillActive]}
+                        onPress={() => isEditing && onChange('EVERYONE')}
+                        disabled={!isEditing}
+                      >
+                        <Text style={[styles.privacyPillText, value === 'EVERYONE' && styles.privacyPillTextActive]}>
+                          {t('everyone')}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.privacyPill, value === 'NOONE' && styles.privacyPillActive]}
+                        onPress={() => isEditing && onChange('NOONE')}
+                        disabled={!isEditing}
+                      >
+                        <Text style={[styles.privacyPillText, value === 'NOONE' && styles.privacyPillTextActive]}>
+                          {t('noone')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                />
+              </View>
+            </View>
+          </View>
+
           {/* Save / Cancel actions if Editing */}
           {isEditing && (
             <View style={styles.formActions}>
@@ -972,5 +1100,31 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
       fontWeight: '500',
       color: colors.textLight,
       letterSpacing: 0.5,
+    },
+    privacySelector: {
+      flexDirection: 'row',
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.round,
+      padding: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    privacyPill: {
+      flex: 1,
+      paddingVertical: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: BORDER_RADIUS.round,
+    },
+    privacyPillActive: {
+      backgroundColor: colors.primary,
+    },
+    privacyPillText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: colors.textSecondary,
+    },
+    privacyPillTextActive: {
+      color: colors.textOnPrimary,
     },
   });

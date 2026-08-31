@@ -116,6 +116,20 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.PUT("/users/:id", userHandler.Update)
 			protected.DELETE("/users/:id", userHandler.Delete)
 
+			// Friendship / Social routes
+			friendshipHandler := v1.NewFriendshipHandler(deps.Services.Friendship)
+			protected.GET("/friends", friendshipHandler.ListFriends)
+			protected.GET("/friends/requests", friendshipHandler.ListRequests)
+			protected.POST("/friends/request", friendshipHandler.SendRequest)
+			protected.POST("/friends/respond", friendshipHandler.RespondRequest)
+			protected.DELETE("/friends/:id", friendshipHandler.DeleteFriendship)
+			protected.POST("/friends/block/:userId", friendshipHandler.BlockUser)
+			protected.GET("/users/search", friendshipHandler.SearchUsers)
+			protected.GET("/friends/feed", friendshipHandler.ListFriendsFeed)
+			protected.POST("/users/live-location", friendshipHandler.UpdateLiveLocation)
+			protected.GET("/friends/live-locations", friendshipHandler.GetFriendsLiveLocations)
+			protected.GET("/friends/leaderboard", friendshipHandler.GetFriendsLeaderboard)
+
 			// Weather routes
 			weatherHandler := v1.NewWeatherHandler(deps.Services.Weather, deps.Cache)
 			protected.GET("/weather", weatherHandler.GetWeather)

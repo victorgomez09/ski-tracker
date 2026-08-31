@@ -547,7 +547,7 @@ export default function InteractiveSkiMap() {
                         isFetchingRef.current = false;
                         setTimeout(() => {
                             const map = mapRef.current?.getMap();
-                            if (!map || (map as any).isIdle()) {
+                            if (!map || (map as any)?.isIdle()) {
                                 setIsLoadingResorts(false);
                             }
                         }, 200);
@@ -596,7 +596,7 @@ export default function InteractiveSkiMap() {
                         isFetchingRef.current = false;
                         setTimeout(() => {
                             const map = mapRef.current?.getMap();
-                            if (!map || (map as any).isIdle()) {
+                            if (!map || (map as any)?.isIdle()) {
                                 setIsLoadingResorts(false);
                             }
                         }, 200);
@@ -1016,7 +1016,7 @@ export default function InteractiveSkiMap() {
             isFetchingRef.current = false;
             setTimeout(() => {
                 const map = mapRef.current?.getMap();
-                if (!map || (map as any).isIdle()) {
+                if (!map || (map as any)?.isIdle()) {
                     setIsLoadingResorts(false);
                 }
             }, 200);

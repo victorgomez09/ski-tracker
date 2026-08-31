@@ -128,3 +128,27 @@ func (u *skiSessionStore) AddPhotos(ctx context.Context, photos []models.Session
 	_, err := u.db.NewInsert().Model(&photos).Exec(ctx)
 	return err
 }
+
+func (u *skiSessionStore) ListFriendsSessions(ctx context.Context, userID uuid.UUID) ([]models.SkiSession, error) {
+	var sessions []models.SkiSession
+
+	friendIDsQuery := u.db.NewSelect().
+		ColumnExpr("CASE WHEN requester_id = ? THEN addressee_id ELSE requester_id END", userID).
+		Model((*models.Friendship)(nil)).
+		Where("status = 'ACCEPTED'").
+		Where("requester_id = ? OR addressee_id = ?", userID, userID)
+
+	err := u.db.NewSelect().
+		Model(&sessions).
+		Relation("Runs").
+		Relation("User").
+		Relation("Resort").
+		Relation("Photos").
+		Where("ss.user_id = ? OR ss.user_id IN (?)", userID, friendIDsQuery).
+		Order("ss.created_at DESC").
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}

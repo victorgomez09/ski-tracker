@@ -9,7 +9,8 @@ import {
   UIManager,
   View,
   Modal,
-  Linking
+  Linking,
+  ActivityIndicator
 } from 'react-native';
 import { useTranslation } from "react-i18next";
 import { Image } from 'expo-image';
@@ -26,6 +27,7 @@ import { Session } from "models/session.model";
 import { useToast } from "context/toast.context";
 
 import { useAuth } from "context/auth.context";
+import FriendsModal from "components/social/friends-modal";
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -93,18 +95,30 @@ const formatDate = (dateString: string): string => {
 export default function CommunityView() {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const { user: currentUser } = useAuth();
   const [communityData, setCommunityData] = useState<Session[]>([]);
+  const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const colors = useThemeColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
+  const [feedFilter, setFeedFilter] = useState<'global' | 'friends' | 'leaderboard'>('global');
+  const [friendsModalVisible, setFriendsModalVisible] = useState(false);
+  
+  // Leaderboard filters
+  const [leaderboardPeriod, setLeaderboardPeriod] = useState<'week' | 'month' | 'season'>('season');
+  const [leaderboardMetric, setLeaderboardMetric] = useState<'distance' | 'vertical_drop' | 'max_speed'>('distance');
 
   useEffect(() => {
-    fetchCommunityData();
-  }, []);
+    if (feedFilter === 'leaderboard') {
+      fetchLeaderboard();
+    } else {
+      fetchCommunityData(feedFilter);
+    }
+  }, [feedFilter, leaderboardPeriod, leaderboardMetric]);
 
-  const fetchCommunityData = async () => {
+  const fetchCommunityData = async (filter = feedFilter) => {
+    setLoading(true);
     try {
-      const sessionsRequest = await api.get<{ sessions: Session[] }>(`${API_BASE_URL}/ski-sessions`);
+      const endpoint = filter === 'friends' ? `${API_BASE_URL}/friends/feed` : `${API_BASE_URL}/ski-sessions`;
+      const sessionsRequest = await api.get<{ sessions: Session[] }>(endpoint);
 
       if (sessionsRequest.status === 200) {
         setCommunityData(sessionsRequest.data.sessions || []);
@@ -117,24 +131,43 @@ export default function CommunityView() {
     }
   };
 
-  if (loading || communityData.length === 0) {
-    return (
-      <SafeAreaView
-        edges={['top']}
-        style={{ flex: 1, backgroundColor: 'transparent' }}
-      >
-        <View style={styles.loadingContainer}>
-          <View style={styles.loadingCard}>
-            <Users size={32} color={colors.textSecondary} />
-            <Text style={styles.noActivityTitle}>{t('no_activity_yet')}</Text>
-            <Text style={styles.noActivitySubtitle}>
-              {loading ? t('loading_community_sessions') : t('no_community_sessions')}
-            </Text>
-          </View>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const fetchLeaderboard = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`${API_BASE_URL}/friends/leaderboard?period=${leaderboardPeriod}&metric=${leaderboardMetric}`);
+      if (res.status === 200) {
+        setLeaderboardData(res.data || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch leaderboard:", error);
+      showToast(t('failed_fetch_leaderboard') || 'Error al obtener la clasificación', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const colors = useThemeColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
+
+  const renderRank = (rank: number) => {
+    if (rank === 1) return <Text style={{ fontSize: 18 }}>🥇</Text>;
+    if (rank === 2) return <Text style={{ fontSize: 18 }}>🥈</Text>;
+    if (rank === 3) return <Text style={{ fontSize: 18 }}>🥉</Text>;
+    return <Text style={styles.rankNumber}>{rank}</Text>;
+  };
+
+  const formatValue = (val: number, met: string) => {
+    if (met === 'distance') {
+      return `${(val / 1000).toFixed(1)} km`;
+    }
+    if (met === 'vertical_drop') {
+      return `${Math.round(val)} m`;
+    }
+    if (met === 'max_speed') {
+      return `${(val * 3.6).toFixed(1)} km/h`;
+    }
+    return val.toString();
+  };
 
   return (
     <SafeAreaView
@@ -151,25 +184,194 @@ export default function CommunityView() {
               {t('live_rider_activity')}
             </Text>
           </View>
-          <View style={styles.badge}>
-            <Users size={12} color={colors.primaryDark} />
-            <Text style={styles.badgeText}>
-              {t('sessions_count', { count: communityData.length })}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity 
+              style={[styles.badge, { backgroundColor: colors.surface }]}
+              onPress={() => setFriendsModalVisible(true)}
+            >
+              <Users size={12} color={colors.primaryDark} />
+              <Text style={styles.badgeText}>{t('friends')}</Text>
+            </TouchableOpacity>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>
+                {feedFilter === 'leaderboard' 
+                  ? t('riders_count', { count: leaderboardData.length }) || `${leaderboardData.length} Riders`
+                  : t('sessions_count', { count: communityData.length })}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* SESSION LIST */}
-        <FlatList
-          data={communityData}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <SkiSessionCard session={item} />}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          showsVerticalScrollIndicator={false}
-          refreshing={loading}
-          onRefresh={fetchCommunityData}
-        />
+        {/* Filter Toggle */}
+        <View style={styles.toggleBar}>
+          <TouchableOpacity
+            style={[styles.toggleBtn, feedFilter === 'global' && styles.activeToggleBtn]}
+            onPress={() => setFeedFilter('global')}
+          >
+            <Text style={[styles.toggleText, feedFilter === 'global' && styles.activeToggleText]}>
+              {t('global')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleBtn, feedFilter === 'friends' && styles.activeToggleBtn]}
+            onPress={() => setFeedFilter('friends')}
+          >
+            <Text style={[styles.toggleText, feedFilter === 'friends' && styles.activeToggleText]}>
+              {t('friends')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleBtn, feedFilter === 'leaderboard' && styles.activeToggleBtn]}
+            onPress={() => setFeedFilter('leaderboard')}
+          >
+            <Text style={[styles.toggleText, feedFilter === 'leaderboard' && styles.activeToggleText]}>
+              {t('leaderboard')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {feedFilter === 'leaderboard' ? (
+          <View style={{ flex: 1 }}>
+            {/* Period and Metric selectors */}
+            <View style={styles.subFilterBar}>
+              <View style={styles.pillGroup}>
+                <TouchableOpacity
+                  style={[styles.smallPill, leaderboardPeriod === 'week' && styles.smallPillActive]}
+                  onPress={() => setLeaderboardPeriod('week')}
+                >
+                  <Text style={[styles.smallPillText, leaderboardPeriod === 'week' && styles.smallPillTextActive]}>
+                    {t('week')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.smallPill, leaderboardPeriod === 'month' && styles.smallPillActive]}
+                  onPress={() => setLeaderboardPeriod('month')}
+                >
+                  <Text style={[styles.smallPillText, leaderboardPeriod === 'month' && styles.smallPillTextActive]}>
+                    {t('month')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.smallPill, leaderboardPeriod === 'season' && styles.smallPillActive]}
+                  onPress={() => setLeaderboardPeriod('season')}
+                >
+                  <Text style={[styles.smallPillText, leaderboardPeriod === 'season' && styles.smallPillTextActive]}>
+                    {t('season')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.pillGroup}>
+                <TouchableOpacity
+                  style={[styles.smallPill, leaderboardMetric === 'distance' && styles.smallPillActive]}
+                  onPress={() => setLeaderboardMetric('distance')}
+                >
+                  <Text style={[styles.smallPillText, leaderboardMetric === 'distance' && styles.smallPillTextActive]}>
+                    Km
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.smallPill, leaderboardMetric === 'vertical_drop' && styles.smallPillActive]}
+                  onPress={() => setLeaderboardMetric('vertical_drop')}
+                >
+                  <Text style={[styles.smallPillText, leaderboardMetric === 'vertical_drop' && styles.smallPillTextActive]}>
+                    Desnivel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.smallPill, leaderboardMetric === 'max_speed' && styles.smallPillActive]}
+                  onPress={() => setLeaderboardMetric('max_speed')}
+                >
+                  <Text style={[styles.smallPillText, leaderboardMetric === 'max_speed' && styles.smallPillTextActive]}>
+                    Vel. Máx
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {loading ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={leaderboardData}
+                keyExtractor={(item) => item.user_id}
+                renderItem={({ item, index }) => {
+                  const isMe = item.user_id === currentUser?.id;
+                  const name = item.display_name || `${item.first_name} ${item.last_name}`.trim() || 'Rider';
+                  const initials = `${item.first_name?.[0] || 'U'}${item.last_name?.[0] || ''}`.toUpperCase();
+
+                  return (
+                    <View style={[styles.leaderboardRow, isMe && styles.leaderboardRowMe]}>
+                      <View style={styles.leaderboardRankCol}>
+                        {renderRank(index + 1)}
+                      </View>
+                      <View style={styles.leaderboardAvatarContainer}>
+                        {item.avatar_url ? (
+                          <Image source={{ uri: item.avatar_url }} style={styles.leaderboardAvatar} />
+                        ) : (
+                          <Text style={styles.leaderboardAvatarText}>{initials}</Text>
+                        )}
+                      </View>
+                      <View style={styles.leaderboardInfoCol}>
+                        <Text style={[styles.leaderboardName, isMe && styles.leaderboardNameMe]}>
+                          {name} {isMe && `(Tú)`}
+                        </Text>
+                      </View>
+                      <View style={styles.leaderboardValueCol}>
+                        <Text style={styles.leaderboardValueText}>
+                          {formatValue(item.value, leaderboardMetric)}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                }}
+                ListEmptyComponent={
+                  <View style={styles.loadingContainer}>
+                    <View style={styles.loadingCard}>
+                      <Users size={32} color={colors.textSecondary} />
+                      <Text style={styles.noActivityTitle}>{t('no_leaderboard_data')}</Text>
+                    </View>
+                  </View>
+                }
+              />
+            )}
+          </View>
+        ) : (
+          loading ? (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          ) : (
+            <FlatList
+              data={communityData}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => <SkiSessionCard session={item} />}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              showsVerticalScrollIndicator={false}
+              refreshing={loading}
+              onRefresh={() => fetchCommunityData(feedFilter)}
+              ListEmptyComponent={
+                <View style={styles.loadingContainer}>
+                  <View style={styles.loadingCard}>
+                    <Users size={32} color={colors.textSecondary} />
+                    <Text style={styles.noActivityTitle}>{t('no_activity_yet')}</Text>
+                    <Text style={styles.noActivitySubtitle}>
+                      {feedFilter === 'friends' ? (t('no_friends_yet') || 'Aún no tienes amigos agregados.') : t('no_community_sessions')}
+                    </Text>
+                  </View>
+                </View>
+              }
+            />
+          )
+        )}
       </View>
+
+      <FriendsModal
+        visible={friendsModalVisible}
+        onClose={() => setFriendsModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -873,5 +1075,129 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     color: '#ffffff',
     fontWeight: '700',
     fontSize: 14,
+  },
+  toggleBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: BORDER_RADIUS.md,
+    padding: 4,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  activeToggleBtn: {
+    backgroundColor: colors.primary,
+  },
+  toggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  activeToggleText: {
+    color: '#ffffff',
+  },
+  subFilterBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.md,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  pillGroup: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: BORDER_RADIUS.round,
+    padding: 3,
+  },
+  smallPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: BORDER_RADIUS.round,
+  },
+  smallPillActive: {
+    backgroundColor: colors.primary,
+  },
+  smallPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  smallPillTextActive: {
+    color: '#ffffff',
+  },
+  leaderboardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: SPACING.sm,
+    backgroundColor: colors.card,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 8,
+    ...SHADOWS.sm,
+  },
+  leaderboardRowMe: {
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+    backgroundColor: colors.primaryLight,
+  },
+  leaderboardRankCol: {
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankNumber: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.textSecondary,
+  },
+  leaderboardAvatarContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: BORDER_RADIUS.round,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginRight: 12,
+  },
+  leaderboardAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  leaderboardAvatarText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textSecondary,
+  },
+  leaderboardInfoCol: {
+    flex: 1,
+  },
+  leaderboardName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  leaderboardNameMe: {
+    color: colors.primaryDark,
+  },
+  leaderboardValueCol: {
+    alignItems: 'flex-end',
+  },
+  leaderboardValueText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.primary,
   },
 });
