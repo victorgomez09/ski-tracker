@@ -429,19 +429,24 @@ export default function InteractiveSkiMapNative() {
 
         showToast("isTracking: " + isTracking + ", isPaused: " + isPaused, 'info');
         if (isTracking) {
-            stopForegroundWatcher();
-            await stopTracking();
-            setIsTracking(false);
-            setIsPaused(false);
+            try {
+                stopForegroundWatcher();
+                await stopTracking();
+                setIsTracking(false);
+                setIsPaused(false);
 
-            const points = await getAllPoints(db);
-            setTrackPoints(points);
-            setHasTrackData(points.length > 0);
+                const points = await getAllPoints(db);
+                const photos = await getAllPhotos(db);
+                setTrackPoints(points);
+                setHasTrackData(points.length > 0 || photos.length > 0);
 
-            if (points.length > 0) {
-                setShowUploadModal(true);
-            } else {
-                showToast(t('no_points_recorded', 'Sesión detenida sin puntos grabados.'), 'info');
+                if (points.length > 0 || photos.length > 0) {
+                    setShowUploadModal(true);
+                } else {
+                    showToast(t('no_points_recorded', 'Sesión detenida sin puntos grabados.'), 'info');
+                }
+            } catch (err) {
+                showToast("Error al detener tracking: " + err, 'error');
             }
         } else {
             showToast("init tracking", 'info');
@@ -599,11 +604,13 @@ export default function InteractiveSkiMapNative() {
             const sessionId = startResponse.data.sessionId;
 
             photos.forEach((photo, index) => {
-                formData.append('photos', {
-                    uri: (photo as any).file_uri,
-                    type: 'image/jpeg',
-                    name: `session_photo_${index}.jpg`,
-                } as any);
+                if (photo && photo.file_uri) {
+                    formData.append('photos', {
+                        uri: photo.file_uri,
+                        type: 'image/jpeg',
+                        name: `session_photo_${index}.jpg`,
+                    } as any);
+                }
             });
 
             // 2. Upload points
@@ -1168,7 +1175,7 @@ export default function InteractiveSkiMapNative() {
                             try {
                                 await savePhotoToLocalDB(uri, db);
                             } catch (e) {
-                                console.error("Error saving photo locally:", e);
+                                showToast("Error saving photo locally: " + e, 'error');
                             }
                         }}
                     />
@@ -1293,17 +1300,17 @@ export default function InteractiveSkiMapNative() {
                             </>
                         )}
 
-                        <TouchableOpacity                                                                                                                                                               
-                            style={[styles.trackingButton, isTracking ? styles.trackingButtonActive : styles.trackingButtonInactive]}                                                                   
-                            onPress={handleToggleTracking}                                                                                                                                              
-                            disabled={isStartingTracking}                                                                                                                                               
-                        >                                                                                                                                                                               
-                            {isStartingTracking ? (                                                                                                                                                     
-                                <ActivityIndicator size="small" color={colors.primary} />                                                                                                               
-                            ) : isTracking ? (                                                                                                                                                          
-                                <Square size={20} color={colors.textOnPrimary} />                                                                                                                       
-                            ) : (                                                                                                                                                                       
-                                <Play size={20} color={colors.primary} />                                                                                                                               
+                        <TouchableOpacity
+                            style={[styles.trackingButton, isTracking ? styles.trackingButtonActive : styles.trackingButtonInactive]}
+                            onPress={handleToggleTracking}
+                            disabled={isStartingTracking}
+                        >
+                            {isStartingTracking ? (
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            ) : isTracking ? (
+                                <Square size={20} color={colors.textOnPrimary} />
+                            ) : (
+                                <Play size={20} color={colors.primary} />
                             )}
                         </TouchableOpacity>
 

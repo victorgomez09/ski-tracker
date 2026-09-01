@@ -23,6 +23,16 @@ export const Camera = ({ onClose, onSavePhoto }: CameraProps) => {
     const [uri, setUri] = useState<string | null>(null);
     const [facing, setFacing] = useState<CameraType>("back");
 
+    const handleSave = async () => {                                                                                                                     
+        if (!uri) return;                                                                                                                                
+        if (onSavePhoto) {                                                                                                                               
+            await onSavePhoto(uri);                                                                                                                      
+        }                                                                                                                                                
+        if (onClose) {                                                                                                                                   
+            onClose();                                                                                                                                   
+        }                                                                                                                                                
+    };            
+
     if (!permission) {
         return null;
     }
@@ -62,10 +72,7 @@ export const Camera = ({ onClose, onSavePhoto }: CameraProps) => {
                         <Text style={styles.secondaryButtonText}>{t('retake', 'Repetir')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
-                        onPress={() => {
-                            if (onSavePhoto) onSavePhoto(uri);
-                            if (onClose) onClose();
-                        }} 
+                        onPress={handleSave} 
                         style={styles.button}
                     >
                         <Text style={styles.buttonText}>{t('save_photo', 'Guardar Foto')}</Text>
