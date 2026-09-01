@@ -13,7 +13,7 @@ interface Toast {
 }
 
 interface ToastContextType {
-  showToast: (message: string, type?: ToastType) => void;
+  showToast: (message: string, type?: ToastType, duration?: number) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -32,7 +32,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
-  const showToast = useCallback((message: string, type: ToastType = 'info') => {
+  const showToast = useCallback((message: string, type: ToastType = 'info', duration?: number) => {
     const id = Math.random().toString(36).substring(2, 9);
     const fadeAnim = new Animated.Value(0);
 
@@ -44,10 +44,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       useNativeDriver: true,
     }).start();
 
-    // Auto-remove after 4 seconds
+    const timeout = duration !== undefined ? duration : (type === 'error' ? 12000 : 4000);
+
+    // Auto-remove after timeout
     setTimeout(() => {
       removeToast(id, fadeAnim);
-    }, 4000);
+    }, timeout);
   }, [removeToast]);
 
   return (
@@ -88,7 +90,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             >
               <View style={styles.toastContent}>
                 <Icon size={20} color={iconColor} style={styles.icon} />
-                <Text style={[styles.toastText, { color: colors.textPrimary }]} numberOfLines={4}>
+                <Text style={[styles.toastText, { color: colors.textPrimary }]} numberOfLines={12}>
                   {toast.message}
                 </Text>
                 <TouchableOpacity onPress={() => removeToast(toast.id, toast.fadeAnim)} style={styles.closeButton}>

@@ -26,20 +26,24 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
     try {
       // 1. Abrir base de datos y leer AsyncStorage UNA sola vez fuera del bucle
       const resortId = await AsyncStorage.getItem('ACTIVE_RESORT_ID');
-      const database = await SQLite.openDatabaseAsync('ski_tracker.db');
+      const database = await SQLite.openDatabaseAsync('ski_tracker.db', { useNewConnection: true });
 
-      for (const location of locations) {
-        console.log('GPS guardado en SQLite:', location.coords.latitude, location.coords.longitude);
-        await savePointToLocalDB(
-          location.coords.latitude,
-          location.coords.longitude,
-          location.coords.altitude || 0,
-          location.coords.speed || 0,
-          null, // Barómetro
-          resortId,
-          location.timestamp,
-          database
-        );
+      try {
+        for (const location of locations) {
+          console.log('GPS guardado en SQLite:', location.coords.latitude, location.coords.longitude);
+          await savePointToLocalDB(
+            location.coords.latitude,
+            location.coords.longitude,
+            location.coords.altitude || 0,
+            location.coords.speed || 0,
+            null, // Barómetro
+            resortId,
+            location.timestamp,
+            database
+          );
+        }
+      } finally {
+        await database.closeAsync();
       }
     } catch (err) {
       console.error('Error guardando puntos en background:', err);

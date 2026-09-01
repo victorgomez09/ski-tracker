@@ -111,7 +111,6 @@ export default function InteractiveSkiMapNative() {
     const styles = useMemo(() => getStyles(colors), [colors]);
     const cameraRef = useRef<CameraRef>(null);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
-    const locationWatcherRef = useRef<Location.LocationSubscription | null>(null);
     const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
     const [resort, setResort] = useState<ResortDetail>({} as ResortDetail);
@@ -383,61 +382,79 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
-    const startForegroundWatcher = async (resortIdToUse: string) => {
-        if (locationWatcherRef.current) {
-            locationWatcherRef.current.remove();
-            locationWatcherRef.current = null;
-        }
-        locationWatcherRef.current = await Location.watchPositionAsync(
-            {
-                accuracy: Location.Accuracy.High,
-                timeInterval: 2000,
-                distanceInterval: 1,
-            },
-            async (loc) => {
-                try {
-                    await savePointToLocalDB(
-                        loc.coords.latitude,
-                        loc.coords.longitude,
-                        loc.coords.altitude || 0,
-                        loc.coords.speed || 0,
-                        null,
-                        resortIdToUse || null,
-                        loc.timestamp,
-                        db
-                    );
-                    const points = await getAllPoints(db);
-                    setTrackPoints(points);
-                    setHasTrackData(points.length > 0);
-                } catch (err) {
-                    console.error("Error guardando punto en foreground:", err);
-                }
-            }
-        );
-    };
+    // const startForegroundWatcher = async (resortIdToUse: string) => {
+    //     if (locationWatcherRef.current) {
+    //         locationWatcherRef.current.remove();
+    //         locationWatcherRef.current = null;
+    //     }
+    //     locationWatcherRef.current = await Location.watchPositionAsync(
+    //         {
+    //             accuracy: Location.Accuracy.High,
+    //             timeInterval: 2000,
+    //             distanceInterval: 1,
+    //         },
+    //         async (loc) => {
+    //             try {
+    //                 await savePointToLocalDB(
+    //                     loc.coords.latitude,
+    //                     loc.coords.longitude,
+    //                     loc.coords.altitude || 0,
+    //                     loc.coords.speed || 0,
+    //                     null,
+    //                     resortIdToUse || null,
+    //                     loc.timestamp,
+    //                     db
+    //                 );
+    //                 const points = await getAllPoints(db);
+    //                 setTrackPoints(points);
+    //                 setHasTrackData(points.length > 0);
+    //             } catch (err) {
+    //                 console.error("Error guardando punto en foreground:", err);
+    //             }
+    //         }
+    //     );
+    // };
 
-    const stopForegroundWatcher = () => {
-        if (locationWatcherRef.current) {
-            locationWatcherRef.current.remove();
-            locationWatcherRef.current = null;
-        }
-    };
+    // const stopForegroundWatcher = () => {
+    //     if (locationWatcherRef.current) {
+    //         locationWatcherRef.current.remove();
+    //         locationWatcherRef.current = null;
+    //     }
+    // };
 
     // --- Tracking control ---
     const handleToggleTracking = async () => {
         if (isStartingTracking) return;
         setIsStartingTracking(true);
 
-        showToast("isTracking: " + isTracking + ", isPaused: " + isPaused, 'info');
-        if (isTracking) {
-            try {
-                stopForegroundWatcher();
-                await stopTracking();
+        try {
+            if (isTracking) {
+                try {
+                    await stopTracking();
+                } catch (stopErr) {
+                    console.error("Error in stopTracking():", stopErr);
+                    showToast(`stopTracking error: ${stopErr instanceof Error ? stopErr.message : String(stopErr)}`, 'error', 15000);
+                }
+
                 setIsTracking(false);
                 setIsPaused(false);
 
-                const points = await getAllPoints(db);
-                const photos = await getAllPhotos(db);
+                let points: TrackPoint[] = [];
+                try {
+                    points = await getAllPoints(db);
+                } catch (dbErr) {
+                    console.error("Error in getAllPoints():", dbErr);
+                    showToast(`getAllPoints error: ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`, 'error', 15000);
+                }
+
+                let photos: { id: number; file_uri: string }[] = [];
+                try {
+                    photos = await getAllPhotos(db);
+                } catch (photoErr) {
+                    console.error("Error in getAllPhotos():", photoErr);
+                    showToast(`getAllPhotos error: ${photoErr instanceof Error ? photoErr.message : String(photoErr)}`, 'error', 15000);
+                }
+
                 setTrackPoints(points);
                 setHasTrackData(points.length > 0 || photos.length > 0);
 
@@ -446,76 +463,65 @@ export default function InteractiveSkiMapNative() {
                 } else {
                     showToast(t('no_points_recorded', 'Sesión detenida sin puntos grabados.'), 'info');
                 }
-            } catch (err) {
-                showToast("Error al detener tracking: " + err, 'error');
-            }
-        } else {
-            showToast("init tracking", 'info');
-            await clearTrack(db);
-            setTrackPoints([]);
-            setHasTrackData(false);
-            setElapsedSeconds(0);
-            setShowUploadModal(false);
+            } else {
+                await clearTrack(db);
+                setTrackPoints([]);
+                setHasTrackData(false);
+                setElapsedSeconds(0);
+                setShowUploadModal(false);
 
-            let trackingTime = user?.time_tracking || 5000;
-            showToast("trackingTime: " + trackingTime, 'info');
-            try {
-                const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
-                if (cachedTime) {
-                    trackingTime = parseInt(cachedTime, 10);
-                }
-            } catch (e) {
-                console.warn("Could not load tracking time from cache:", e);
-            }
-
-            const resortIdToUse = resort?.ID || "";
-
-            // Record initial point immediately
-            const initialLoc = await getInitialCurrentLocation();
-            showToast("initialLoc: " + (initialLoc ? `${initialLoc.coords.latitude}, ${initialLoc.coords.longitude}` : "null"), 'info');
-            if (initialLoc) {
+                let trackingTime = user?.time_tracking || 5000;
                 try {
-                    await savePointToLocalDB(
-                        initialLoc.coords.latitude,
-                        initialLoc.coords.longitude,
-                        initialLoc.coords.altitude || 0,
-                        initialLoc.coords.speed || 0,
-                        null,
-                        resortIdToUse || null,
-                        initialLoc.timestamp,
-                        db
-                    );
-                    // const initPoints = await getAllPoints(db);
-                    const initPoints = await db.getAllAsync<TrackPoint[]>('SELECT * FROM track_points ORDER BY timestamp ASC');
-                    setTrackPoints(initPoints);
-                    setHasTrackData(initPoints.length > 0);
-                    showToast("Initial point recorded. Total points: " + initPoints.length, 'info');
+                    const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
+                    if (cachedTime) {
+                        trackingTime = parseInt(cachedTime, 10);
+                    }
                 } catch (e) {
-                    showToast("Error saving initial point: " + e, 'error');
+                    console.warn("Could not load tracking time from cache:", e);
                 }
-            }
 
-            try {
-                showToast("Starting tracking...")
+                const resortIdToUse = resort?.ID || "";
+
+                // Record initial point immediately
+                const initialLoc = await getInitialCurrentLocation();
+                if (initialLoc) {
+                    try {
+                        await savePointToLocalDB(
+                            initialLoc.coords.latitude,
+                            initialLoc.coords.longitude,
+                            initialLoc.coords.altitude || 0,
+                            initialLoc.coords.speed || 0,
+                            null,
+                            resortIdToUse || null,
+                            initialLoc.timestamp,
+                            db
+                        );
+                        const initPoints = await getAllPoints(db);
+                        setTrackPoints(initPoints);
+                        setHasTrackData(initPoints.length > 0);
+                    } catch (e) {
+                        console.error("Error saving initial point:", e);
+                    }
+                }
+
                 const started = await startTracking(resortIdToUse, trackingTime);
                 if (!started) {
                     showToast(t('tracking_start_permission_denied'), 'error');
                     return;
                 }
-                await startForegroundWatcher(resortIdToUse);
                 setIsTracking(true);
                 setIsPaused(false);
-                showToast("Tracking started in foreground", 'success');
-            } catch (err) {
-                const message = err instanceof Error ? err.message : String(err);
-                if (message.startsWith('FOREGROUND_SERVICE_MISSING')) {
-                    showToast(t('tracking_start_foreground_service_required'), 'error');
-                } else {
-                    showToast(t('tracking_start_failed'), 'error');
-                }
-            } finally {
-                setIsStartingTracking(false);
             }
+        } catch (err) {
+            const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+            console.error("Error toggling tracking:", err);
+            if (message.startsWith('FOREGROUND_SERVICE_MISSING')) {
+                showToast(t('tracking_start_foreground_service_required'), 'error');
+            } else {
+                showToast(`Error: ${message}`, 'error', 15000);
+            }
+        } finally {
+            setIsStartingTracking(false);
         }
     };
 
@@ -532,7 +538,6 @@ export default function InteractiveSkiMapNative() {
             try {
                 const started = await startTracking(resortIdToUse, trackingTime);
                 if (started) {
-                    await startForegroundWatcher(resortIdToUse);
                     setIsPaused(false);
                 } else {
                     showToast(t('tracking_resume_failed'), 'error');
@@ -541,7 +546,6 @@ export default function InteractiveSkiMapNative() {
                 showToast(t('tracking_resume_failed'), 'error');
             }
         } else {
-            stopForegroundWatcher();
             await stopTracking();
             setIsPaused(true);
         }
@@ -554,6 +558,7 @@ export default function InteractiveSkiMapNative() {
             setHasTrackData(false);
             setShowUploadModal(false);
             setElapsedSeconds(0);
+            setIsTracking(false);
             showToast(t('track_discarded', 'Sesión descartada.'), 'info');
         } catch (e) {
             console.error("Error discarding track:", e);
