@@ -275,6 +275,7 @@ export default function InteractiveSkiMapNative() {
     }, [isTracking, isPaused]);
 
     // --- Periodic upload of live location for friends ---
+    // TODO: This should be moved to a background task for better reliability and battery efficiency.
     useEffect(() => {
         let interval: any;
         if (isTracking && !isPaused && trackPoints.length > 0 && isOffline === false) {
