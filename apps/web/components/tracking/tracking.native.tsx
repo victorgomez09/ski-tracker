@@ -1410,7 +1410,6 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
         color: colors.textPrimary,
-        flex: 1,
     },
     modalCloseButton: {
         padding: SPACING.xs + 2,
