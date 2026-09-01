@@ -31,10 +31,11 @@ import api from 'interceptor/api';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
 import { User } from 'models/user.model';
 import { useToast } from 'context/toast.context';
-import { clearTrack, getAllPhotos, getAllPoints, initDB, savePhotoToLocalDB, savePointToLocalDB } from 'tracking/database';
-import { getCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
+import { clearTrack, getAllPhotos, getAllPoints, initDB, savePhotoToLocalDB, savePointToLocalDB, TrackPoint } from 'tracking/database';
+import { getCurrentLocation, getInitialCurrentLocation, startTracking, stopTracking } from 'tracking/task-manager';
 import { Camera } from './camera';
 import { useAuth } from 'context/auth.context';
+import { useSQLiteContext } from 'expo-sqlite';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 const DEFAULT_LAT = 0;
@@ -100,12 +101,13 @@ const normalizeGeoJSONLine = (geometry: any): any => {
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
     const { t } = useTranslation();
+    const db = useSQLiteContext();
     const { showToast } = useToast();
     const colors = useThemeColors();
     const { user } = useAuth();
     const networkState = useNetworkState();
     const isOffline = networkState?.isConnected === false;
-    
+
     const styles = useMemo(() => getStyles(colors), [colors]);
     const cameraRef = useRef<CameraRef>(null);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
@@ -135,7 +137,8 @@ export default function InteractiveSkiMapNative() {
     const [checkingLocation, setCheckingLocation] = useState(true);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [showUploadModal, setShowUploadModal] = useState(false);
-    
+    const [isStartingTracking, setIsStartingTracking] = useState(false);
+
     const isFocused = useIsFocused();
 
     const initialLat = searchParams.lat ? parseFloat(searchParams.lat as string) : DEFAULT_LAT;
@@ -200,9 +203,9 @@ export default function InteractiveSkiMapNative() {
     }, [searchParams.lat, searchParams.lng, searchParams.zoom]);
 
     // --- Database initialization and tracking status on mount ---
-    useEffect(() => {
-        setupDatabaseAndCheckStatus();
-    }, []);
+    // useEffect(() => {
+    //     setupDatabaseAndCheckStatus();
+    // }, []);
 
     // --- Enforce Location Services ---
     const hasCenteredMapRef = useRef(false);
@@ -211,7 +214,7 @@ export default function InteractiveSkiMapNative() {
         try {
             const enabled = await Location.hasServicesEnabledAsync();
             const { status } = await Location.getForegroundPermissionsAsync();
-            
+
             if (enabled && status === 'granted') {
                 setLocationReady(true);
                 // Center map on user
@@ -223,7 +226,7 @@ export default function InteractiveSkiMapNative() {
                         try {
                             cameraRef.current?.easeTo({ center: [longitude, latitude], zoom: 14, duration: 1000 });
                             hasCenteredMapRef.current = true;
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                 }
             } else {
@@ -332,7 +335,7 @@ export default function InteractiveSkiMapNative() {
                     return;
                 }
             }
-            
+
             setResort(selected);
             if (selected.Latitude && selected.Longitude) {
                 cameraRef.current?.easeTo({
@@ -354,24 +357,23 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
-    const setupDatabaseAndCheckStatus = async () => {
-        try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
-            await initDB(db);
+    // const setupDatabaseAndCheckStatus = async () => {
+    //     try {
+    //         const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+    //         await initDB(db);
 
-            if (Platform.OS !== 'web') {
-                const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
-                setIsTracking(isRunning);
-            }
-            await loadTrackPoints();
-        } catch (e) {
-            console.error("Error setting up tracking DB:", e);
-        }
-    };
+    //         if (Platform.OS !== 'web') {
+    //             const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+    //             setIsTracking(isRunning);
+    //         }
+    //         await loadTrackPoints();
+    //     } catch (e) {
+    //         console.error("Error setting up tracking DB:", e);
+    //     }
+    // };
 
     const loadTrackPoints = async () => {
         try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
             const points = await getAllPoints(db);
             setTrackPoints(points);
             setHasTrackData(points.length > 0);
@@ -381,41 +383,36 @@ export default function InteractiveSkiMapNative() {
     };
 
     const startForegroundWatcher = async (resortIdToUse: string) => {
-        try {
-            if (locationWatcherRef.current) {
-                locationWatcherRef.current.remove();
-                locationWatcherRef.current = null;
-            }
-            locationWatcherRef.current = await Location.watchPositionAsync(
-                {
-                    accuracy: Location.Accuracy.High,
-                    timeInterval: 1000,
-                    distanceInterval: 0,
-                },
-                async (loc) => {
-                    try {
-                        const db = await SQLite.openDatabaseAsync('ski_tracker.db');
-                        await savePointToLocalDB(
-                            loc.coords.latitude,
-                            loc.coords.longitude,
-                            loc.coords.altitude || 0,
-                            loc.coords.speed || 0,
-                            null,
-                            resortIdToUse || null,
-                            loc.timestamp,
-                            db
-                        );
-                        const points = await getAllPoints(db);
-                        setTrackPoints(points);
-                        setHasTrackData(points.length > 0);
-                    } catch (err) {
-                        console.error("Error saving point in foreground watcher:", err);
-                    }
-                }
-            );
-        } catch (err) {
-            console.error("Error starting foreground location watcher:", err);
+        if (locationWatcherRef.current) {
+            locationWatcherRef.current.remove();
+            locationWatcherRef.current = null;
         }
+        locationWatcherRef.current = await Location.watchPositionAsync(
+            {
+                accuracy: Location.Accuracy.High,
+                timeInterval: 2000,
+                distanceInterval: 1,
+            },
+            async (loc) => {
+                try {
+                    await savePointToLocalDB(
+                        loc.coords.latitude,
+                        loc.coords.longitude,
+                        loc.coords.altitude || 0,
+                        loc.coords.speed || 0,
+                        null,
+                        resortIdToUse || null,
+                        loc.timestamp,
+                        db
+                    );
+                    const points = await getAllPoints(db);
+                    setTrackPoints(points);
+                    setHasTrackData(points.length > 0);
+                } catch (err) {
+                    console.error("Error guardando punto en foreground:", err);
+                }
+            }
+        );
     };
 
     const stopForegroundWatcher = () => {
@@ -427,24 +424,27 @@ export default function InteractiveSkiMapNative() {
 
     // --- Tracking control ---
     const handleToggleTracking = async () => {
+        if (isStartingTracking) return;
+        setIsStartingTracking(true);
+
+        showToast("isTracking: " + isTracking + ", isPaused: " + isPaused, 'info');
         if (isTracking) {
             stopForegroundWatcher();
             await stopTracking();
             setIsTracking(false);
             setIsPaused(false);
-            
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+
             const points = await getAllPoints(db);
             setTrackPoints(points);
             setHasTrackData(points.length > 0);
-            
+
             if (points.length > 0) {
                 setShowUploadModal(true);
             } else {
                 showToast(t('no_points_recorded', 'Sesión detenida sin puntos grabados.'), 'info');
             }
         } else {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
+            showToast("init tracking", 'info');
             await clearTrack(db);
             setTrackPoints([]);
             setHasTrackData(false);
@@ -452,6 +452,7 @@ export default function InteractiveSkiMapNative() {
             setShowUploadModal(false);
 
             let trackingTime = user?.time_tracking || 5000;
+            showToast("trackingTime: " + trackingTime, 'info');
             try {
                 const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
                 if (cachedTime) {
@@ -462,26 +463,34 @@ export default function InteractiveSkiMapNative() {
             }
 
             const resortIdToUse = resort?.ID || "";
-            
+
             // Record initial point immediately
-            const initialLoc = await getCurrentLocation();
+            const initialLoc = await getInitialCurrentLocation();
+            showToast("initialLoc: " + (initialLoc ? `${initialLoc.coords.latitude}, ${initialLoc.coords.longitude}` : "null"), 'info');
             if (initialLoc) {
-                await savePointToLocalDB(
-                    initialLoc.coords.latitude,
-                    initialLoc.coords.longitude,
-                    initialLoc.coords.altitude || 0,
-                    initialLoc.coords.speed || 0,
-                    null,
-                    resortIdToUse || null,
-                    initialLoc.timestamp,
-                    db
-                );
-                const initPoints = await getAllPoints(db);
-                setTrackPoints(initPoints);
-                setHasTrackData(initPoints.length > 0);
+                try {
+                    await savePointToLocalDB(
+                        initialLoc.coords.latitude,
+                        initialLoc.coords.longitude,
+                        initialLoc.coords.altitude || 0,
+                        initialLoc.coords.speed || 0,
+                        null,
+                        resortIdToUse || null,
+                        initialLoc.timestamp,
+                        db
+                    );
+                    // const initPoints = await getAllPoints(db);
+                    const initPoints = await db.getAllAsync<TrackPoint[]>('SELECT * FROM track_points ORDER BY timestamp ASC');
+                    setTrackPoints(initPoints);
+                    setHasTrackData(initPoints.length > 0);
+                    showToast("Initial point recorded. Total points: " + initPoints.length, 'info');
+                } catch (e) {
+                    showToast("Error saving initial point: " + e, 'error');
+                }
             }
 
             try {
+                showToast("Starting tracking...")
                 const started = await startTracking(resortIdToUse, trackingTime);
                 if (!started) {
                     showToast(t('tracking_start_permission_denied'), 'error');
@@ -490,6 +499,7 @@ export default function InteractiveSkiMapNative() {
                 await startForegroundWatcher(resortIdToUse);
                 setIsTracking(true);
                 setIsPaused(false);
+                showToast("Tracking started in foreground", 'success');
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 if (message.startsWith('FOREGROUND_SERVICE_MISSING')) {
@@ -497,6 +507,8 @@ export default function InteractiveSkiMapNative() {
                 } else {
                     showToast(t('tracking_start_failed'), 'error');
                 }
+            } finally {
+                setIsStartingTracking(false);
             }
         }
     };
@@ -531,7 +543,6 @@ export default function InteractiveSkiMapNative() {
 
     const handleDiscardTrack = async () => {
         try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
             await clearTrack(db);
             setTrackPoints([]);
             setHasTrackData(false);
@@ -547,7 +558,6 @@ export default function InteractiveSkiMapNative() {
     const handleUploadTrack = async () => {
         setIsLoading(true);
         try {
-            const db = await SQLite.openDatabaseAsync('ski_tracker.db');
             const points = await getAllPoints(db);
             const photos = await getAllPhotos(db);
 
@@ -636,6 +646,7 @@ export default function InteractiveSkiMapNative() {
             showToast(t('error_uploading_track'), 'error');
         } finally {
             setIsLoading(false);
+            setIsStartingTracking(false);
         }
     };
 
@@ -840,7 +851,7 @@ export default function InteractiveSkiMapNative() {
     const liveStats = useMemo(() => {
         if (!isTracking) return null;
         const latest = trackPoints.length > 0 ? trackPoints[trackPoints.length - 1] : null;
-        
+
         let totalDistance = 0;
         let maxSpeed = 0;
         for (let i = 1; i < trackPoints.length; i++) {
@@ -1023,8 +1034,8 @@ export default function InteractiveSkiMapNative() {
             {/* Top Bar - Select Resort button */}
             {!takePictureMode && !isTracking && (
                 <View style={styles.topBar}>
-                    <TouchableOpacity 
-                        style={styles.resortSelectButton} 
+                    <TouchableOpacity
+                        style={styles.resortSelectButton}
                         onPress={() => setSearchModalVisible(true)}
                     >
                         <MapPin size={18} color={colors.primary} />
@@ -1036,8 +1047,8 @@ export default function InteractiveSkiMapNative() {
             )}
 
             {/* Resort Search Modal */}
-            <ResortSearchModal 
-                visible={searchModalVisible} 
+            <ResortSearchModal
+                visible={searchModalVisible}
                 onClose={() => setSearchModalVisible(false)}
                 onSelect={handleSelectResort}
             />
@@ -1065,7 +1076,7 @@ export default function InteractiveSkiMapNative() {
                                 {t('not_in_resort_message', 'No te encuentras en la estación seleccionada. No se puede iniciar el trackeo para esta estación.')}
                             </Text>
                         </View>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={{ backgroundColor: colors.primary, padding: SPACING.md, borderRadius: BORDER_RADIUS.md, alignItems: 'center', marginTop: SPACING.xs }}
                             onPress={() => setResortErrorVisible(false)}
                         >
@@ -1080,12 +1091,12 @@ export default function InteractiveSkiMapNative() {
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalPanel, Platform.OS === 'web' ? styles.modalPanelWeb : styles.modalPanelMobile]}>
                         <View style={styles.modalHeader}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                                 <Activity size={20} color={colors.primary} />
                                 <Text style={styles.modalTitle}>{t('session_summary', 'Resumen de la sesión')}</Text>
                             </View>
                             <TouchableOpacity onPress={() => setShowUploadModal(false)} style={styles.modalCloseButton}>
-                                <X size={18} color={colors.textSecondary} />
+                                <X size={9} color={colors.textSecondary} />
                             </TouchableOpacity>
                         </View>
 
@@ -1151,11 +1162,10 @@ export default function InteractiveSkiMapNative() {
 
             {takePictureMode && (
                 <View style={styles.cameraOverlay}>
-                    <Camera 
-                        onClose={() => setTakePictureMode(false)} 
+                    <Camera
+                        onClose={() => setTakePictureMode(false)}
                         onSavePhoto={async (uri) => {
                             try {
-                                const db = await SQLite.openDatabaseAsync('ski_tracker.db');
                                 await savePhotoToLocalDB(uri, db);
                             } catch (e) {
                                 console.error("Error saving photo locally:", e);
@@ -1256,10 +1266,10 @@ export default function InteractiveSkiMapNative() {
             {!takePictureMode && (
                 <>
                     {renderLiveStats()}
-                    
+
                     {selectedFeature && (
-                        <MapDetailPanel 
-                            data={selectedFeature} 
+                        <MapDetailPanel
+                            data={selectedFeature}
                             onClose={() => { setSelectedFeature(null); setChartHoverPoint(null); }}
                             onChartPointSelected={setChartHoverPoint}
                         />
@@ -1283,11 +1293,18 @@ export default function InteractiveSkiMapNative() {
                             </>
                         )}
 
-                        <TouchableOpacity
-                            style={[styles.trackingButton, isTracking ? styles.trackingButtonActive : styles.trackingButtonInactive]}
-                            onPress={handleToggleTracking}
-                        >
-                            {isTracking ? <Square size={20} color={colors.textOnPrimary} /> : <Play size={20} color={colors.primary} />}
+                        <TouchableOpacity                                                                                                                                                               
+                            style={[styles.trackingButton, isTracking ? styles.trackingButtonActive : styles.trackingButtonInactive]}                                                                   
+                            onPress={handleToggleTracking}                                                                                                                                              
+                            disabled={isStartingTracking}                                                                                                                                               
+                        >                                                                                                                                                                               
+                            {isStartingTracking ? (                                                                                                                                                     
+                                <ActivityIndicator size="small" color={colors.primary} />                                                                                                               
+                            ) : isTracking ? (                                                                                                                                                          
+                                <Square size={20} color={colors.textOnPrimary} />                                                                                                                       
+                            ) : (                                                                                                                                                                       
+                                <Play size={20} color={colors.primary} />                                                                                                                               
+                            )}
                         </TouchableOpacity>
 
                         {isTracking && (

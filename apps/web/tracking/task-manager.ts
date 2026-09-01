@@ -152,3 +152,20 @@ export const getCurrentLocation = async (): Promise<Location.LocationObject | nu
     return null;
   }
 };
+
+ export const getInitialCurrentLocation = async (): Promise<Location.LocationObject | null> => {                                                                                        
+      const { status } = await Location.getForegroundPermissionsAsync();                                                                                                            
+      if (status !== 'granted') return null;                                                                                                                                        
+                                                                                                                                                                                    
+      try {                                                                                                                                                                         
+        const lastKnown = await Location.getLastKnownPositionAsync();                                                                                                               
+        if (lastKnown) return lastKnown;                                                                                                                                            
+                                                                                                                                                                                    
+        return await Location.getCurrentPositionAsync({                                                                                                                             
+          accuracy: Location.Accuracy.High,                                                                                                                                     
+        });                                                                                                                                                                         
+      } catch (error) {                                                                                                                                                             
+        console.error('Error obteniendo ubicación:', error);                                                                                                                        
+        return null;                                                                                                                                                                
+      }                                                                                                                                                                             
+    };           

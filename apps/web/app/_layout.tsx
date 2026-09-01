@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Text, View, StyleSheet, StatusBar, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SQLite from 'expo-sqlite';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Suspense } from 'react';
 
 import { initDB } from 'tracking/database';
 
@@ -17,6 +17,7 @@ import { OtaProvider, useOta } from 'context/ota.context';
 import { ToastProvider } from 'context/toast.context';
 import { AxiosInterceptor } from 'interceptor/axios.interceptor';
 import { useThemeColors, ThemeProvider, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from 'constants/theme';
+import { SQLiteProvider } from "expo-sqlite";
 
 function ConnectionGate({ children }: { children: React.ReactNode }) {
     const { connectionRequiredError, retryConnectionCheck } = useAuth();
@@ -29,7 +30,7 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
                 <Text style={{ fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 16, textAlign: 'center', lineHeight: 22 }}>
                     {t('offline_connection_required')}
                 </Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={retryConnectionCheck}
                     style={{ backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 }}
                 >
@@ -78,7 +79,7 @@ function OtaGate({ children }: { children: React.ReactNode }) {
                 isDownloading={isDownloading}
                 downloadProgress={downloadProgress}
                 onUpdate={applyUpdate}
-                onDismiss={() => {}}
+                onDismiss={() => { }}
             />
         );
     }
@@ -111,22 +112,22 @@ export default function RootLayout() {
 
 function AppContent() {
     const { t } = useTranslation();
-    const [isDbReady, setIsDbReady] = useState(false);
+    // const [isDbReady, setIsDbReady] = useState(false);
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
     useEffect(() => {
-        const initDatabase = async () => {
-            try {
-                const database = await SQLite.openDatabaseAsync('ski_tracker.db');
-                await initDB(database);
-            } catch (error) {
-                console.error('Failed to initialize local database:', error);
-            } finally {
-                setIsDbReady(true);
-            }
-        };
-        
+        // const initDatabase = async () => {
+        //     try {
+        //         const database = await SQLite.openDatabaseAsync('ski_tracker.db');
+        //         await initDB(database);
+        //     } catch (error) {
+        //         console.error('Failed to initialize local database:', error);
+        //     } finally {
+        //         setIsDbReady(true);
+        //     }
+        // };
+
         const checkStartupPermissions = async () => {
             try {
                 const { status } = await Location.getForegroundPermissionsAsync();
@@ -137,39 +138,43 @@ function AppContent() {
                 console.error("Error checking permissions on startup", e);
             }
         };
-    
-        initDatabase();
+
+        // initDatabase();
         checkStartupPermissions();
     }, []);
 
-    if (!isDbReady) {
-        return (
-            <View style={styles.container}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.initMessage}>
-                    {t('initializing_app')}
-                </Text>
-            </View>
-        );
-    }
+    // if (!isDbReady) {
+    //     return (
+    //         <View style={styles.container}>
+    //             <ActivityIndicator size="large" color={colors.primary} />
+    //             <Text style={styles.initMessage}>
+    //                 {t('initializing_app')}
+    //             </Text>
+    //         </View>
+    //     );
+    // }
 
     return (
         <SafeAreaProvider>
             <OtaProvider>
-                <AuthProvider>
-                    <ConnectionGate>
-                        <FavoritesProvider>
-                            <ToastProvider>
-                                <AxiosInterceptor>
-                                    <OtaGate>
-                                        <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
-                                        <Slot />
-                                    </OtaGate>
-                                </AxiosInterceptor>
-                            </ToastProvider>
-                        </FavoritesProvider>
-                    </ConnectionGate>
-                </AuthProvider>
+                <Suspense fallback={<Text>Loading...</Text>}>
+                    <SQLiteProvider databaseName="ski_tracker.db" onInit={initDB} useSuspense>
+                        <AuthProvider>
+                            <ConnectionGate>
+                                <FavoritesProvider>
+                                    <ToastProvider>
+                                        <AxiosInterceptor>
+                                            <OtaGate>
+                                                <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
+                                                <Slot />
+                                            </OtaGate>
+                                        </AxiosInterceptor>
+                                    </ToastProvider>
+                                </FavoritesProvider>
+                            </ConnectionGate>
+                        </AuthProvider>
+                    </SQLiteProvider>
+                </Suspense>
             </OtaProvider>
         </SafeAreaProvider>
     );

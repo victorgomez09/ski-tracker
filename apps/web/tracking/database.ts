@@ -16,6 +16,7 @@ export interface TrackPoint {
  */
 export const initDB = async (db: SQLite.SQLiteDatabase) => {
   await db.execAsync(`
+    PRAGMA journal_mode = WAL;   
     CREATE TABLE IF NOT EXISTS track_points (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       lat REAL,
@@ -31,7 +32,7 @@ export const initDB = async (db: SQLite.SQLiteDatabase) => {
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS photos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      file_uri TEXT NOT NULL -- Ej: "file:///data/user/0/com.app/files/sessions/session_123/photo_12.jpg"
+      file_uri TEXT NOT NULL
     );
   `);
 };
@@ -40,16 +41,24 @@ export const initDB = async (db: SQLite.SQLiteDatabase) => {
  * Saves a location point to the local SQLite database.
  * @param location The location object containing latitude, longitude, altitude, and timestamp.
  */
-export const savePointToLocalDB = async (lat: number, 
-  lon: number, 
-  alt: number, 
+export const savePointToLocalDB = async (lat: number,
+  lon: number,
+  alt: number,
   speed: number,
   pressure: number | null,
   resortId: string | null,
   timestamp: number, db: SQLite.SQLiteDatabase) => {
   await db.runAsync(
     'INSERT INTO track_points (lat, lon, alt, speed, pressure, resort_id, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [lat, lon, alt, speed, pressure, resortId, timestamp]
+    [
+      lat ?? 0,
+      lon ?? 0,
+      alt ?? 0,
+      speed ?? 0,
+      pressure ?? null,
+      resortId ?? null,
+      timestamp ?? Date.now()
+    ]
   );
 };
 
