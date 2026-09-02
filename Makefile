@@ -42,8 +42,11 @@ build-api: ## Build Go API binary
 build-web: ## Build web production
 	cd $(WEB_DIR) && bun run build
 
-ota-publish: ## Export and publish Expo OTA update to server
+ota-publish: ## Export and publish Expo OTA update to server (options: ARGS='--channel beta|stable')
 	./scripts/publish-ota.sh $(ARGS)
+
+ota-rollback: ## Rollback OTA channel to embedded bundle (options: ARGS='--channel beta|stable')
+	./scripts/publish-ota.sh --rollback $(ARGS)
 
 apk-publish: ## Publish native Android APK release to server
 	./scripts/publish-apk.sh $(ARGS)

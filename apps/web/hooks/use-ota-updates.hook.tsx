@@ -4,10 +4,13 @@ import * as Updates from 'expo-updates';
 import i18n from 'i18n';
 import { useCallback, useEffect, useState } from 'react';
 import { Linking, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { API_BASE_URL } from 'constants/constants';
 
 export type OtaPhase = 'idle' | 'checking' | 'mandatory' | 'downloading' | 'optional' | 'none';
+
+export type OtaChannel = 'stable' | 'beta';
 
 export interface OtaUpdateInfo {
     forceUpdate: boolean;
@@ -32,9 +35,27 @@ const changelogForLang = (changelog: Record<string, string[]> | undefined): stri
 
 export const useOtaUpdates = () => {
     const [phase, setPhase] = useState<OtaPhase>('idle');
+    const [channel, setChannelState] = useState<OtaChannel>('stable');
     const [updateInfo, setUpdateInfo] = useState<OtaUpdateInfo | null>(null);
     const [optionalModalVisible, setOptionalModalVisible] = useState(false);
     const [downloadProgress, setDownloadProgress] = useState<number>(0);
+
+    // Initial load of saved OTA channel
+    useEffect(() => {
+        const initChannel = async () => {
+            try {
+                const stored = await AsyncStorage.getItem('OTA_UPDATE_CHANNEL');
+                const validChannel: OtaChannel = stored === 'beta' ? 'beta' : 'stable';
+                setChannelState(validChannel);
+                if (!__DEV__ && Platform.OS !== 'web' && Updates.isEnabled) {
+                    await Updates.setExtraParamAsync('channel', validChannel);
+                }
+            } catch (e) {
+                console.warn('Could not read OTA_UPDATE_CHANNEL from storage:', e);
+            }
+        };
+        initChannel();
+    }, []);
 
     const applyUpdate = useCallback(async () => {
         if (updateInfo?.isNative && updateInfo.downloadUrl) {
@@ -127,8 +148,18 @@ export const useOtaUpdates = () => {
         }
     }, [updateInfo]);
 
-    const checkForUpdates = useCallback(async () => {
+    const checkForUpdates = useCallback(async (overrideChannel?: OtaChannel) => {
         setPhase('checking');
+
+        let activeChannel: OtaChannel = 'stable';
+        if (overrideChannel) {
+            activeChannel = overrideChannel;
+        } else {
+            try {
+                const stored = await AsyncStorage.getItem('OTA_UPDATE_CHANNEL');
+                if (stored === 'beta') activeChannel = 'beta';
+            } catch {}
+        }
 
         // 1. First: Check for Native updates (Always MANDATORY)
         try {
@@ -143,6 +174,7 @@ export const useOtaUpdates = () => {
                     platform: Platform.OS,
                     current_version: currentVersion,
                     current_runtime: currentRuntime,
+                    channel: activeChannel,
                 },
                 timeout: 5000,
             });
@@ -161,7 +193,6 @@ export const useOtaUpdates = () => {
                 return; // Stop here: native update must be installed before any OTA
             }
         } catch (nativeErr) {
-            // Ignore offline or 404 errors during native check and continue to OTA check
             console.warn('Native update check skipped or failed:', nativeErr);
         }
 
@@ -172,6 +203,9 @@ export const useOtaUpdates = () => {
         }
 
         try {
+            // Ensure native expo-updates knows current channel via Extra-Params
+            await Updates.setExtraParamAsync('channel', activeChannel);
+
             const result = await Updates.checkForUpdateAsync();
             if (!result.isAvailable) {
                 setPhase('none');
@@ -196,12 +230,29 @@ export const useOtaUpdates = () => {
         }
     }, []);
 
+    const switchChannel = useCallback(
+        async (newChannel: OtaChannel) => {
+            setChannelState(newChannel);
+            try {
+                await AsyncStorage.setItem('OTA_UPDATE_CHANNEL', newChannel);
+                if (!__DEV__ && Platform.OS !== 'web' && Updates.isEnabled) {
+                    await Updates.setExtraParamAsync('channel', newChannel);
+                }
+            } catch (e) {
+                console.error('Failed to save OTA channel:', e);
+            }
+            await checkForUpdates(newChannel);
+        },
+        [checkForUpdates]
+    );
+
     useEffect(() => {
         checkForUpdates();
     }, [checkForUpdates]);
 
     return {
         phase,
+        channel,
         updateInfo,
         downloadProgress,
         optionalModalVisible,
@@ -212,5 +263,6 @@ export const useOtaUpdates = () => {
         dismissOptionalModal: () => setOptionalModalVisible(false),
         applyUpdate,
         checkForUpdates,
+        switchChannel,
     };
 };
