@@ -54,9 +54,17 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
 /**
  * Inicia el rastreo de ubicación en segundo plano con validación de permisos y Foreground Service.
  */
-export const startTracking = async (resortId: string, trackingTime: number): Promise<boolean> => {
+export const startTracking = async (
+  resortId: string,
+  trackingTime: number,
+  distanceInterval: number = 0
+): Promise<boolean> => {
   try {
-    await AsyncStorage.setItem('ACTIVE_RESORT_ID', resortId.toString());
+    if (resortId) {
+      await AsyncStorage.setItem('ACTIVE_RESORT_ID', resortId.toString());
+    } else {
+      await AsyncStorage.removeItem('ACTIVE_RESORT_ID');
+    }
 
     // 1. Solicitar permiso en primer plano
     const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
@@ -100,7 +108,7 @@ export const startTracking = async (resortId: string, trackingTime: number): Pro
     await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
       accuracy: Location.Accuracy.High,
       timeInterval: trackingTime,
-      distanceInterval: 0,
+      distanceInterval: distanceInterval,
       showsBackgroundLocationIndicator: true, // Solo aplica a iOS
       foregroundService: {
         notificationTitle: i18n.t('monitoring_session', 'Monitoreando tu sesión'),

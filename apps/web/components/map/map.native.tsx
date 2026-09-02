@@ -433,7 +433,7 @@ export default function InteractiveSkiMapNative() {
                     const offlineResorts = parsed.filter(resort => {
                         return packs.some(pack => {
                             if (!pack.bounds || pack.bounds.length < 2) return false;
-                            const [[west, south], [east, north]] = pack.bounds;
+                            const [[west, south], [east, north]] = pack.bounds as any;
                             return (
                                 resort.Longitude >= west &&
                                 resort.Longitude <= east &&

@@ -7,4 +7,7 @@ export interface User {
     activity_type: string;
     avatar_url: string | null;
     time_tracking: number;
+    privacy_sessions?: string;
+    privacy_live_location?: string;
+    privacy_requests?: string;
 }
