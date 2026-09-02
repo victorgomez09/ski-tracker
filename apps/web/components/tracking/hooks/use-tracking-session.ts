@@ -7,6 +7,7 @@ import { useToast } from 'context/toast.context';
 import api from 'interceptor/api';
 import { API_BASE_URL } from 'constants/constants';
 import { User } from 'models/user.model';
+import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 import {
     clearTrack,
     getAllPhotos,
@@ -23,7 +24,7 @@ import {
 export interface UseTrackingSessionOptions {
     db: SQLiteDatabase;
     resortId?: string;
-    activityType?: string;
+    activityType?: ActivityType;
 }
 
 export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTrackingSessionOptions) => {
@@ -43,6 +44,9 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
 
     const resortIdRef = useRef(resortId);
     resortIdRef.current = resortId;
+
+    const activityTypeRef = useRef<ActivityType>(activityType);
+    activityTypeRef.current = activityType;
 
     // --- Load Points from SQLite ---
     const loadTrackPoints = useCallback(async () => {
@@ -135,14 +139,25 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
                 setElapsedSeconds(0);
                 setShowUploadModal(false);
 
-                let trackingTime = user?.time_tracking || 5000;
-                try {
-                    const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
-                    if (cachedTime) {
-                        trackingTime = parseInt(cachedTime, 10);
+                const curActivity = activityTypeRef.current || 'ski';
+                const activityConfig = ACTIVITY_CONFIGS[curActivity] || ACTIVITY_CONFIGS.ski;
+
+                let trackingTime = activityConfig.gpsTimeInterval;
+                const distanceInterval = activityConfig.gpsDistanceInterval;
+
+                // For ski/snowboard, allow user's custom tracking interval if configured
+                if (curActivity === 'ski' || curActivity === 'snowboard') {
+                    if (user?.time_tracking) {
+                        trackingTime = user.time_tracking;
                     }
-                } catch (e) {
-                    console.warn('Could not load tracking time from cache:', e);
+                    try {
+                        const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
+                        if (cachedTime) {
+                            trackingTime = parseInt(cachedTime, 10);
+                        }
+                    } catch (e) {
+                        console.warn('Could not load tracking time from cache:', e);
+                    }
                 }
 
                 const currentResortId = resortIdRef.current || '';
@@ -169,7 +184,7 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
                     }
                 }
 
-                const started = await startTracking(currentResortId, trackingTime);
+                const started = await startTracking(currentResortId, trackingTime, distanceInterval, curActivity);
                 if (!started) {
                     showToast(t('tracking_start_permission_denied', 'Permiso de ubicación denegado.'), 'error');
                     return;
@@ -188,26 +203,36 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
         } finally {
             setIsStartingTracking(false);
         }
-    }, [isStartingTracking, isTracking, db, user?.time_tracking, showToast, t]);
+    }, [isStartingTracking, isTracking, db, user, showToast, t]);
 
     // --- Pause / Resume Tracking ---
     const togglePause = useCallback(async () => {
         if (!isTracking) return;
 
         if (isPaused) {
-            let trackingTime = user?.time_tracking || 5000;
-            try {
-                const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
-                if (cachedTime) {
-                    trackingTime = parseInt(cachedTime, 10);
+            const curActivity = activityTypeRef.current || 'ski';
+            const activityConfig = ACTIVITY_CONFIGS[curActivity] || ACTIVITY_CONFIGS.ski;
+
+            let trackingTime = activityConfig.gpsTimeInterval;
+            const distanceInterval = activityConfig.gpsDistanceInterval;
+
+            if (curActivity === 'ski' || curActivity === 'snowboard') {
+                if (user?.time_tracking) {
+                    trackingTime = user.time_tracking;
                 }
-            } catch (e) {
-                console.warn('Could not load tracking time from cache:', e);
+                try {
+                    const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
+                    if (cachedTime) {
+                        trackingTime = parseInt(cachedTime, 10);
+                    }
+                } catch (e) {
+                    console.warn('Could not load tracking time from cache:', e);
+                }
             }
 
             const currentResortId = resortIdRef.current || '';
             try {
-                const started = await startTracking(currentResortId, trackingTime);
+                const started = await startTracking(currentResortId, trackingTime, distanceInterval, curActivity);
                 if (started) {
                     setIsPaused(false);
                 } else {
@@ -220,7 +245,7 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
             await stopTracking();
             setIsPaused(true);
         }
-    }, [isTracking, isPaused, user?.time_tracking, showToast, t]);
+    }, [isTracking, isPaused, user, showToast, t]);
 
     // --- Discard Track ---
     const discardTrack = useCallback(async () => {
@@ -265,9 +290,10 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
                 console.warn('Could not fetch user settings during upload:', e);
             }
 
+            const curActivity = activityTypeRef.current || activityType || 'ski';
             const startPayload: any = {
                 isPublic: isPublic,
-                activityType: activityType,
+                activityType: curActivity,
             };
             if (currentResortId) {
                 startPayload.resortId = currentResortId;

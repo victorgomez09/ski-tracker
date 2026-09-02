@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
     Camera as NativeCamera,
     GeoJSONSource as NativeGeoJSONSource,
@@ -14,8 +14,9 @@ import { useNetworkState } from 'expo-network';
 import { useIsFocused } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useSQLiteContext } from 'expo-sqlite';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { AlertTriangle, MapPin } from 'lucide-react-native';
+import { AlertTriangle, ChevronDown, Compass, MapPin } from 'lucide-react-native';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
@@ -25,11 +26,13 @@ import { useToast } from 'context/toast.context';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
 import api from 'interceptor/api';
 import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
+import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 import { savePhotoToLocalDB } from 'tracking/database';
 import { getCurrentLocation } from 'tracking/task-manager';
 
 import { Camera } from './camera';
 import { ResortSearchModal } from './resort-search-modal';
+import { ActivitySelectorModal } from './modals/activity-selector-modal';
 import { FriendMarker } from './map/friend-marker';
 import {
     buildChartHoverGeoJSON,
@@ -49,7 +52,6 @@ import {
 } from './map/tracking-map-layers';
 import { useLiveStats } from './hooks/use-live-stats';
 import { useTrackingSession } from './hooks/use-tracking-session';
-import { ResortErrorModal } from './modals/resort-error-modal';
 import { UploadSessionModal } from './modals/upload-session-modal';
 import { TrackingHUD } from './tracking-hud';
 import { TrackingControls } from './tracking-controls';
@@ -73,14 +75,15 @@ export default function InteractiveSkiMapNative() {
     const cameraRef = useRef<CameraRef>(null);
     const lastInternalParamsRef = useRef<{ lat: string; lon: string; zoom: string } | null>(null);
 
-    // --- State: Resort & Selection ---
+    // --- State: Resort, Activity & Selection ---
     const [resort, setResort] = useState<ResortDetail>({} as ResortDetail);
+    const [activityType, setActivityType] = useState<ActivityType>('ski');
+    const [activityModalVisible, setActivityModalVisible] = useState(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
     const [chartHoverPoint, setChartHoverPoint] = useState<[number, number] | null>(null);
     const [takePictureMode, setTakePictureMode] = useState(false);
     const [searchModalVisible, setSearchModalVisible] = useState(false);
     const [isCheckingLocation, setIsCheckingLocation] = useState(false);
-    const [resortErrorVisible, setResortErrorVisible] = useState(false);
     const [friendsLocations, setFriendsLocations] = useState<any[]>([]);
     const [hasShownCoverageWarning, setHasShownCoverageWarning] = useState(false);
     const [showCoverageWarningModal, setShowCoverageWarningModal] = useState(false);
@@ -88,21 +91,58 @@ export default function InteractiveSkiMapNative() {
     const [checkingLocation, setCheckingLocation] = useState(true);
     const [showOfflineModal, setShowOfflineModal] = useState(false);
 
+    const currentConfig = useMemo(() => ACTIVITY_CONFIGS[activityType] || ACTIVITY_CONFIGS.ski, [activityType]);
+
+    // Load saved activity preference on mount
+    useEffect(() => {
+        const loadSavedActivity = async () => {
+            try {
+                const saved = await AsyncStorage.getItem('LAST_SELECTED_ACTIVITY');
+                if (saved && saved in ACTIVITY_CONFIGS) {
+                    setActivityType(saved as ActivityType);
+                }
+            } catch {}
+        };
+        loadSavedActivity();
+    }, []);
+
+    const handleSelectActivity = useCallback(async (selected: ActivityType) => {
+        setActivityType(selected);
+        try {
+            await AsyncStorage.setItem('LAST_SELECTED_ACTIVITY', selected);
+        } catch {}
+
+        const config = ACTIVITY_CONFIGS[selected];
+        if (config.requiresResort) {
+            if (!resort?.ID) {
+                setSearchModalVisible(true);
+            }
+        } else {
+            setResort({} as ResortDetail);
+        }
+    }, [resort?.ID]);
+
     // --- Camera / Viewport ---
     const initialLat = searchParams.lat ? parseFloat(searchParams.lat as string) : DEFAULT_LAT;
     const initialLng = searchParams.lng ? parseFloat(searchParams.lng as string) : DEFAULT_LON;
     const initialZoom = searchParams.zoom ? parseFloat(searchParams.zoom as string) : DEFAULT_ZOOM;
 
-    const firstViewStateRef = useRef({
-        longitude: !isNaN(initialLng) ? initialLng : DEFAULT_LON,
-        latitude: !isNaN(initialLat) ? initialLat : DEFAULT_LAT,
-        zoom: !isNaN(initialZoom) ? initialZoom : DEFAULT_ZOOM,
-    });
+    const initialCenter = useMemo<[number, number]>(() => [
+        !isNaN(initialLng) ? initialLng : DEFAULT_LON,
+        !isNaN(initialLat) ? initialLat : DEFAULT_LAT,
+    ], [initialLng, initialLat]);
+
+    const initialZoomVal = useMemo(() => (!isNaN(initialZoom) ? initialZoom : DEFAULT_ZOOM), [initialZoom]);
+
+    const initialViewState = useMemo(() => ({
+        center: initialCenter,
+        zoom: initialZoomVal,
+    }), [initialCenter, initialZoomVal]);
 
     const [viewState, setViewState] = useState({
-        longitude: firstViewStateRef.current.longitude,
-        latitude: firstViewStateRef.current.latitude,
-        zoom: firstViewStateRef.current.zoom,
+        longitude: initialCenter[0],
+        latitude: initialCenter[1],
+        zoom: initialZoomVal,
         bearing: 0,
         pitch: 0,
     });
@@ -127,7 +167,7 @@ export default function InteractiveSkiMapNative() {
     } = useTrackingSession({
         db,
         resortId: resort?.ID,
-        activityType: 'ski',
+        activityType,
     });
 
     // --- Live Stats Hook ---
@@ -217,7 +257,7 @@ export default function InteractiveSkiMapNative() {
     // --- Friends Live Location Polling ---
     useEffect(() => {
         let interval: any;
-        if (resort?.ID && !isOffline) {
+        if (currentConfig.requiresResort && resort?.ID && !isOffline) {
             const fetchLocations = async () => {
                 try {
                     const res = await api.get(`/ski-sessions/live/resort/${resort.ID}`);
@@ -236,7 +276,7 @@ export default function InteractiveSkiMapNative() {
         return () => {
             if (interval) clearInterval(interval);
         };
-    }, [resort?.ID, isOffline]);
+    }, [currentConfig.requiresResort, resort?.ID, isOffline]);
 
     // --- Handlers ---
     const handleSelectResort = async (selected: ResortDetail) => {
@@ -251,10 +291,14 @@ export default function InteractiveSkiMapNative() {
                     selected.Latitude,
                     selected.Longitude
                 );
+                // Informative notice without blocking geographic tracking
                 if (dist > 20) {
-                    setIsCheckingLocation(false);
-                    setResortErrorVisible(true);
-                    return;
+                    showToast(
+                        t('resort_distance_notice', 'Estás a {{km}} km de la estación seleccionada', {
+                            km: Math.round(dist),
+                        }),
+                        'info'
+                    );
                 }
             }
 
@@ -366,34 +410,65 @@ export default function InteractiveSkiMapNative() {
 
     return (
         <View style={styles.container}>
-            {/* Top Bar - Select Resort button */}
-            {!takePictureMode && !isTracking && (
+            {/* Top Bar - Activity & Resort Selectors */}
+            {!takePictureMode && (
                 <View style={styles.topBar}>
-                    <TouchableOpacity style={styles.resortSelectButton} onPress={() => setSearchModalVisible(true)}>
-                        <MapPin size={18} color={colors.primary} />
-                        <Text style={styles.resortSelectText}>
-                            {resort?.ID ? resort.Name : t('select_resort_to_ski', 'Seleccionar estación para esquiar')}
+                    {/* Activity Selector Button */}
+                    <TouchableOpacity
+                        style={[styles.topBarButton, isTracking && styles.topBarButtonDisabled]}
+                        onPress={() => !isTracking && setActivityModalVisible(true)}
+                        activeOpacity={isTracking ? 1 : 0.7}
+                    >
+                        <Text style={styles.activityEmoji}>{currentConfig.icon}</Text>
+                        <Text style={styles.topBarButtonText}>
+                            {t(currentConfig.labelKey, currentConfig.defaultLabel)}
                         </Text>
+                        {!isTracking && <ChevronDown size={14} color={colors.textSecondary} style={{ marginLeft: 4 }} />}
                     </TouchableOpacity>
+
+                    {/* Resort Selector Button if required, otherwise Free Mode badge */}
+                    {currentConfig.requiresResort ? (
+                        <TouchableOpacity
+                            style={[styles.topBarButton, isTracking && styles.topBarButtonDisabled]}
+                            onPress={() => !isTracking && setSearchModalVisible(true)}
+                            activeOpacity={isTracking ? 1 : 0.7}
+                        >
+                            <MapPin size={16} color={colors.primary} />
+                            <Text style={styles.topBarButtonText} numberOfLines={1}>
+                                {resort?.ID ? resort.Name : t('select_resort_to_ski', 'Seleccionar estación')}
+                            </Text>
+                            {!isTracking && <ChevronDown size={14} color={colors.textSecondary} style={{ marginLeft: 4 }} />}
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={styles.freeModeBadge}>
+                            <Compass size={14} color={colors.success || '#10b981'} />
+                            <Text style={[styles.freeModeText, { color: colors.success || '#10b981' }]}>
+                                {t('free_mode', 'Modo libre')}
+                            </Text>
+                        </View>
+                    )}
                 </View>
             )}
 
             {/* Modals */}
+            <ActivitySelectorModal
+                visible={activityModalVisible}
+                onClose={() => setActivityModalVisible(false)}
+                selectedActivity={activityType}
+                onSelect={handleSelectActivity}
+            />
+
             <ResortSearchModal
                 visible={searchModalVisible}
                 onClose={() => setSearchModalVisible(false)}
                 onSelect={handleSelectResort}
             />
 
-            <ResortErrorModal
-                visible={resortErrorVisible}
-                onClose={() => setResortErrorVisible(false)}
-            />
-
             <UploadSessionModal
                 visible={showUploadModal}
                 onClose={() => setShowUploadModal(false)}
                 resortName={resort?.Name}
+                activityType={activityType}
                 pointsCount={trackPoints.length}
                 distanceKm={liveStats?.distance ?? 0}
                 durationSeconds={elapsedSeconds}
@@ -442,15 +517,12 @@ export default function InteractiveSkiMapNative() {
                     ref={cameraRef}
                     minZoom={10}
                     maxZoom={17}
-                    initialViewState={{
-                        center: [firstViewStateRef.current.longitude, firstViewStateRef.current.latitude],
-                        zoom: firstViewStateRef.current.zoom,
-                    }}
+                    initialViewState={initialViewState}
                 />
 
                 {viewState.zoom >= 10 && (
                     <>
-                        {resort?.pistes && resort.pistes.length > 0 && (
+                        {currentConfig.requiresResort && resort?.pistes && resort.pistes.length > 0 && (
                             <NativeGeoJSONSource
                                 id="pistes-source"
                                 data={pistesGeoJSON}
@@ -463,7 +535,7 @@ export default function InteractiveSkiMapNative() {
                             </NativeGeoJSONSource>
                         )}
 
-                        {resort?.lifts && resort.lifts.length > 0 && (
+                        {currentConfig.requiresResort && resort?.lifts && resort.lifts.length > 0 && (
                             <NativeGeoJSONSource
                                 id="lifts-source"
                                 data={liftsGeoJSON}
@@ -504,7 +576,7 @@ export default function InteractiveSkiMapNative() {
             {/* Overlays & Controls */}
             {!takePictureMode && (
                 <>
-                    <TrackingHUD stats={liveStats} />
+                    <TrackingHUD stats={liveStats} speedUnit={currentConfig.speedUnit} />
 
                     {selectedFeature && (
                         <MapDetailPanel
@@ -599,19 +671,57 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
             zIndex: 10,
             flexDirection: 'row',
             justifyContent: 'center',
+            alignItems: 'center',
+            gap: SPACING.sm,
         },
-        resortSelectButton: {
-            backgroundColor: colors.background,
+        topBarButton: {
+            backgroundColor: colors.surface,
             flexDirection: 'row',
             alignItems: 'center',
             paddingVertical: SPACING.sm,
             paddingHorizontal: SPACING.md,
             borderRadius: BORDER_RADIUS.round,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
-            elevation: 3,
+            ...SHADOWS.sm,
+            borderWidth: 1,
+            borderColor: colors.border,
+            maxWidth: '55%',
+        },
+        topBarButtonDisabled: {
+            opacity: 0.9,
+        },
+        topBarButtonText: {
+            marginLeft: SPACING.xs + 2,
+            fontSize: 13,
+            fontWeight: '600',
+            color: colors.textPrimary,
+        },
+        activityEmoji: {
+            fontSize: 16,
+        },
+        freeModeBadge: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: colors.surface,
+            paddingVertical: SPACING.sm,
+            paddingHorizontal: SPACING.sm + 4,
+            borderRadius: BORDER_RADIUS.round,
+            borderWidth: 1,
+            borderColor: colors.border,
+            ...SHADOWS.sm,
+            gap: 4,
+        },
+        freeModeText: {
+            fontSize: 12,
+            fontWeight: '600',
+        },
+        resortSelectButton: {
+            backgroundColor: colors.surface,
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: SPACING.sm,
+            paddingHorizontal: SPACING.md,
+            borderRadius: BORDER_RADIUS.round,
+            ...SHADOWS.sm,
             borderWidth: 1,
             borderColor: colors.border,
         },

@@ -4,11 +4,13 @@ import { Activity, Trash2, Upload, X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { BORDER_RADIUS, SHADOWS, SPACING, useThemeColors } from 'constants/theme';
 import { formatDuration } from '../hooks/use-live-stats';
+import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 
 interface UploadSessionModalProps {
     visible: boolean;
     onClose: () => void;
     resortName?: string;
+    activityType?: ActivityType;
     pointsCount: number;
     distanceKm: number;
     durationSeconds: number;
@@ -23,6 +25,7 @@ export const UploadSessionModal: React.FC<UploadSessionModalProps> = ({
     visible,
     onClose,
     resortName,
+    activityType = 'ski',
     pointsCount,
     distanceKm,
     durationSeconds,
@@ -34,6 +37,7 @@ export const UploadSessionModal: React.FC<UploadSessionModalProps> = ({
 }) => {
     const { t } = useTranslation();
     const colors = useThemeColors();
+    const config = ACTIVITY_CONFIGS[activityType] || ACTIVITY_CONFIGS.ski;
 
     return (
         <Modal visible={visible} animationType="fade" transparent={true}>
@@ -63,12 +67,31 @@ export const UploadSessionModal: React.FC<UploadSessionModalProps> = ({
                     <View style={{ marginVertical: SPACING.md, gap: SPACING.sm }}>
                         <View style={styles.summaryRow}>
                             <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
-                                {t('resort_or_activity', 'Estación / Actividad')}:
+                                {t('activity', 'Actividad')}:
                             </Text>
                             <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
-                                {resortName || t('free_activity', 'Actividad libre')}
+                                {config.icon} {t(config.labelKey, config.defaultLabel)}
                             </Text>
                         </View>
+                        {resortName ? (
+                            <View style={styles.summaryRow}>
+                                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                                    {t('resort', 'Estación')}:
+                                </Text>
+                                <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                                    {resortName}
+                                </Text>
+                            </View>
+                        ) : (
+                            <View style={styles.summaryRow}>
+                                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                                    {t('mode', 'Modo')}:
+                                </Text>
+                                <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                                    {t('free_tracking', 'Tracking libre')}
+                                </Text>
+                            </View>
+                        )}
                         <View style={styles.summaryRow}>
                             <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
                                 {t('points', 'Puntos grabados')}:

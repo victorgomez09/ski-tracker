@@ -69,12 +69,12 @@ La **versión 2.0** evoluciona la plataforma de un rastreador exclusivo de esqu�
 ### Fase 1: Abstracción de Actividades y Modo "Tracking Libre" (Frontend)
 > **Objetivo:** Permitir iniciar actividades en cualquier lugar y para cualquier deporte sin obligar a elegir estación.
 
-- [ ] **Selector de Modo/Deporte Pre-Tracking:**
+- [x] **Selector de Modo/Deporte Pre-Tracking:**
   - Selector intuitivo en la pantalla de tracking o modal de inicio rápido (Paseo, Bici, Coche, Esquí...).
   - Si se elige Esquí/Snowboard, ofrecer la búsqueda/detección de estación; si se elige otra actividad, saltarse la selección de estación ("Modo Libre").
-- [ ] **Eliminar el bloqueo de distancia (20 km):**
+- [x] **Eliminar el bloqueo de distancia (20 km):**
   - Permitir iniciar el tracking en cualquier coordenada geográfica sin el modal de error de estación.
-- [ ] **Ajuste Dinámico de Precisión y Frecuencia GPS:**
+- [x] **Ajuste Dinámico de Precisión y Frecuencia GPS:**
   - Pasar la configuración óptima a `startLocationUpdatesAsync` según el deporte:
     - **Paseo / Senderismo:** `timeInterval: 4000-6000ms`, `distanceInterval: 5m` (conservar batería).
     - **Ciclismo:** `timeInterval: 2000-3000ms`, `distanceInterval: 3-5m`.

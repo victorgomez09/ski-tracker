@@ -57,13 +57,18 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
 export const startTracking = async (
   resortId: string,
   trackingTime: number,
-  distanceInterval: number = 0
+  distanceInterval: number = 0,
+  activityType: string = 'ski'
 ): Promise<boolean> => {
   try {
     if (resortId) {
       await AsyncStorage.setItem('ACTIVE_RESORT_ID', resortId.toString());
     } else {
       await AsyncStorage.removeItem('ACTIVE_RESORT_ID');
+    }
+
+    if (activityType) {
+      await AsyncStorage.setItem('ACTIVE_ACTIVITY_TYPE', activityType);
     }
 
     // 1. Solicitar permiso en primer plano
@@ -143,6 +148,8 @@ export const stopTracking = async (): Promise<void> => {
       await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
       console.log('Rastreo de ubicación detenido.');
     }
+    await AsyncStorage.removeItem('ACTIVE_RESORT_ID');
+    await AsyncStorage.removeItem('ACTIVE_ACTIVITY_TYPE');
   } catch (err) {
     console.error('Error al detener tracking:', err);
   }
