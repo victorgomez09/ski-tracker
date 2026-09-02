@@ -33,6 +33,8 @@ API_URL=""
 OTA_SECRET=""
 RUNTIME_VERSION_OVERRIDE=""
 FORCE_UPDATE="false"
+CHANNEL="stable"
+IS_ROLLBACK="false"
 CHANGELOG_TEXT=""
 CHANGELOG_ES=()
 CHANGELOG_EN=()
@@ -68,6 +70,14 @@ while [[ $# -gt 0 ]]; do
             RUNTIME_VERSION_OVERRIDE="$2"
             shift 2
             ;;
+        --channel)
+            CHANNEL="$2"
+            shift 2
+            ;;
+        --rollback)
+            IS_ROLLBACK="true"
+            shift
+            ;;
         -f|--force)
             FORCE_UPDATE="true"
             shift
@@ -90,6 +100,8 @@ while [[ $# -gt 0 ]]; do
             echo -e "  -u, --url <api_url>           Target API Base URL (Default: ${API_URL})"
             echo -e "  -s, --secret <secret>         OTA Publish Secret token"
             echo -e "  -r, --runtime-version <v>     Override runtime version (Default: auto-detected)"
+            echo -e "  --channel <name>              OTA Channel (e.g. stable, beta - Default: stable)"
+            echo -e "  --rollback                    Rollback channel to embedded binary without publishing bundle"
             echo -e "  -f, --force                   Mark update as mandatory (forceUpdate=true)"
             echo -e "  -c, --changelog <text>        Changelog description (or raw JSON)"
             echo -e "  --changelog-es, --es <text>   Changelog item in Spanish (repeatable or ';' separated)"
@@ -155,7 +167,33 @@ fi
 echo -e "${BLUE}==>${NC} App version (app.json): ${CYAN}${APP_VERSION}${NC}"
 echo -e "${BLUE}==>${NC} Target Runtime Version: ${GREEN}${RUNTIME_VERSION}${NC}"
 echo -e "${BLUE}==>${NC} Target API Server: ${YELLOW}${API_URL}${NC}"
+echo -e "${BLUE}==>${NC} Target Channel: ${GREEN}${CHANNEL}${NC}"
 echo -e "${BLUE}==>${NC} Force update: ${YELLOW}${FORCE_UPDATE}${NC}"
+
+# If rollback is requested, call rollback endpoint directly without building bundle
+if [ "$IS_ROLLBACK" = "true" ]; then
+    echo -e "\n${YELLOW}==>${NC} Triggering Rollback to embedded on ${API_URL}/api/v1/ota/rollback..."
+    echo -e "${YELLOW}==>${NC} Runtime: ${GREEN}${RUNTIME_VERSION}${NC} | Channel: ${GREEN}${CHANNEL}${NC}"
+    HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${API_URL}/api/v1/ota/rollback" \
+        -H "Authorization: Bearer ${OTA_SECRET}" \
+        -F "runtime_version=${RUNTIME_VERSION}" \
+        -F "channel=${CHANNEL}")
+
+    HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+    HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n1)
+
+    if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 201 ]; then
+        echo -e "\n${GREEN}✓ Rollback to embedded directive activated successfully!${NC}"
+        echo -e "${GREEN}Channel:${NC} ${CHANNEL}"
+        echo -e "${GREEN}Runtime Version:${NC} ${RUNTIME_VERSION}"
+        echo -e "${GREEN}Response:${NC} ${HTTP_BODY}"
+        exit 0
+    else
+        echo -e "\n${RED}✗ Failed to activate rollback (HTTP status: ${HTTP_STATUS})${NC}"
+        echo -e "${RED}Response:${NC} ${HTTP_BODY}"
+        exit 1
+    fi
+fi
 
 # 3. Run expo export
 echo -e "\n${BLUE}==>${NC} Exporting Expo OTA bundle..."
@@ -231,6 +269,7 @@ HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${API_URL}/api/v1/ota/publi
     -H "Authorization: Bearer ${OTA_SECRET}" \
     -F "bundle=@bundle.zip" \
     -F "runtime_version=${RUNTIME_VERSION}" \
+    -F "channel=${CHANNEL}" \
     -F "version=${APP_VERSION}" \
     -F "force_update=${FORCE_UPDATE}" \
     -F "changelog=${CHANGELOG_JSON}")
@@ -244,6 +283,7 @@ rm -rf dist-ota bundle.zip
 # 8. Check result
 if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 201 ]; then
     echo -e "\n${GREEN}✓ OTA update published successfully!${NC}"
+    echo -e "${GREEN}Channel:${NC} ${CHANNEL}"
     echo -e "${GREEN}Runtime Version:${NC} ${RUNTIME_VERSION}"
     echo -e "${GREEN}Response:${NC} ${HTTP_BODY}"
 else

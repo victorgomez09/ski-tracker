@@ -104,6 +104,7 @@ type ManifestRequest struct {
 	ProtocolVersion int
 	Platform        string
 	RuntimeVersion  string
+	Channel         string
 	CurrentUpdateID string
 	EmbeddedID      string
 	Accept          string
@@ -123,7 +124,12 @@ func (s *OTAService) WriteManifestResponse(w http.ResponseWriter, req ManifestRe
 		return apierr.ErrBadRequest.WithDetail("No runtimeVersion provided.")
 	}
 
-	bundlePrefix, err := s.latestBundlePrefix(ctx, req.RuntimeVersion)
+	channel := strings.ToLower(strings.TrimSpace(req.Channel))
+	if channel == "" {
+		channel = "stable"
+	}
+
+	bundlePrefix, err := s.latestBundlePrefix(ctx, req.RuntimeVersion, channel)
 	if err != nil {
 		if errors.Is(err, apierr.ErrNotFound) || (err != nil && strings.Contains(err.Error(), "No updates published")) {
 			if req.ProtocolVersion >= 1 {
@@ -185,7 +191,7 @@ func (s *OTAService) WriteManifestResponse(w http.ResponseWriter, req ManifestRe
 	return nil
 }
 
-func (s *OTAService) ServeAsset(ctx context.Context, w http.ResponseWriter, runtimeVersion, platform, assetRel string) error {
+func (s *OTAService) ServeAsset(ctx context.Context, w http.ResponseWriter, runtimeVersion, platform, channel, assetRel string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -197,7 +203,12 @@ func (s *OTAService) ServeAsset(ctx context.Context, w http.ResponseWriter, runt
 		return apierr.ErrBadRequest.WithDetail("runtimeVersion and asset are required.")
 	}
 
-	bundlePrefix, err := s.latestBundlePrefix(ctx, runtimeVersion)
+	channel = strings.ToLower(strings.TrimSpace(channel))
+	if channel == "" {
+		channel = "stable"
+	}
+
+	bundlePrefix, err := s.latestBundlePrefix(ctx, runtimeVersion, channel)
 	if err != nil {
 		return err
 	}
@@ -252,6 +263,7 @@ type PublishOTAInput struct {
 	Context        context.Context
 	ZipPath        string
 	RuntimeVersion string
+	Channel        string
 	ForceUpdate    bool
 	Version        string
 	Changelog      map[string][]string
@@ -282,8 +294,13 @@ func (s *OTAService) Publish(in PublishOTAInput) (string, error) {
 		return "", apierr.ErrBadRequest.WithDetail("The zip must contain metadata.json from `expo export`.")
 	}
 
+	channel := sanitizeSegment(strings.ToLower(strings.TrimSpace(in.Channel)))
+	if channel == "" {
+		channel = "stable"
+	}
+
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	destPrefix := fmt.Sprintf("updates/%s/%s", sanitizeSegment(in.RuntimeVersion), timestamp)
+	destPrefix := fmt.Sprintf("updates/%s/%s/%s", sanitizeSegment(in.RuntimeVersion), channel, timestamp)
 
 	// 2. Subir todos los archivos descomprimidos a MinIO y calcular hashes
 	hashes := make(map[string]AssetHashes)
@@ -451,13 +468,18 @@ func (s *OTAService) assetDescriptor(ctx context.Context, bundlePrefix, relPath 
 		Key:           hashMD5,
 		ContentType:   assetContentType(fileExt, isLaunch),
 		FileExtension: "." + strings.TrimPrefix(fileExt, "."),
-		URL: fmt.Sprintf("%s/api/v1/ota/assets?asset=%s&runtimeVersion=%s&platform=%s",
-			baseURL, url.QueryEscape(relPath), url.QueryEscape(req.RuntimeVersion), req.Platform),
+		URL: fmt.Sprintf("%s/api/v1/ota/assets?asset=%s&runtimeVersion=%s&platform=%s&channel=%s",
+			baseURL, url.QueryEscape(relPath), url.QueryEscape(req.RuntimeVersion), req.Platform, url.QueryEscape(req.Channel)),
 	}, nil
 }
 
-func (s *OTAService) latestBundlePrefix(ctx context.Context, runtimeVersion string) (string, error) {
-	prefix := fmt.Sprintf("updates/%s/", sanitizeSegment(runtimeVersion))
+func (s *OTAService) latestBundlePrefix(ctx context.Context, runtimeVersion, channel string) (string, error) {
+	channel = sanitizeSegment(strings.ToLower(strings.TrimSpace(channel)))
+	if channel == "" {
+		channel = "stable"
+	}
+
+	prefix := fmt.Sprintf("updates/%s/%s/", sanitizeSegment(runtimeVersion), channel)
 
 	opts := minio.ListObjectsOptions{
 		Prefix:    prefix,
@@ -473,7 +495,6 @@ func (s *OTAService) latestBundlePrefix(ctx context.Context, runtimeVersion stri
 			}
 			return "", object.Err
 		}
-		// Extraer el nombre de la subcarpeta (timestamp)
 		trimmed := strings.TrimPrefix(object.Key, prefix)
 		trimmed = strings.TrimSuffix(trimmed, "/")
 		if trimmed != "" {
@@ -481,15 +502,81 @@ func (s *OTAService) latestBundlePrefix(ctx context.Context, runtimeVersion stri
 		}
 	}
 
-	if len(dirs) == 0 {
-		return "", apierr.ErrNotFound.WithDetail("No updates published for this runtime version.")
+	if len(dirs) > 0 {
+		sort.Slice(dirs, func(i, j int) bool {
+			return dirs[i] > dirs[j]
+		})
+		return path.Join("updates", sanitizeSegment(runtimeVersion), channel, dirs[0]), nil
 	}
 
-	sort.Slice(dirs, func(i, j int) bool {
-		return dirs[i] > dirs[j]
-	})
+	// Fallback for "stable": check legacy updates/<runtimeVersion>/<timestamp>
+	if channel == "stable" {
+		legacyPrefix := fmt.Sprintf("updates/%s/", sanitizeSegment(runtimeVersion))
+		legacyOpts := minio.ListObjectsOptions{
+			Prefix:    legacyPrefix,
+			Recursive: false,
+		}
 
-	return path.Join("updates", sanitizeSegment(runtimeVersion), dirs[0]), nil
+		var legacyDirs []string
+		for object := range s.minioClient.ListObjects(ctx, s.bucketName, legacyOpts) {
+			if object.Err != nil {
+				continue
+			}
+			trimmed := strings.TrimPrefix(object.Key, legacyPrefix)
+			trimmed = strings.TrimSuffix(trimmed, "/")
+			if trimmed != "" && trimmed != "beta" && trimmed != "stable" {
+				if _, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+					legacyDirs = append(legacyDirs, trimmed)
+				}
+			}
+		}
+
+		if len(legacyDirs) > 0 {
+			sort.Slice(legacyDirs, func(i, j int) bool {
+				return legacyDirs[i] > legacyDirs[j]
+			})
+			return path.Join("updates", sanitizeSegment(runtimeVersion), legacyDirs[0]), nil
+		}
+	}
+
+	return "", apierr.ErrNotFound.WithDetail(fmt.Sprintf("No updates published for runtime version '%s' on channel '%s'.", runtimeVersion, channel))
+}
+
+type RollbackInput struct {
+	Context        context.Context
+	RuntimeVersion string
+	Channel        string
+}
+
+func (s *OTAService) Rollback(in RollbackInput) error {
+	ctx := in.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if in.RuntimeVersion == "" {
+		return apierr.ErrBadRequest.WithDetail("runtime_version is required.")
+	}
+
+	channel := sanitizeSegment(strings.ToLower(strings.TrimSpace(in.Channel)))
+	if channel == "" {
+		channel = "stable"
+	}
+
+	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	destPrefix := fmt.Sprintf("updates/%s/%s/%s", sanitizeSegment(in.RuntimeVersion), channel, timestamp)
+	rollbackKey := path.Join(destPrefix, "rollback")
+
+	content := []byte(fmt.Sprintf(`{"rollback": true, "timestamp": %s, "channel": "%s"}`, timestamp, channel))
+	_, err := s.minioClient.PutObject(ctx, s.bucketName, rollbackKey, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
+		ContentType: "application/json",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to write rollback marker to MinIO: %w", err)
+	}
+
+	s.logger.Info("OTA rollback marker created", "runtime_version", in.RuntimeVersion, "channel", channel, "key", rollbackKey)
+	return nil
 }
 
 // Helpers para MinIO

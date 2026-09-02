@@ -1,9 +1,10 @@
 import { createContext, ReactNode, useContext } from 'react';
 
-import { OtaUpdateInfo, OtaPhase, useOtaUpdates } from 'hooks/use-ota-updates.hook';
+import { OtaUpdateInfo, OtaPhase, OtaChannel, useOtaUpdates } from 'hooks/use-ota-updates.hook';
 
 type OtaContextValue = {
     phase: OtaPhase;
+    channel: OtaChannel;
     updateInfo: OtaUpdateInfo | null;
     downloadProgress: number;
     optionalModalVisible: boolean;
@@ -13,6 +14,8 @@ type OtaContextValue = {
     openOptionalModal: () => void;
     dismissOptionalModal: () => void;
     applyUpdate: () => Promise<void>;
+    checkForUpdates: (overrideChannel?: OtaChannel) => Promise<void>;
+    switchChannel: (newChannel: OtaChannel) => Promise<void>;
 };
 
 const OtaContext = createContext<OtaContextValue | null>(null);

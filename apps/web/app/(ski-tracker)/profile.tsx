@@ -43,6 +43,7 @@ import {
   LIGHT_COLORS,
 } from 'constants/theme';
 import { useAuth } from 'context/auth.context';
+import { useOta } from 'context/ota.context';
 import { useToast } from 'context/toast.context';
 import api from 'interceptor/api';
 import type { User as UserType } from 'models/user.model';
@@ -72,6 +73,7 @@ export default function ProfileView() {
   const [saving, setSaving] = useState(false);
   const colors = useThemeColors();
   const { isDark, toggleTheme } = useTheme();
+  const { channel, switchChannel } = useOta();
   const styles = useMemo(() => getStyles(colors), [colors]);
   
   const isOffline = networkState?.isConnected === false;
@@ -567,6 +569,87 @@ export default function ProfileView() {
                   </>
                 )}
               </TouchableOpacity>
+            </View>
+
+            {/* OTA Update Channel Switcher */}
+            <View
+              style={[
+                styles.settingRow,
+                {
+                  marginTop: SPACING.md,
+                  paddingTop: SPACING.md,
+                  borderTopWidth: 1,
+                  borderTopColor: colors.border,
+                },
+              ]}
+            >
+              <View style={{ flex: 1, marginRight: SPACING.sm }}>
+                <Text style={styles.settingLabel}>{t('ota_channel', 'Canal de actualizaciones')}</Text>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                  {channel === 'beta'
+                    ? t('ota_channel_beta_desc', 'v2 Beta (nuevas funciones)')
+                    : t('ota_channel_stable_desc', 'v1 Estable (solo correcciones)')}
+                </Text>
+              </View>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  backgroundColor: colors.surface,
+                  borderRadius: BORDER_RADIUS.md,
+                  padding: 3,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                <TouchableOpacity
+                  style={{
+                    paddingVertical: 6,
+                    paddingHorizontal: 10,
+                    borderRadius: BORDER_RADIUS.sm,
+                    backgroundColor: channel === 'stable' ? colors.primary : 'transparent',
+                  }}
+                  onPress={async () => {
+                    if (channel !== 'stable') {
+                      await switchChannel('stable');
+                      showToast(t('channel_switched_stable', 'Cambiado a canal v1 Estable'), 'info');
+                    }
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '700',
+                      color: channel === 'stable' ? '#FFFFFF' : colors.textPrimary,
+                    }}
+                  >
+                    v1 {t('stable', 'Estable')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    paddingVertical: 6,
+                    paddingHorizontal: 10,
+                    borderRadius: BORDER_RADIUS.sm,
+                    backgroundColor: channel === 'beta' ? colors.warning || '#f59e0b' : 'transparent',
+                  }}
+                  onPress={async () => {
+                    if (channel !== 'beta') {
+                      await switchChannel('beta');
+                      showToast(t('channel_switched_beta', 'Cambiado a canal v2 Beta'), 'info');
+                    }
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '700',
+                      color: channel === 'beta' ? '#FFFFFF' : colors.textPrimary,
+                    }}
+                  >
+                    v2 Beta
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 

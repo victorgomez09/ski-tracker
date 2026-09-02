@@ -7,31 +7,61 @@ Este documento describe el sistema de actualizaciones inalámbricas (Over-The-Ai
 El sistema permite prescindir de los servicios estándar de Expo Application Services (EAS) para las actualizaciones OTA, alojando los paquetes de actualización en tu propia infraestructura. Soporta:
 - **Actualizaciones obligatorias (forzadas) vs. opcionales:** Controladas mediante un flag personalizado.
 - **Registros de cambios (changelogs) multilingües:** Enviados de forma segura desde el backend al frontend.
+- **Canales de actualización (`stable` vs `beta`):** Soporte multi-canal para tener la v1 estable y la v2 beta conviviendo sobre el mismo servidor. Por defecto, cualquier petición sin canal especificado consulta el canal `stable`.
+- **Rollback a binario embebido (`rollBackToEmbedded`):** Directiva oficial para ordenar a la app descartar bundles descargados y volver al código JavaScript nativo original del APK/IPA.
 - **Rollbacks y directivas:** Compatibles con el protocolo oficial de `expo-updates`.
 
 ## Backend: API en Golang y Almacenamiento en MinIO
 
 El backend se encarga de recibir los nuevos bundles, almacenarlos y servirlos mediante el protocolo de Expo Updates.
 
+### Estructura de almacenamiento en MinIO
+Los bundles se organizan por versión de runtime y canal:
+```
+updates/<runtime-version>/<channel>/<timestamp>/
+  ├── metadata.json
+  ├── info.json
+  ├── hashes.json
+  └── ... (assets y bundles JS)
+```
+*Si una app solicita el canal `stable` y aún no existen bundles bajo `updates/<runtime-version>/stable/`, el sistema retrocede de forma transparente a la ruta heredada `updates/<runtime-version>/<timestamp>/` para preservar retrocompatibilidad.*
+
 ### 1. Publicar una actualización (`POST /api/v1/ota/publish`)
 
-Para publicar una actualización, el pipeline de CI/CD o el desarrollador comprime en ZIP la salida de `expo export` y la sube a este endpoint junto con los metadatos correspondientes (`runtime_version`, `force_update`, `changelog`, `version`).
+Para publicar una actualización, el pipeline de CI/CD o el desarrollador comprime en ZIP la salida de `expo export` y la sube a este endpoint junto con los metadatos correspondientes (`runtime_version`, `channel`, `force_update`, `changelog`, `version`).
 
-- **Extracción y subida:** El servidor descomprime el archivo y sube cada fichero al bucket de MinIO bajo la ruta `updates/<runtime-version>/<timestamp>/`.
+- **Canal opcional:** Parámetro `channel` (`stable` o `beta`). Si se omite, se asigna `stable` automáticamente.
+- **Extracción y subida:** El servidor descomprime el archivo y sube cada fichero al bucket de MinIO bajo la ruta `updates/<runtime-version>/<channel>/<timestamp>/`.
 - **Generación de metadatos:** Se genera un archivo `info.json` personalizado que contiene el changelog y el flag `forceUpdate`.
 
-### 2. Servir el Manifiesto (`GET /api/v1/ota/manifest`)
+### 2. Activar Rollback a Embebido (`POST /api/v1/ota/rollback`)
+
+Para ordenar a todos los clientes de un canal que descarten el bundle descargado y regresen al código JS empaquetado en el APK nativo:
+- **Parámetros:** `runtime_version` y `channel` (por defecto `stable`).
+- **Mecanismo:** El servidor crea una nueva entrada con timestamp actual y un archivo marcador `rollback`. Al tener la marca de tiempo más reciente, los clientes recibirán la directiva oficial de Expo:
+  ```json
+  {
+    "type": "rollBackToEmbedded",
+    "parameters": {
+      "commitTime": "2026-09-02T15:40:00Z"
+    }
+  }
+  ```
+
+### 3. Servir el Manifiesto (`GET /api/v1/ota/manifest`)
 
 Cuando el cliente Expo comprueba si hay actualizaciones, realiza una petición a este endpoint.
-- **Resolución:** El servidor localiza la carpeta con la marca de tiempo más reciente para la `runtimeVersion` solicitada.
-- **Construcción del manifiesto:** Lee el archivo `metadata.json` (generado por `expo export`) y el `info.json` personalizado.
+- **Resolución de Canal:** Extrae el canal desde `?channel=...`, el header `Expo-Channel-Name` o `Expo-Extra-Params` (inyectado por `Updates.setExtraParamAsync('channel', ...)`). Si no se proporciona ninguno, **por defecto usa `stable`**.
+- **Resolución:** El servidor localiza la carpeta con la marca de tiempo más reciente para la `runtimeVersion` y `channel` solicitados.
+- **Verificación de Rollback:** Si la carpeta más reciente contiene el marcador `rollback`, emite la directiva `rollBackToEmbedded` (o `noUpdateAvailable` si el cliente ya está en la versión embebida).
+- **Construcción del manifiesto:** Lee el archivo `metadata.json` y el `info.json` personalizado.
 - **Hashes:** El servidor calcula los hashes SHA256 y MD5 para el bundle de inicio y los assets.
-- **Protocolo Expo:** Formatea la respuesta en función de la cabecera `expo-protocol-version`, utilizando respuestas `multipart/mixed` para la versión 1+ para enviar correctamente las directivas (como rollback) y el cuerpo del manifiesto.
+- **Protocolo Expo:** Formatea la respuesta en función de la cabecera `expo-protocol-version`, utilizando respuestas `multipart/mixed` para la versión 1+.
 - **Carga útil personalizada (`extra`):** Los campos de `info.json` (`forceUpdate`, `changelog`, `version`) se inyectan en el objeto `extra` del manifiesto.
 
-### 3. Servir Assets (`GET /api/v1/ota/assets`)
+### 4. Servir Assets (`GET /api/v1/ota/assets`)
 
-Cuando el cliente Expo necesita descargar el bundle JS o imágenes, solicita este endpoint con los parámetros `asset`, `runtimeVersion` y `platform`. El backend transmite el archivo directamente desde MinIO, configurando las cabeceras `Content-Type` y `Cache-Control` adecuadas.
+Cuando el cliente Expo necesita descargar el bundle JS o imágenes, solicita este endpoint con los parámetros `asset`, `runtimeVersion`, `channel` y `platform`. El backend transmite el archivo directamente desde MinIO con las cabeceras `Content-Type` y `Cache-Control` adecuadas.
 
 ## Frontend: Cliente Expo
 
@@ -115,7 +145,24 @@ Abre la app instalada en versión Release. Consultará la API local en busca del
 - **Hashes del Manifiesto (Backend):** Actualmente, `ota_service.go` descarga cada asset a memoria durante la llamada `buildManifest` para calcular los hashes `SHA256` y `MD5`. En bundles grandes o con tráfico elevado, esto puede ocasionar picos de uso de memoria.
   - *Recomendación:* Precalcular estos hashes durante la fase `POST /api/v1/ota/publish` y guardarlos en un archivo `hashes.json` en MinIO, de modo que el endpoint del manifiesto simplemente lea el JSON sin tener que descargar todos los assets.
 
-## Comando para Publicar OTA al Servidor
+## Comandos para Publicar y Gestionar OTA
+
+### Publicar en Canal Estable (v1)
 ```shell
-make ota-publish ARGS='--es "Cambiar estilo en los detalles del tiempo" --en "Change styles inside weather forecast"'
+make ota-publish ARGS='--channel stable --es "Correcciones de estabilidad" --en "Stability fixes"'
+```
+
+### Publicar en Canal Beta (v2)
+```shell
+make ota-publish ARGS='--channel beta --es "Nuevas funciones de tracking v2" --en "New v2 tracking features"'
+```
+
+### Rollback a Binario Embebido
+Para forzar a que las aplicaciones de un canal descarten las OTAs y vuelvan a la versión compilada en el APK/IPA:
+```shell
+# Rollback en canal beta
+make ota-rollback ARGS='--channel beta'
+
+# Rollback en canal estable
+make ota-rollback ARGS='--channel stable'
 ```
