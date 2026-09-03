@@ -23,6 +23,8 @@ import { useAuth } from 'context/auth.context';
 import { useToast } from 'context/toast.context';
 import api from 'interceptor/api';
 import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
+import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
+import { formatDuration, formatPace, formatPaceFromMinPerKm } from 'components/tracking/hooks/use-live-stats';
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from '../../constants/theme';
 import { LegendDetailPanel } from './legend-detail-panel';
 import { MapDetailPanel } from './map-detail-panel';
@@ -675,6 +677,13 @@ export default function InteractiveSkiMapNative() {
                                 .map((r: any) => r.matched_piste_id)
                                 .filter(Boolean);
                             setMatchedPisteIds(ids);
+                            if (session.runs.length > 0) {
+                                setActiveTab('runs');
+                            } else {
+                                setActiveTab('elevation');
+                            }
+                        } else {
+                            setActiveTab('elevation');
                         }
                     }
                 } catch (error) {
@@ -1353,110 +1362,168 @@ export default function InteractiveSkiMapNative() {
                 <ResortDetailPanel resort={selectedResort} onClose={() => setSelectedResort(null)} />
             )}
 
-            {searchParams.sessionId && trackPoints.length > 0 && (
-                <View style={styles.analyserPanel}>
-                    <View style={styles.analyserHeader}>
-                        <View>
-                            <Text style={styles.analyserTitle}>{t('session_analyser')}</Text>
-                            <Text style={styles.analyserSubtitle}>
-                                {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
-                            </Text>
-                        </View>
-                        <TouchableOpacity
-                            style={styles.closeButton}
-                            onPress={() => {
-                                setTrackPoints([]);
-                                setMatchedPisteIds([]);
-                                setSelectedRun(null);
-                                setSessionDetails(null);
-                                router.setParams({ sessionId: '' });
-                            }}
-                        >
-                            <X size={16} color={colors.textSecondary} />
-                        </TouchableOpacity>
-                    </View>
+            {searchParams.sessionId && trackPoints.length > 0 && (() => {
+                const sessionActivity = (sessionDetails?.activity_type || 'ski') as ActivityType;
+                const sessionConfig = ACTIVITY_CONFIGS[sessionActivity] || ACTIVITY_CONFIGS.ski;
+                const hasRuns = detectedRuns && detectedRuns.length > 0;
 
-                    {selectedRun ? (
-                        <ScrollView contentContainerStyle={styles.spaceY3}>
+                return (
+                    <View style={styles.analyserPanel}>
+                        <View style={styles.analyserHeader}>
+                            <View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                    <Text style={{ fontSize: 16 }}>{sessionConfig.icon}</Text>
+                                    <Text style={styles.analyserTitle}>
+                                        {sessionDetails ? t(sessionConfig.labelKey, sessionConfig.defaultLabel) : t('session_analyser')}
+                                    </Text>
+                                </View>
+                                <Text style={styles.analyserSubtitle}>
+                                    {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
+                                </Text>
+                            </View>
                             <TouchableOpacity
-                                style={styles.backButton}
-                                onPress={() => setSelectedRun(null)}
+                                style={styles.closeButton}
+                                onPress={() => {
+                                    setTrackPoints([]);
+                                    setMatchedPisteIds([]);
+                                    setSelectedRun(null);
+                                    setSessionDetails(null);
+                                    router.setParams({ sessionId: '' });
+                                }}
                             >
-                                <ArrowLeft size={14} color={colors.primary} />
-                                <Text style={styles.backButtonText}>{t('back_to_runs')}</Text>
+                                <X size={16} color={colors.textSecondary} />
                             </TouchableOpacity>
+                        </View>
 
-                            <View style={styles.runDetailsCard}>
-                                <Text style={styles.runDetailsTitle}>{t('run_details', { index: selectedRun.index })}</Text>
-                                <View style={styles.rowBetween}>
-                                    <Text style={styles.textMuted}>{t('drop')}: {selectedRun.verticalDrop.toFixed(0)}m</Text>
-                                    <Text style={styles.textMuted}>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</Text>
+                        {/* Adaptive Summary Quick Chips */}
+                        {sessionDetails && !selectedRun && (
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: colors.surface, borderRadius: BORDER_RADIUS.md, padding: SPACING.sm, marginVertical: SPACING.xs }}>
+                                <View style={{ alignItems: 'center', flex: 1 }}>
+                                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.textPrimary }}>
+                                        {((sessionDetails.total_distance || 0) / 1000).toFixed(2)} <Text style={{ fontSize: 9, color: colors.textSecondary }}>km</Text>
+                                    </Text>
+                                    <Text style={{ fontSize: 9, color: colors.textSecondary }}>{t('distance', 'Distancia')}</Text>
+                                </View>
+                                {sessionActivity === 'walk' || sessionActivity === 'hike' ? (
+                                    <View style={{ alignItems: 'center', flex: 1 }}>
+                                        <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.textPrimary }}>
+                                            {sessionDetails.pace && sessionDetails.pace > 0 
+                                                ? formatPaceFromMinPerKm(sessionDetails.pace) 
+                                                : formatPace((sessionDetails.avg_speed || 0) * 3.6)}
+                                        </Text>
+                                        <Text style={{ fontSize: 9, color: colors.textSecondary }}>{t('pace', 'Ritmo')}</Text>
+                                    </View>
+                                ) : (
+                                    <View style={{ alignItems: 'center', flex: 1 }}>
+                                        <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.textPrimary }}>
+                                            {((sessionDetails.max_speed || 0) * 3.6).toFixed(1)} <Text style={{ fontSize: 9, color: colors.textSecondary }}>km/h</Text>
+                                        </Text>
+                                        <Text style={{ fontSize: 9, color: colors.textSecondary }}>{t('max_speed', 'Vel. Máx')}</Text>
+                                    </View>
+                                )}
+                                <View style={{ alignItems: 'center', flex: 1 }}>
+                                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.textPrimary }}>
+                                        {sessionDetails.elevation_gain && sessionDetails.elevation_gain > 0 
+                                            ? `+${Math.round(sessionDetails.elevation_gain)}m`
+                                            : `${Math.round(sessionDetails.vertical_drop || 0)}m`}
+                                    </Text>
+                                    <Text style={{ fontSize: 9, color: colors.textSecondary }}>
+                                        {sessionDetails.elevation_gain ? 'D+' : t('drop', 'Desnivel')}
+                                    </Text>
+                                </View>
+                                <View style={{ alignItems: 'center', flex: 1 }}>
+                                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.textPrimary }}>
+                                        {formatDuration(sessionDetails.moving_time || sessionDetails.duration || 0)}
+                                    </Text>
+                                    <Text style={{ fontSize: 9, color: colors.textSecondary }}>{t('duration', 'Tiempo')}</Text>
                                 </View>
                             </View>
+                        )}
 
-                            <View style={styles.spaceY2}>
-                                <Text style={styles.profileLabel}>{t('elevation_profile')}</Text>
-                                <AnalyserChart data={computeChartData(selectedRun.points)} yKey="elevation" />
+                        {selectedRun ? (
+                            <ScrollView contentContainerStyle={styles.spaceY3}>
+                                <TouchableOpacity
+                                    style={styles.backButton}
+                                    onPress={() => setSelectedRun(null)}
+                                >
+                                    <ArrowLeft size={14} color={colors.primary} />
+                                    <Text style={styles.backButtonText}>{t('back_to_runs')}</Text>
+                                </TouchableOpacity>
 
-                                <Text style={styles.profileLabel}>{t('speed_profile')}</Text>
-                                <AnalyserChart data={computeChartData(selectedRun.points)} yKey="speed" strokeColor={colors.danger} />
-                            </View>
-                        </ScrollView>
-                    ) : (
-                        <View style={styles.spaceY3}>
-                            <View style={styles.tabsContainer}>
-                                <TouchableOpacity
-                                    style={[styles.tabButton, activeTab === 'runs' && styles.tabButtonActive]}
-                                    onPress={() => setActiveTab('runs')}
-                                >
-                                    <Text style={[styles.tabButtonText, activeTab === 'runs' && styles.tabButtonTextActive]}>{t('runs')}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.tabButton, activeTab === 'elevation' && styles.tabButtonActive]}
-                                    onPress={() => setActiveTab('elevation')}
-                                >
-                                    <Text style={[styles.tabButtonText, activeTab === 'elevation' && styles.tabButtonTextActive]}>{t('elevation')}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.tabButton, activeTab === 'speed' && styles.tabButtonActive]}
-                                    onPress={() => setActiveTab('speed')}
-                                >
-                                    <Text style={[styles.tabButtonText, activeTab === 'speed' && styles.tabButtonTextActive]}>{t('speed')}</Text>
-                                </TouchableOpacity>
-                            </View>
+                                <View style={styles.runDetailsCard}>
+                                    <Text style={styles.runDetailsTitle}>{t('run_details', { index: selectedRun.index })}</Text>
+                                    <View style={styles.rowBetween}>
+                                        <Text style={styles.textMuted}>{t('drop')}: {selectedRun.verticalDrop.toFixed(0)}m</Text>
+                                        <Text style={styles.textMuted}>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</Text>
+                                    </View>
+                                </View>
 
-                            {activeTab === 'runs' && (
-                                <ScrollView style={styles.runsScroll} contentContainerStyle={styles.spaceY2}>
-                                    <Text style={styles.runsHeader}>{t('descent_runs')} ({detectedRuns.length})</Text>
-                                    {detectedRuns.map((run) => (
+                                <View style={styles.spaceY2}>
+                                    <Text style={styles.profileLabel}>{t('elevation_profile')}</Text>
+                                    <AnalyserChart data={computeChartData(selectedRun.points)} yKey="elevation" />
+
+                                    <Text style={styles.profileLabel}>{t('speed_profile')}</Text>
+                                    <AnalyserChart data={computeChartData(selectedRun.points)} yKey="speed" strokeColor={colors.danger} />
+                                </View>
+                            </ScrollView>
+                        ) : (
+                            <View style={styles.spaceY3}>
+                                <View style={styles.tabsContainer}>
+                                    {hasRuns && (
                                         <TouchableOpacity
-                                            key={run.id}
-                                            style={styles.runItem}
-                                            onPress={() => setSelectedRun(run)}
+                                            style={[styles.tabButton, activeTab === 'runs' && styles.tabButtonActive]}
+                                            onPress={() => setActiveTab('runs')}
                                         >
-                                            <View>
-                                                <Text style={styles.runDetailsTitle}>{t('run_title', { index: run.index })}</Text>
-                                                <Text style={styles.runItemText}>
-                                                    {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
-                                                </Text>
-                                            </View>
-                                            <Text style={styles.backButtonText}>{t('charts')} →</Text>
+                                            <Text style={[styles.tabButtonText, activeTab === 'runs' && styles.tabButtonTextActive]}>{t('runs')}</Text>
                                         </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
-                            )}
+                                    )}
+                                    <TouchableOpacity
+                                        style={[styles.tabButton, activeTab === 'elevation' && styles.tabButtonActive]}
+                                        onPress={() => setActiveTab('elevation')}
+                                    >
+                                        <Text style={[styles.tabButtonText, activeTab === 'elevation' && styles.tabButtonTextActive]}>{t('elevation', 'Elevación')}</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.tabButton, activeTab === 'speed' && styles.tabButtonActive]}
+                                        onPress={() => setActiveTab('speed')}
+                                    >
+                                        <Text style={[styles.tabButtonText, activeTab === 'speed' && styles.tabButtonTextActive]}>{t('speed', 'Velocidad')}</Text>
+                                    </TouchableOpacity>
+                                </View>
 
-                            {activeTab === 'elevation' && (
-                                <AnalyserChart data={computeChartData(trackPoints)} yKey="elevation" />
-                            )}
+                                {hasRuns && activeTab === 'runs' && (
+                                    <ScrollView style={styles.runsScroll} contentContainerStyle={styles.spaceY2}>
+                                        <Text style={styles.runsHeader}>{t('descent_runs')} ({detectedRuns.length})</Text>
+                                        {detectedRuns.map((run) => (
+                                            <TouchableOpacity
+                                                key={run.id}
+                                                style={styles.runItem}
+                                                onPress={() => setSelectedRun(run)}
+                                            >
+                                                <View>
+                                                    <Text style={styles.runDetailsTitle}>{t('run_title', { index: run.index })}</Text>
+                                                    <Text style={styles.runItemText}>
+                                                        {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
+                                                    </Text>
+                                                </View>
+                                                <Text style={styles.backButtonText}>{t('charts')} →</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                )}
 
-                            {activeTab === 'speed' && (
-                                <AnalyserChart data={computeChartData(trackPoints)} yKey="speed" strokeColor={colors.danger} />
-                            )}
-                        </View>
-                    )}
-                </View>
-            )}
+                                {activeTab === 'elevation' && (
+                                    <AnalyserChart data={computeChartData(trackPoints)} yKey="elevation" />
+                                )}
+
+                                {activeTab === 'speed' && (
+                                    <AnalyserChart data={computeChartData(trackPoints)} yKey="speed" strokeColor={colors.danger} />
+                                )}
+                            </View>
+                        )}
+                    </View>
+                );
+            })()}
         </View>
     );
 }

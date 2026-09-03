@@ -4,18 +4,24 @@ import { User } from "./user.model";
 export interface Session {
     id: string;
     user_id: string;
-    resort_id: string;
+    resort_id?: string | null;
     start_time: string;
-    end_time: string;
+    end_time?: string | null;
     total_distance: number;
     max_speed: number;
     vertical_drop: number;
+    avg_speed?: number;
+    elevation_gain?: number;
+    elevation_loss?: number;
+    moving_time?: number;
+    duration?: number;
+    pace?: number;
     activity_type: string;
     is_public: boolean;
     created_at: string;
     user: User;
-    runs: SessionRun[];
-    resort: Resort;
+    runs?: SessionRun[];
+    resort?: Resort | null;
     photos?: SessionPhoto[];
 }
 

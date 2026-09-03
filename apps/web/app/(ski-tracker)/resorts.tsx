@@ -42,6 +42,7 @@ import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from 'c
 import { useAuth } from 'context/auth.context';
 import { useFavorites } from 'context/favorites.context';
 import { useToast } from 'context/toast.context';
+import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 import api from 'interceptor/api';
 import { Resort } from 'models/ski-resort.model';
 import { WeatherForecast } from 'models/weather.model';
@@ -502,7 +503,10 @@ export default function ResortsView() {
                           {(session.max_speed * 3.6).toFixed(1)} km/h
                         </Text>
                         <Text style={styles.activityBadge}>
-                          {session.activity_type === 'ski' ? t('ski') : t('snowboard')}
+                          {(() => {
+                            const conf = ACTIVITY_CONFIGS[session.activity_type as ActivityType] || ACTIVITY_CONFIGS.ski;
+                            return `${conf.icon} ${t(conf.labelKey, conf.defaultLabel)}`;
+                          })()}
                         </Text>
                       </View>
                     </View>

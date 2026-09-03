@@ -86,38 +86,38 @@ La **versión 2.0** evoluciona la plataforma de un rastreador exclusivo de esqu�
 ### Fase 2: Ingesta y Motor de Procesamiento Polimórfico (Backend Go)
 > **Objetivo:** Procesar las sesiones de acuerdo a su naturaleza deportiva sin forzar reglas de esquí a deportes de verano o urbanos.
 
-- [ ] **Actualización del Modelo y API de Sesiones:**
-  - Permitir `resort_id` como `NULL` en `POST /ski-sessions` (o renombrar a `/sessions`).
-  - Recibir y validar `activity_type` en la creación de la sesión (actualmente tomaba el valor por defecto del perfil de usuario).
-- [ ] **Desacoplar el Pipeline en `SkiSessionService.processSkiRunsAsync`:**
-  - Crear un dispatcher/estrategia según `activity_type`:
-    - **Si `activity_type in ('ski', 'snowboard')`:**
-      - Mantener `segmentTrack` (remontes vs bajadas).
-      - Mantener `processRunEnrichment` y Map Matching en PostGIS.
+- [x] **Actualización del Modelo y API de Sesiones:**
+  - Permitir `resort_id` como `NULL` en `POST /ski-sessions` y alias `/sessions`.
+  - Recibir y validar `activity_type` en la creación de la sesión con fallback al perfil de usuario o valor por defecto.
+- [x] **Desacoplar el Pipeline en `SkiSessionService.processSessionAsync`:**
+  - Creado dispatcher polimórfico según `activity_type`:
+    - **Si `activity_type in ('ski', 'snowboard', 'snow')`:**
+      - Mantiene `segmentTrack` (remontes vs bajadas).
+      - Mantiene `processRunEnrichment` y Map Matching en PostGIS.
     - **Si `activity_type in ('walk', 'hike', 'bike', 'car', 'general')`:**
-      - **NO** generar registros en la tabla `ski_runs`.
-      - Ejecutar pipeline `processOutdoorSessionMetrics`:
-        - Cálculo de distancia acumulada 2D y 3D.
-        - Desnivel positivo ($D+$) y desnivel negativo ($D-$) con filtro de histéresis para evitar ruido barométrico/GPS.
+      - **NO** genera registros en la tabla `ski_runs`.
+      - Ejecuta pipeline `calculateOutdoorSessionMetrics`:
+        - Cálculo de distancia acumulada 2D y 3D (Haversine + altitud).
+        - Desnivel positivo ($D+$) y desnivel negativo ($D-$) con filtro de histéresis de 2.0 m para eliminar ruido GPS/barométrico.
         - Velocidad media, velocidad máxima y ritmo medio ($\text{min/km}$ para senderismo/paseo).
-        - Tiempo total vs. tiempo en movimiento (filtrando paradas con velocidad < umbral).
-- [ ] **Migración de Base de Datos:**
-  - Verificar que las tablas `ski_sessions` (o tabla general) soporten métricas ampliadas (ej. `elevation_gain`, `elevation_loss`, `moving_time`).
+        - Tiempo total vs. tiempo en movimiento con umbrales adaptativos por deporte.
+- [x] **Migración de Base de Datos:**
+  - Creada migración `20260903120000_add_outdoor_metrics_to_sessions.go` para añadir `avg_speed`, `elevation_gain`, `elevation_loss`, `moving_time`, `duration` y `pace` a la tabla `ski_sessions`.
 
 ---
 
 ### Fase 3: Métricas, Historial y Visualización Adaptativa
 > **Objetivo:** Mostrar al usuario resúmenes e historial coherentes con el deporte practicado.
 
-- [ ] **HUD en Pantalla de Tracking:**
-  - Paseo / Correr: Mostrar **Ritmo (min/km)**, **Distancia (km)**, **Tiempo**, **D+**.
-  - Bici: Mostrar **Velocidad actual (km/h)**, **Distancia**, **Tiempo**, **Altitud**.
-  - Coche: Mostrar **Velocidad (km/h)**, **Distancia**, **Tiempo**.
-  - Esquí: Mostrar **Bajadas**, **Velocidad punta**, **Desnivel esquiado**, **Tiempo**.
-- [ ] **Historial y Detalle de Sesión Adaptativo:**
-  - Renderizar tarjetas de métricas específicas según la actividad.
-  - Para paseos/bici: gráfico de perfil altimétrico (elevación vs distancia) en lugar de desglose de remontes y pistas.
-  - Distintivos visuales / iconos por actividad en el listado de sesiones y en la pestaña de comunidad.
+- [x] **HUD en Pantalla de Tracking:**
+  - Paseo / Senderismo: Muestra **Ritmo (min/km)**, **Distancia (km)**, **Tiempo**, **D+ (m)**.
+  - Bici: Muestra **Velocidad actual (km/h)**, **Distancia (km)**, **Tiempo**, **Altitud (m)**.
+  - Coche: Muestra **Velocidad (km/h)**, **Distancia (km)**, **Vel. Máx (km/h)**, **Tiempo**.
+  - Esquí / Snowboard: Muestra **Velocidad punta (km/h)**, **Distancia (km)**, **Desnivel esquiado (D-)**, **Tiempo**.
+- [x] **Historial y Detalle de Sesión Adaptativo:**
+  - Renderizado de tarjetas y paneles de métricas específicas según la actividad practicada.
+  - Analizador de sesión en mapa con vista prioritaria de perfil altimétrico (elevación vs distancia) y velocidad para actividades outdoor, y desglose de bajadas/pistas para esquí/snowboard.
+  - Distintivos visuales / iconos dinámicos con selector multi-actividad en el perfil, en el listado de sesiones de estaciones y en el feed de comunidad.
 
 ---
 
@@ -145,8 +145,8 @@ La **versión 2.0** evoluciona la plataforma de un rastreador exclusivo de esqu�
 
 ## 📅 Orden de Ejecución Inmediato
 
-1. ⚙️ **Fase 0 (Prioridad Actual):** Refactorización modular en React Native (`useTracking`, partición de `tracking.native.tsx`, tipado de actividades).
-2. 🚀 **Fase 1:** Habilitar selector de actividad y tracking libre sin estación en la app.
-3. 🛠️ **Fase 2:** Adaptar el backend Go para procesar métricas outdoor sin segmentación de remontes/pistas.
-4. 📊 **Fase 3:** Adaptar pantallas de detalle e historial con las nuevas métricas.
-5. 🗺️ **Fase 4 & 5:** Capas cartográficas y pruebas de autonomía de batería.
+1. ⚙️ **Fase 0 (Completada):** Refactorización modular en React Native (`useTracking`, partición de `tracking.native.tsx`, tipado de actividades).
+2. 🚀 **Fase 1 (Completada):** Habilitar selector de actividad y tracking libre sin estación en la app.
+3. 🛠️ **Fase 2 (Completada):** Adaptar el backend Go para procesar métricas outdoor sin segmentación de remontes/pistas.
+4. 📊 **Fase 3 (Completada):** Adaptar pantallas de detalle e historial con las nuevas métricas.
+5. 🗺️ **Fase 4 & 5 (Siguiente Prioridad):** Capas cartográficas y pruebas de autonomía de batería.

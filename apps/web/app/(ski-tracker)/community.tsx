@@ -28,13 +28,165 @@ import { useToast } from "context/toast.context";
 
 import { useAuth } from "context/auth.context";
 import FriendsModal from "components/social/friends-modal";
+import { ActivityType, ACTIVITY_CONFIGS } from "models/activity.model";
+import { formatDuration, formatPace, formatPaceFromMinPerKm } from "components/tracking/hooks/use-live-stats";
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const msToKmh = (ms: number): string => (ms * 3.6).toFixed(1);
-const metersToKm = (m: number): string => (m / 1000).toFixed(2);
+const msToKmh = (ms: number): string => ((ms || 0) * 3.6).toFixed(1);
+const metersToKm = (m: number): string => ((m || 0) / 1000).toFixed(2);
+
+const renderSessionStatsGrid = (
+  session: Session,
+  config: any,
+  colors: typeof LIGHT_COLORS,
+  styles: any,
+  t: any,
+  runsCount: number
+) => {
+  const act = session.activity_type || 'ski';
+
+  if (act === 'walk' || act === 'hike') {
+    const paceStr = session.pace && session.pace > 0
+      ? formatPaceFromMinPerKm(session.pace)
+      : (session.avg_speed && session.avg_speed > 0 ? formatPace(session.avg_speed * 3.6) : "--'--\"");
+
+    return (
+      <>
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('distance')}</Text>
+          <Text style={styles.statValue}>
+            {metersToKm(session.total_distance)} <Text style={styles.statUnit}>{t('km')}</Text>
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statCol}>
+          <Text style={[styles.statLabel, { textAlign: 'center' }]}>{t('pace', 'Ritmo')}</Text>
+          <Text style={styles.statValue}>
+            {paceStr}
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('d_plus', 'D+')}</Text>
+          <Text style={styles.statValue}>
+            +{Math.round(session.elevation_gain || 0)} <Text style={styles.statUnit}>{t('m')}</Text>
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('duration', 'Tiempo')}</Text>
+          <Text style={styles.statValue}>
+            {formatDuration(session.moving_time || session.duration || 0)}
+          </Text>
+        </View>
+      </>
+    );
+  }
+
+  if (act === 'bike') {
+    return (
+      <>
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('distance')}</Text>
+          <Text style={styles.statValue}>
+            {metersToKm(session.total_distance)} <Text style={styles.statUnit}>{t('km')}</Text>
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statCol}>
+          <Text style={[styles.statLabel, { textAlign: 'center' }]}>{t('avg_speed', 'Vel. Med.')}</Text>
+          <Text style={styles.statValue}>
+            {msToKmh(session.avg_speed || 0)} <Text style={styles.statUnit}>{t('km_h')}</Text>
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('max_speed')}</Text>
+          <Text style={styles.statValue}>
+            {msToKmh(session.max_speed)} <Text style={styles.statUnit}>{t('km_h')}</Text>
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('d_plus', 'D+')}</Text>
+          <Text style={styles.statValue}>
+            +{Math.round(session.elevation_gain || 0)} <Text style={styles.statUnit}>{t('m')}</Text>
+          </Text>
+        </View>
+      </>
+    );
+  }
+
+  if (act === 'car') {
+    return (
+      <>
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('distance')}</Text>
+          <Text style={styles.statValue}>
+            {metersToKm(session.total_distance)} <Text style={styles.statUnit}>{t('km')}</Text>
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statCol}>
+          <Text style={[styles.statLabel, { textAlign: 'center' }]}>{t('avg_speed', 'Vel. Med.')}</Text>
+          <Text style={styles.statValue}>
+            {msToKmh(session.avg_speed || 0)} <Text style={styles.statUnit}>{t('km_h')}</Text>
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('max_speed')}</Text>
+          <Text style={styles.statValue}>
+            {msToKmh(session.max_speed)} <Text style={styles.statUnit}>{t('km_h')}</Text>
+          </Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>{t('duration', 'Tiempo')}</Text>
+          <Text style={styles.statValue}>
+            {formatDuration(session.duration || session.moving_time || 0)}
+          </Text>
+        </View>
+      </>
+    );
+  }
+
+  // Ski, Snowboard, Snow and General
+  return (
+    <>
+      <View style={styles.statCol}>
+        <Text style={styles.statLabel}>{t('distance')}</Text>
+        <Text style={styles.statValue}>
+          {metersToKm(session.total_distance)} <Text style={styles.statUnit}>{t('km')}</Text>
+        </Text>
+      </View>
+      <View style={styles.divider} />
+      <View style={styles.statCol}>
+        <Text style={[styles.statLabel, { textAlign: 'center' }]}>{t('vertical_drop')}</Text>
+        <Text style={styles.statValue}>
+          {Math.round(session.vertical_drop)} <Text style={styles.statUnit}>{t('m')}</Text>
+        </Text>
+      </View>
+      <View style={styles.divider} />
+      <View style={styles.statCol}>
+        <Text style={styles.statLabel}>{t('max_speed')}</Text>
+        <Text style={styles.statValue}>
+          {msToKmh(session.max_speed)} <Text style={styles.statUnit}>{t('km_h')}</Text>
+        </Text>
+      </View>
+      <View style={styles.divider} />
+      <View style={styles.statCol}>
+        <Text style={styles.statLabel}>{t('downs')}</Text>
+        <Text style={styles.statValue}>
+          {runsCount}
+        </Text>
+      </View>
+    </>
+  );
+};
 
 const getDifficultyMeta = (diff: string, colors: typeof LIGHT_COLORS) => {
   switch (diff?.toLowerCase()) {
@@ -392,6 +544,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
   };
 
   const runsCount = session.runs?.length || 0;
+  const activityConfig = ACTIVITY_CONFIGS[session.activity_type as ActivityType] || ACTIVITY_CONFIGS.ski;
   const firstName = session.user?.first_name || t('rider');
   const lastName = session.user?.last_name || '';
   const initials = `${firstName[0] || 'U'}${lastName[0] || ''}`.toUpperCase();
@@ -429,56 +582,31 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
         <View style={styles.headerRight}>
           <View style={styles.activityTypeBadge}>
             <Text style={styles.activityTypeIcon}>
-              {session.activity_type === 'ski' ? '⛷️' : '🏂'}
+              {activityConfig.icon}
             </Text>
             <Text style={styles.activityTypeText}>
-              {session.activity_type === 'ski' ? t('ski') : t('snowboard')}
+              {t(activityConfig.labelKey, activityConfig.defaultLabel)}
             </Text>
           </View>
 
           <TouchableOpacity
             style={styles.mapButton}
-            onPress={() => router.push(`/map?sessionId=${session.id}&lat=${session.resort.Latitude}&lng=${session.resort.Longitude}&zoom=14`)}
+            onPress={() => {
+              if (session.resort?.Latitude && session.resort?.Longitude) {
+                router.push(`/map?sessionId=${session.id}&lat=${session.resort.Latitude}&lng=${session.resort.Longitude}&zoom=14`);
+              } else {
+                router.push(`/map?sessionId=${session.id}`);
+              }
+            }}
           >
             <MapIcon size={9} color={colors.textOnPrimary} />
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Dynamic Adaptive Stats Grid */}
       <View style={styles.statsGrid}>
-        <View style={styles.statCol}>
-          <Text style={styles.statLabel}>{t('distance')}</Text>
-          <Text style={styles.statValue}>
-            {metersToKm(session.total_distance)} <Text style={styles.statUnit}>{t('km')}</Text>
-          </Text>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.statCol}>
-          <Text style={[styles.statLabel, { textAlign: 'center' }]}>{t('vertical_drop')}</Text>
-          <Text style={styles.statValue}>
-            {Math.round(session.vertical_drop)} <Text style={styles.statUnit}>{t('m')}</Text>
-          </Text>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.statCol}>
-          <Text style={styles.statLabel}>{t('max_speed')}</Text>
-          <Text style={styles.statValue}>
-            {msToKmh(session.max_speed)} <Text style={styles.statUnit}>{t('km_h')}</Text>
-          </Text>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.statCol}>
-          <Text style={styles.statLabel}>{t('downs')}</Text>
-          <Text style={styles.statValue}>
-            {runsCount}
-          </Text>
-        </View>
+        {renderSessionStatsGrid(session, activityConfig, colors, styles, t, runsCount)}
       </View>
 
       {/* PHOTOS THUMBNAILS (UP TO 5) */}

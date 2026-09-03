@@ -11,6 +11,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { API_BASE_URL } from 'constants/constants';
 import { useAuth } from 'context/auth.context';
 import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
+import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
+import { formatDuration, formatPace, formatPaceFromMinPerKm } from 'components/tracking/hooks/use-live-stats';
 import { useThemeColors, COLORS, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 import { MapDetailPanel } from './map-detail-panel';
 import { ResortDetailPanel } from './resort-detail-panel';
@@ -460,6 +462,13 @@ export default function InteractiveSkiMap() {
                                 .map((r: any) => r.matched_piste_id)
                                 .filter(Boolean);
                             setMatchedPisteIds(ids);
+                            if (session.runs.length > 0) {
+                                setActiveTab('runs');
+                            } else {
+                                setActiveTab('elevation');
+                            }
+                        } else {
+                            setActiveTab('elevation');
                         }
                     }
                 } catch (error) {
@@ -1266,89 +1275,146 @@ export default function InteractiveSkiMap() {
                 )}
             </Map>
 
-            {searchParams.sessionId && trackPoints.length > 0 && (
-                <div style={styles.analyserPanel}>
-                    <div style={styles.analyserHeader}>
-                        <div>
-                            <h3 style={styles.analyserTitle}>{t('session_analyser')}</h3>
-                            <p style={styles.analyserSubtitle}>
-                                {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            style={styles.closeButton}
-                            onClick={() => {
-                                setTrackPoints([]);
-                                setMatchedPisteIds([]);
-                                setSelectedRun(null);
-                                setSessionDetails(null);
-                                router.setParams({ sessionId: '' });
-                            }}
-                        >
-                            ✕
-                        </button>
-                    </div>
+            {searchParams.sessionId && trackPoints.length > 0 && (() => {
+                const sessionActivity = (sessionDetails?.activity_type || 'ski') as ActivityType;
+                const sessionConfig = ACTIVITY_CONFIGS[sessionActivity] || ACTIVITY_CONFIGS.ski;
+                const hasRuns = detectedRuns && detectedRuns.length > 0;
 
-                    {selectedRun ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.sm}px` }}>
+                return (
+                    <div style={styles.analyserPanel}>
+                        <div style={styles.analyserHeader}>
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '18px' }}>{sessionConfig.icon}</span>
+                                    <h3 style={styles.analyserTitle}>
+                                        {sessionDetails ? t(sessionConfig.labelKey, sessionConfig.defaultLabel) : t('session_analyser')}
+                                    </h3>
+                                </div>
+                                <p style={styles.analyserSubtitle}>
+                                    {sessionDetails ? `${t('date')}: ${new Date(sessionDetails.start_time).toLocaleDateString()}` : ''}
+                                </p>
+                            </div>
                             <button
                                 type="button"
-                                style={styles.backButton}
-                                onClick={() => setSelectedRun(null)}
+                                style={styles.closeButton}
+                                onClick={() => {
+                                    setTrackPoints([]);
+                                    setMatchedPisteIds([]);
+                                    setSelectedRun(null);
+                                    setSessionDetails(null);
+                                    router.setParams({ sessionId: '' });
+                                }}
                             >
-                                {t('back_to_runs')}
+                                ✕
                             </button>
-                            <div style={styles.runDetailsCard}>
-                                <h4 style={styles.runDetailsTitle}>{t('run_details', { index: selectedRun.index })}</h4>
-                                <div style={styles.runDetailsGrid}>
-                                    <div>{t('drop')}: {selectedRun.verticalDrop.toFixed(1)} m</div>
-                                    <div>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
+                        </div>
+
+                        {/* Adaptive Summary Quick Chips */}
+                        {sessionDetails && !selectedRun && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: colors.surface, borderRadius: `${BORDER_RADIUS.md}px`, padding: `${SPACING.sm}px`, margin: `${SPACING.xs}px 0` }}>
+                                <div style={{ textAlign: 'center', flex: 1 }}>
+                                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: colors.textPrimary }}>
+                                        {((sessionDetails.total_distance || 0) / 1000).toFixed(2)} <span style={{ fontSize: '9px', color: colors.textSecondary }}>km</span>
+                                    </div>
+                                    <div style={{ fontSize: '9px', color: colors.textSecondary }}>{t('distance', 'Distancia')}</div>
+                                </div>
+                                {sessionActivity === 'walk' || sessionActivity === 'hike' ? (
+                                    <div style={{ textAlign: 'center', flex: 1 }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 'bold', color: colors.textPrimary }}>
+                                            {sessionDetails.pace && sessionDetails.pace > 0 
+                                                ? formatPaceFromMinPerKm(sessionDetails.pace) 
+                                                : formatPace((sessionDetails.avg_speed || 0) * 3.6)}
+                                        </div>
+                                        <div style={{ fontSize: '9px', color: colors.textSecondary }}>{t('pace', 'Ritmo')}</div>
+                                    </div>
+                                ) : (
+                                    <div style={{ textAlign: 'center', flex: 1 }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 'bold', color: colors.textPrimary }}>
+                                            {((sessionDetails.max_speed || 0) * 3.6).toFixed(1)} <span style={{ fontSize: '9px', color: colors.textSecondary }}>km/h</span>
+                                        </div>
+                                        <div style={{ fontSize: '9px', color: colors.textSecondary }}>{t('max_speed', 'Vel. Máx')}</div>
+                                    </div>
+                                )}
+                                <div style={{ textAlign: 'center', flex: 1 }}>
+                                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: colors.textPrimary }}>
+                                        {sessionDetails.elevation_gain && sessionDetails.elevation_gain > 0 
+                                            ? `+${Math.round(sessionDetails.elevation_gain)}m`
+                                            : `${Math.round(sessionDetails.vertical_drop || 0)}m`}
+                                    </div>
+                                    <div style={{ fontSize: '9px', color: colors.textSecondary }}>
+                                        {sessionDetails.elevation_gain ? 'D+' : t('drop', 'Desnivel')}
+                                    </div>
+                                </div>
+                                <div style={{ textAlign: 'center', flex: 1 }}>
+                                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: colors.textPrimary }}>
+                                        {formatDuration(sessionDetails.moving_time || sessionDetails.duration || 0)}
+                                    </div>
+                                    <div style={{ fontSize: '9px', color: colors.textSecondary }}>{t('duration', 'Tiempo')}</div>
                                 </div>
                             </div>
+                        )}
 
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.xs}px` }}>
-                                <div style={styles.profileLabel}>{t('elevation_profile')}</div>
-                                <AnalyserChart data={computeChartData(selectedRun.points)} yKey="elevation" />
+                        {selectedRun ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.sm}px` }}>
+                                <button
+                                    type="button"
+                                    style={styles.backButton}
+                                    onClick={() => setSelectedRun(null)}
+                                >
+                                    {t('back_to_runs')}
+                                </button>
+                                <div style={styles.runDetailsCard}>
+                                    <h4 style={styles.runDetailsTitle}>{t('run_details', { index: selectedRun.index })}</h4>
+                                    <div style={styles.runDetailsGrid}>
+                                        <div>{t('drop')}: {selectedRun.verticalDrop.toFixed(1)} m</div>
+                                        <div>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
+                                    </div>
+                                </div>
 
-                                <div style={styles.profileLabel}>{t('speed_profile')}</div>
-                                <AnalyserChart data={computeChartData(selectedRun.points)} yKey="speed" strokeColor={colors.danger} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.xs}px` }}>
+                                    <div style={styles.profileLabel}>{t('elevation_profile')}</div>
+                                    <AnalyserChart data={computeChartData(selectedRun.points)} yKey="elevation" />
+
+                                    <div style={styles.profileLabel}>{t('speed_profile')}</div>
+                                    <AnalyserChart data={computeChartData(selectedRun.points)} yKey="speed" strokeColor={colors.danger} />
+                                </div>
                             </div>
-                        </div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.sm}px` }}>
-                            <div style={styles.tabsContainer}>
-                                <button
-                                    type="button"
-                                    style={{
-                                        ...styles.tabButton,
-                                        ...(activeTab === 'runs' ? styles.tabButtonActive : {})
-                                    }}
-                                    onClick={() => setActiveTab('runs')}
-                                >
-                                    {t('runs')}
-                                </button>
-                                <button
-                                    type="button"
-                                    style={{
-                                        ...styles.tabButton,
-                                        ...(activeTab === 'elevation' ? styles.tabButtonActive : {})
-                                    }}
-                                    onClick={() => setActiveTab('elevation')}
-                                >
-                                    {t('elevation')}
-                                </button>
-                                <button
-                                    type="button"
-                                    style={{
-                                        ...styles.tabButton,
-                                        ...(activeTab === 'speed' ? styles.tabButtonActive : {})
-                                    }}
-                                    onClick={() => setActiveTab('speed')}
-                                >
-                                    {t('speed')}
-                                </button>
-                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.sm}px` }}>
+                                <div style={styles.tabsContainer}>
+                                    {hasRuns && (
+                                        <button
+                                            type="button"
+                                            style={{
+                                                ...styles.tabButton,
+                                                ...(activeTab === 'runs' ? styles.tabButtonActive : {})
+                                            }}
+                                            onClick={() => setActiveTab('runs')}
+                                        >
+                                            {t('runs')}
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        style={{
+                                            ...styles.tabButton,
+                                            ...(activeTab === 'elevation' ? styles.tabButtonActive : {})
+                                        }}
+                                        onClick={() => setActiveTab('elevation')}
+                                    >
+                                        {t('elevation', 'Elevación')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        style={{
+                                            ...styles.tabButton,
+                                            ...(activeTab === 'speed' ? styles.tabButtonActive : {})
+                                        }}
+                                        onClick={() => setActiveTab('speed')}
+                                    >
+                                        {t('speed', 'Velocidad')}
+                                    </button>
+                                </div>
 
                             {activeTab === 'runs' && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: `${SPACING.xs}px` }}>
@@ -1401,7 +1467,7 @@ export default function InteractiveSkiMap() {
                         </div>
                     )}
                 </div>
-            )}
+            ); })()}
         </div>
     );
 }

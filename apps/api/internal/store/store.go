@@ -92,7 +92,7 @@ type SkiSessionStore interface {
 	GetByID(ctx context.Context, sessionID uuid.UUID) (*models.SkiSession, error)
 	Create(ctx context.Context, skiSession *models.SkiSession) (*models.SkiSession, error)
 	Update(ctx context.Context, sessionID uuid.UUID, now time.Time) error
-	UpdateMetrics(ctx context.Context, sessionID uuid.UUID, totalDistance, maxSpeed, verticalDrop float64) error
+	UpdateMetrics(ctx context.Context, sessionID uuid.UUID, metrics models.SessionMetrics) error
 	AddPhotos(ctx context.Context, photos []models.SessionPhoto) error
 	ListFriendsSessions(ctx context.Context, userID uuid.UUID) ([]models.SkiSession, error)
 }

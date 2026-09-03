@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"mime/multipart"
+	"strings"
 	"sync"
 	"time"
 
@@ -82,7 +83,7 @@ func (s *SkiSessionService) GetByID(ctx context.Context, sessionID uuid.UUID) (*
 	return session, nil
 }
 
-func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, resortID string, isPublic bool) (*models.SkiSession, error) {
+func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, resortID *string, activityType string, isPublic bool) (*models.SkiSession, error) {
 	user, err := s.store.User().GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve user: %w", err)
@@ -91,15 +92,24 @@ func (s *SkiSessionService) StartSession(ctx context.Context, userID uuid.UUID, 
 	if user == nil {
 		return nil, fmt.Errorf("user not found")
 	}
-	var resortIDPtr *string
-	if resortID != "" {
-		resortIDPtr = &resortID
+
+	var userActivity string
+	if user != nil {
+		userActivity = user.ActivityType
 	}
+	normalizedActivity := normalizeActivityType(activityType, userActivity)
+
+	var resortIDPtr *string
+	if resortID != nil && strings.TrimSpace(*resortID) != "" {
+		trimmed := strings.TrimSpace(*resortID)
+		resortIDPtr = &trimmed
+	}
+
 	session := &models.SkiSession{
 		UserID:       userID,
 		ResortID:     resortIDPtr,
 		StartTime:    time.Now(),
-		ActivityType: user.ActivityType,
+		ActivityType: normalizedActivity,
 		IsPublic:     isPublic,
 	}
 
@@ -181,8 +191,8 @@ func (s *SkiSessionService) FinishSession(ctx context.Context, sessionID uuid.UU
 
 	go func() {
 		bgCtx := context.Background()
-		if err := s.processSkiRunsAsync(bgCtx, sessionID); err != nil {
-			s.logger.Error("failed to process ski runs asynchronously", "session_id", sessionID, "error", err)
+		if err := s.processSessionAsync(bgCtx, sessionID); err != nil {
+			s.logger.Error("failed to process session asynchronously", "session_id", sessionID, "error", err)
 		}
 	}()
 
@@ -190,7 +200,11 @@ func (s *SkiSessionService) FinishSession(ctx context.Context, sessionID uuid.UU
 }
 
 func (s *SkiSessionService) processSkiRunsAsync(ctx context.Context, sessionID uuid.UUID) error {
-	s.logger.Info("starting ski runs processing", "session_id", sessionID)
+	return s.processSessionAsync(ctx, sessionID)
+}
+
+func (s *SkiSessionService) processSessionAsync(ctx context.Context, sessionID uuid.UUID) error {
+	s.logger.Info("starting session processing", "session_id", sessionID)
 
 	// 1. Get the session details to know the activity type
 	session, err := s.store.SkiSession().GetByID(ctx, sessionID)
@@ -201,31 +215,41 @@ func (s *SkiSessionService) processSkiRunsAsync(ctx context.Context, sessionID u
 	// 2. Get all points for the session
 	points, err := s.store.SessionPoint().GetBySessionID(ctx, sessionID)
 	if err != nil || len(points) == 0 {
-		return fmt.Errorf("no points found for session: %w", err)
+		s.logger.Warn("no points found for session", "session_id", sessionID)
+		return nil
 	}
 
 	// 3. Apply noise filter (Simple Moving Average)
 	smoothedPoints := s.applyMovingAverage(points, 3)
 
-	// 4. Segment the track into Lifts, Runs, or Pauses
-	segments := s.segmentTrack(smoothedPoints, session.ActivityType)
+	if isSnowActivity(session.ActivityType) {
+		// --- SNOW PIPELINE: Segmentation into lifts & runs + Map Matching ---
+		s.logger.Info("executing snow processing pipeline", "session_id", sessionID, "activity", session.ActivityType)
+		segments := s.segmentTrack(smoothedPoints, session.ActivityType)
 
-	// 5. Save the detected runs in the database
-	for _, seg := range segments {
-		if seg.Type == "run" && len(seg.Points) > 10 {
-			if err := s.processRunEnrichment(ctx, sessionID, seg.Points); err != nil {
-				s.logger.Error("failed to process and enrich detected run", "error", err)
+		for _, seg := range segments {
+			if seg.Type == "run" && len(seg.Points) > 10 {
+				if err := s.processRunEnrichment(ctx, sessionID, seg.Points); err != nil {
+					s.logger.Error("failed to process and enrich detected run", "error", err)
+				}
 			}
+		}
+
+		// Calculate session-wide metrics for snow
+		sessionMetrics := s.calculateSnowSessionMetrics(smoothedPoints, session.StartTime, session.EndTime)
+		if err := s.store.SkiSession().UpdateMetrics(ctx, sessionID, sessionMetrics); err != nil {
+			s.logger.Error("failed to update snow session metrics", "session_id", sessionID, "error", err)
+		}
+	} else {
+		// --- OUTDOOR / GENERAL PIPELINE: Walk, Hike, Bike, Car, General ---
+		s.logger.Info("executing outdoor processing pipeline", "session_id", sessionID, "activity", session.ActivityType)
+		outdoorMetrics := s.calculateOutdoorSessionMetrics(smoothedPoints, session.ActivityType, session.StartTime, session.EndTime)
+		if err := s.store.SkiSession().UpdateMetrics(ctx, sessionID, outdoorMetrics); err != nil {
+			s.logger.Error("failed to update outdoor session metrics", "session_id", sessionID, "error", err)
 		}
 	}
 
-	// 6. Calculate and save session-wide metrics
-	sessionMetrics := s.calculatePhysicalMetrics(smoothedPoints)
-	if err := s.store.SkiSession().UpdateMetrics(ctx, sessionID, sessionMetrics.TotalDistance, sessionMetrics.MaxSpeed, sessionMetrics.VerticalDrop); err != nil {
-		s.logger.Error("failed to update session metrics", "session_id", sessionID, "error", err)
-	}
-
-	s.logger.Info("ski runs processing completed", "session_id", sessionID)
+	s.logger.Info("session processing completed", "session_id", sessionID)
 	return nil
 }
 
@@ -415,6 +439,294 @@ func calculateHaversineDistanceMeters(prev, curr models.SessionPoint) float64 {
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 
 	return earthRadiusMeters * c
+}
+
+func normalizeActivityType(activityType string, fallback string) string {
+	act := strings.ToLower(strings.TrimSpace(activityType))
+	if act == "" {
+		act = strings.ToLower(strings.TrimSpace(fallback))
+	}
+	switch act {
+	case "ski", "snowboard", "snow", "walk", "hike", "bike", "car", "general":
+		return act
+	default:
+		if act == "" {
+			return "ski"
+		}
+		return act
+	}
+}
+
+func isSnowActivity(activityType string) bool {
+	switch strings.ToLower(strings.TrimSpace(activityType)) {
+	case "ski", "snowboard", "snow":
+		return true
+	default:
+		return false
+	}
+}
+
+func getMovingSpeedThreshold(activityType string) float64 {
+	switch strings.ToLower(strings.TrimSpace(activityType)) {
+	case "walk", "hike":
+		return 0.3 // ~1.08 km/h
+	case "bike":
+		return 0.8 // ~2.88 km/h
+	case "car":
+		return 1.5 // ~5.4 km/h
+	case "ski", "snowboard", "snow":
+		return 0.5 // ~1.8 km/h
+	default:
+		return 0.5
+	}
+}
+
+func getMaxSpeedThreshold(activityType string) float64 {
+	switch strings.ToLower(strings.TrimSpace(activityType)) {
+	case "walk", "hike":
+		return 12.0 // ~43.2 km/h
+	case "bike":
+		return 35.0 // ~126 km/h
+	case "car":
+		return 80.0 // ~288 km/h
+	case "ski", "snowboard", "snow":
+		return 50.0 // ~180 km/h
+	default:
+		return 60.0
+	}
+}
+
+func calculateDistance3DMeters(prev, curr models.SessionPoint) (d2D float64, d3D float64) {
+	d2D = calculateHaversineDistanceMeters(prev, curr)
+	altDiff := curr.Altitude - prev.Altitude
+	d3D = math.Sqrt(d2D*d2D + altDiff*altDiff)
+	return d2D, d3D
+}
+
+func calculateElevationGainLossHysteresis(points []models.SessionPoint, thresholdMeters float64) (gain float64, loss float64) {
+	if len(points) < 2 {
+		return 0, 0
+	}
+
+	if thresholdMeters <= 0 {
+		thresholdMeters = 2.0
+	}
+
+	gain = 0.0
+	loss = 0.0
+
+	refAlt := points[0].Altitude
+	currentTrend := 0 // 0: undecided, 1: climbing, -1: descending
+	localExtremumAlt := refAlt
+
+	for i := 1; i < len(points); i++ {
+		alt := points[i].Altitude
+
+		if currentTrend == 0 {
+			if math.Abs(alt-refAlt) >= thresholdMeters {
+				if alt > refAlt {
+					currentTrend = 1
+					gain += alt - refAlt
+				} else {
+					currentTrend = -1
+					loss += refAlt - alt
+				}
+				localExtremumAlt = alt
+			}
+		} else if currentTrend == 1 { // Currently climbing
+			if alt > localExtremumAlt {
+				gain += alt - localExtremumAlt
+				localExtremumAlt = alt
+			} else if localExtremumAlt-alt >= thresholdMeters {
+				currentTrend = -1
+				loss += localExtremumAlt - alt
+				localExtremumAlt = alt
+			}
+		} else if currentTrend == -1 { // Currently descending
+			if alt < localExtremumAlt {
+				loss += localExtremumAlt - alt
+				localExtremumAlt = alt
+			} else if alt-localExtremumAlt >= thresholdMeters {
+				currentTrend = 1
+				gain += alt - localExtremumAlt
+				localExtremumAlt = alt
+			}
+		}
+	}
+
+	return gain, loss
+}
+
+func (s *SkiSessionService) calculateOutdoorSessionMetrics(points []models.SessionPoint, activityType string, startTime time.Time, endTime *time.Time) models.SessionMetrics {
+	if len(points) == 0 {
+		return models.SessionMetrics{}
+	}
+
+	movingThreshold := getMovingSpeedThreshold(activityType)
+	maxSpeedLimit := getMaxSpeedThreshold(activityType)
+
+	var totalDistance float64
+	var maxSpeed float64
+	var movingTime int64
+
+	elevationGain, elevationLoss := calculateElevationGainLossHysteresis(points, 2.0)
+
+	startAlt := points[0].Altitude
+	endAlt := points[len(points)-1].Altitude
+	verticalDrop := math.Max(0, startAlt-endAlt)
+
+	for i := 0; i < len(points); i++ {
+		p := points[i]
+
+		if p.Speed > 0 && p.Speed <= maxSpeedLimit {
+			if p.Speed > maxSpeed {
+				maxSpeed = p.Speed
+			}
+		}
+
+		if i > 0 {
+			prev := points[i-1]
+			_, d3D := calculateDistance3DMeters(prev, p)
+			totalDistance += d3D
+
+			timeDelta := p.Timestamp.Sub(prev.Timestamp).Seconds()
+			if timeDelta > 0 && timeDelta <= 300 {
+				effectiveSpeed := p.Speed
+				if effectiveSpeed <= 0 && timeDelta > 0 {
+					effectiveSpeed = d3D / timeDelta
+				}
+
+				if effectiveSpeed >= movingThreshold {
+					movingTime += int64(timeDelta)
+				}
+			}
+		}
+	}
+
+	var totalDuration int64
+	if endTime != nil && !endTime.IsZero() && endTime.After(startTime) {
+		totalDuration = int64(endTime.Sub(startTime).Seconds())
+	} else if len(points) >= 2 {
+		firstTime := points[0].Timestamp
+		lastTime := points[len(points)-1].Timestamp
+		if lastTime.After(firstTime) {
+			totalDuration = int64(lastTime.Sub(firstTime).Seconds())
+		}
+	}
+	if totalDuration <= 0 {
+		totalDuration = movingTime
+	}
+
+	avgSpeed := 0.0
+	if movingTime > 0 && totalDistance > 0 {
+		avgSpeed = totalDistance / float64(movingTime)
+	} else if totalDuration > 0 && totalDistance > 0 {
+		avgSpeed = totalDistance / float64(totalDuration)
+	}
+
+	pace := 0.0
+	distanceKm := totalDistance / 1000.0
+	if distanceKm > 0.05 {
+		timeForPaceSec := movingTime
+		if timeForPaceSec <= 0 {
+			timeForPaceSec = totalDuration
+		}
+		pace = (float64(timeForPaceSec) / 60.0) / distanceKm
+	}
+
+	return models.SessionMetrics{
+		TotalDistance: totalDistance,
+		MaxSpeed:      maxSpeed,
+		VerticalDrop:  verticalDrop,
+		AvgSpeed:      avgSpeed,
+		ElevationGain: elevationGain,
+		ElevationLoss: elevationLoss,
+		MovingTime:    movingTime,
+		Duration:      totalDuration,
+		Pace:          pace,
+	}
+}
+
+func (s *SkiSessionService) calculateSnowSessionMetrics(points []models.SessionPoint, startTime time.Time, endTime *time.Time) models.SessionMetrics {
+	if len(points) == 0 {
+		return models.SessionMetrics{}
+	}
+
+	startAlt := points[0].Altitude
+	endAlt := points[len(points)-1].Altitude
+	verticalDrop := math.Max(0, startAlt-endAlt)
+
+	var maxSpeed float64
+	var totalDistance float64
+	var movingTime int64
+	const movingThreshold = 0.5
+
+	elevationGain, elevationLoss := calculateElevationGainLossHysteresis(points, 2.0)
+
+	for i := 0; i < len(points); i++ {
+		p := points[i]
+		if p.Speed > 0 && p.Speed <= 50.0 {
+			if p.Speed > maxSpeed {
+				maxSpeed = p.Speed
+			}
+		}
+
+		if i > 0 {
+			prev := points[i-1]
+			_, d3D := calculateDistance3DMeters(prev, p)
+			totalDistance += d3D
+
+			timeDelta := p.Timestamp.Sub(prev.Timestamp).Seconds()
+			if timeDelta > 0 && timeDelta <= 300 {
+				if p.Speed >= movingThreshold {
+					movingTime += int64(timeDelta)
+				}
+			}
+		}
+	}
+
+	var totalDuration int64
+	if endTime != nil && !endTime.IsZero() && endTime.After(startTime) {
+		totalDuration = int64(endTime.Sub(startTime).Seconds())
+	} else if len(points) >= 2 {
+		firstTime := points[0].Timestamp
+		lastTime := points[len(points)-1].Timestamp
+		if lastTime.After(firstTime) {
+			totalDuration = int64(lastTime.Sub(firstTime).Seconds())
+		}
+	}
+	if totalDuration <= 0 {
+		totalDuration = movingTime
+	}
+
+	avgSpeed := 0.0
+	if movingTime > 0 && totalDistance > 0 {
+		avgSpeed = totalDistance / float64(movingTime)
+	} else if totalDuration > 0 && totalDistance > 0 {
+		avgSpeed = totalDistance / float64(totalDuration)
+	}
+
+	pace := 0.0
+	distanceKm := totalDistance / 1000.0
+	if distanceKm > 0.05 {
+		timeForPaceSec := movingTime
+		if timeForPaceSec <= 0 {
+			timeForPaceSec = totalDuration
+		}
+		pace = (float64(timeForPaceSec) / 60.0) / distanceKm
+	}
+
+	return models.SessionMetrics{
+		TotalDistance: totalDistance,
+		MaxSpeed:      maxSpeed,
+		VerticalDrop:  verticalDrop,
+		AvgSpeed:      avgSpeed,
+		ElevationGain: elevationGain,
+		ElevationLoss: elevationLoss,
+		MovingTime:    movingTime,
+		Duration:      totalDuration,
+		Pace:          pace,
+	}
 }
 
 func (s *SkiSessionService) calculatePhysicalMetrics(points []models.SessionPoint) EnrichedRunMetrics {

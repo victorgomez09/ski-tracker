@@ -43,6 +43,7 @@ import {
   LIGHT_COLORS,
 } from 'constants/theme';
 import { useAuth } from 'context/auth.context';
+import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 import { useOta } from 'context/ota.context';
 import { useToast } from 'context/toast.context';
 import api from 'interceptor/api';
@@ -124,7 +125,7 @@ export default function ProfileView() {
     }
   }, [token, isOffline]);
 
-  const updateActivityType = async (type: 'snow' | 'ski') => {
+  const updateActivityType = async (type: ActivityType | 'snow' | 'ski') => {
     if (isOffline) {
       showToast(t('offline_no_edit') || 'No puedes cambiar de modalidad sin conexión', 'info');
       return;
@@ -278,9 +279,10 @@ export default function ProfileView() {
                     <View style={[styles.badge, { backgroundColor: colors.surface }]}>
                       <Activity size={12} color={colors.primary} />
                       <Text style={styles.badgeText}>
-                        {user.activity_type === 'ski'
-                          ? t('ski_emoji') + ' Skiier'
-                          : t('snowboard_emoji') + ' Snowboarder'}
+                        {(() => {
+                          const conf = ACTIVITY_CONFIGS[user.activity_type as ActivityType] || ACTIVITY_CONFIGS.ski;
+                          return `${conf.icon} ${t(conf.labelKey, conf.defaultLabel)}`;
+                        })()}
                       </Text>
                     </View>
                   </View>
@@ -418,57 +420,44 @@ export default function ProfileView() {
             )}
           </View>
 
-          {/* Section: Modality */}
+          {/* Section: Modality / Preferred Activity */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeader}>
               <Activity size={18} color={colors.primary} />
-              <Text style={styles.sectionTitle}>{t('snow_modality')}</Text>
+              <Text style={styles.sectionTitle}>{t('preferred_activity', 'Actividad Predeterminada')}</Text>
             </View>
 
-            <View style={styles.modalityButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.modalityButton,
-                  user?.activity_type === 'ski'
-                    ? styles.modalityButtonActive
-                    : styles.modalityButtonInactive,
-                  { borderColor: user?.activity_type === 'ski' ? colors.primary : colors.border },
-                ]}
-                onPress={() => updateActivityType('ski')}
-                activeOpacity={0.8}>
-                <Text style={styles.modalityEmoji}>🎿</Text>
-                <Text
-                  style={[
-                    styles.modalityText,
-                    user?.activity_type === 'ski'
-                      ? styles.modalityTextActive
-                      : styles.modalityTextInactive,
-                  ]}>
-                  {t('ski')}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.modalityButton,
-                  user?.activity_type === 'snow'
-                    ? styles.modalityButtonActive
-                    : styles.modalityButtonInactive,
-                  { borderColor: user?.activity_type === 'snow' ? colors.primary : colors.border },
-                ]}
-                onPress={() => updateActivityType('snow')}
-                activeOpacity={0.8}>
-                <Text style={styles.modalityEmoji}>🏂</Text>
-                <Text
-                  style={[
-                    styles.modalityText,
-                    user?.activity_type === 'snow'
-                      ? styles.modalityTextActive
-                      : styles.modalityTextInactive,
-                  ]}>
-                  {t('snowboard')}
-                </Text>
-              </TouchableOpacity>
+            <View style={[styles.modalityButtons, { flexWrap: 'wrap', gap: 8 }]}>
+              {Object.values(ACTIVITY_CONFIGS).map((conf) => {
+                const isActive = (user?.activity_type || 'ski') === conf.type || (conf.type === 'snowboard' && user?.activity_type === 'snow');
+                return (
+                  <TouchableOpacity
+                    key={conf.type}
+                    style={[
+                      styles.modalityButton,
+                      { minWidth: '45%', flex: 1, paddingVertical: 10 },
+                      isActive
+                        ? styles.modalityButtonActive
+                        : styles.modalityButtonInactive,
+                      { borderColor: isActive ? colors.primary : colors.border },
+                    ]}
+                    onPress={() => updateActivityType(conf.type)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.modalityEmoji}>{conf.icon}</Text>
+                    <Text
+                      style={[
+                        styles.modalityText,
+                        isActive
+                          ? styles.modalityTextActive
+                          : styles.modalityTextInactive,
+                      ]}
+                    >
+                      {t(conf.labelKey, conf.defaultLabel)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
 

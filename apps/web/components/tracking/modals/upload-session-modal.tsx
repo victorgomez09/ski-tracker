@@ -14,6 +14,9 @@ interface UploadSessionModalProps {
     pointsCount: number;
     distanceKm: number;
     durationSeconds: number;
+    elevationGain?: number;
+    maxSpeed?: number;
+    avgSpeed?: number;
     isPublic: boolean;
     onTogglePublic: () => void;
     onDiscard: () => void;
@@ -29,6 +32,9 @@ export const UploadSessionModal: React.FC<UploadSessionModalProps> = ({
     pointsCount,
     distanceKm,
     durationSeconds,
+    elevationGain,
+    maxSpeed,
+    avgSpeed,
     isPublic,
     onTogglePublic,
     onDiscard,
@@ -38,6 +44,115 @@ export const UploadSessionModal: React.FC<UploadSessionModalProps> = ({
     const { t } = useTranslation();
     const colors = useThemeColors();
     const config = ACTIVITY_CONFIGS[activityType] || ACTIVITY_CONFIGS.ski;
+
+    const renderSportSpecificSummary = () => {
+        if (activityType === 'walk' || activityType === 'hike') {
+            const paceMinPerKm = distanceKm > 0.05 && durationSeconds > 0 ? (durationSeconds / 60) / distanceKm : 0;
+            const paceStr = paceMinPerKm > 0 ? `${Math.floor(paceMinPerKm)}'${Math.floor((paceMinPerKm % 1) * 60).toString().padStart(2, '0')}"/km` : "--'--\"";
+            return (
+                <>
+                    <View style={styles.summaryRow}>
+                        <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                            {t('pace', 'Ritmo medio')}:
+                        </Text>
+                        <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                            {paceStr}
+                        </Text>
+                    </View>
+                    {elevationGain !== undefined && elevationGain > 0 && (
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                                {t('elevation_gain', 'Desnivel positivo (D+)')}:
+                            </Text>
+                            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                                +{Math.round(elevationGain)} m
+                            </Text>
+                        </View>
+                    )}
+                </>
+            );
+        }
+
+        if (activityType === 'bike') {
+            return (
+                <>
+                    {avgSpeed !== undefined && avgSpeed > 0 && (
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                                {t('avg_speed', 'Velocidad media')}:
+                            </Text>
+                            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                                {avgSpeed.toFixed(1)} km/h
+                            </Text>
+                        </View>
+                    )}
+                    {maxSpeed !== undefined && maxSpeed > 0 && (
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                                {t('max_speed', 'Velocidad máxima')}:
+                            </Text>
+                            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                                {maxSpeed.toFixed(1)} km/h
+                            </Text>
+                        </View>
+                    )}
+                    {elevationGain !== undefined && elevationGain > 0 && (
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                                {t('elevation_gain', 'Desnivel (D+)')}:
+                            </Text>
+                            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                                +{Math.round(elevationGain)} m
+                            </Text>
+                        </View>
+                    )}
+                </>
+            );
+        }
+
+        if (activityType === 'car') {
+            return (
+                <>
+                    {avgSpeed !== undefined && avgSpeed > 0 && (
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                                {t('avg_speed', 'Velocidad media')}:
+                            </Text>
+                            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                                {avgSpeed.toFixed(0)} km/h
+                            </Text>
+                        </View>
+                    )}
+                    {maxSpeed !== undefined && maxSpeed > 0 && (
+                        <View style={styles.summaryRow}>
+                            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                                {t('max_speed', 'Velocidad máxima')}:
+                            </Text>
+                            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                                {maxSpeed.toFixed(0)} km/h
+                            </Text>
+                        </View>
+                    )}
+                </>
+            );
+        }
+
+        // Ski / Snowboard / General
+        return (
+            <>
+                {maxSpeed !== undefined && maxSpeed > 0 && (
+                    <View style={styles.summaryRow}>
+                        <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                            {t('max_speed', 'Velocidad punta')}:
+                        </Text>
+                        <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
+                            {maxSpeed.toFixed(1)} km/h
+                        </Text>
+                    </View>
+                )}
+            </>
+        );
+    };
 
     return (
         <Modal visible={visible} animationType="fade" transparent={true}>
@@ -116,6 +231,7 @@ export const UploadSessionModal: React.FC<UploadSessionModalProps> = ({
                                 {formatDuration(durationSeconds)}
                             </Text>
                         </View>
+                        {renderSportSpecificSummary()}
 
                         <View style={styles.privacyRow}>
                             <Text style={[styles.privacyLabel, { color: colors.textSecondary }]}>

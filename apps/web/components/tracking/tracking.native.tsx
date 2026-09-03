@@ -472,6 +472,9 @@ export default function InteractiveSkiMapNative() {
                 pointsCount={trackPoints.length}
                 distanceKm={liveStats?.distance ?? 0}
                 durationSeconds={elapsedSeconds}
+                elevationGain={liveStats?.elevationGain}
+                maxSpeed={liveStats?.maxSpeed}
+                avgSpeed={liveStats?.avgSpeed}
                 isPublic={isPublic}
                 onTogglePublic={() => setIsPublic(!isPublic)}
                 onDiscard={discardTrack}
@@ -576,7 +579,7 @@ export default function InteractiveSkiMapNative() {
             {/* Overlays & Controls */}
             {!takePictureMode && (
                 <>
-                    <TrackingHUD stats={liveStats} speedUnit={currentConfig.speedUnit} />
+                    <TrackingHUD stats={liveStats} activityType={activityType} speedUnit={currentConfig.speedUnit} />
 
                     {selectedFeature && (
                         <MapDetailPanel

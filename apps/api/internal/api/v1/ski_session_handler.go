@@ -24,6 +24,14 @@ type SkiSessionDto struct {
 	TotalDistance float64    `json:"total_distance"`
 	MaxSpeed      float64    `json:"max_speed"`
 	VerticalDrop  float64    `json:"vertical_drop"`
+	AvgSpeed      float64    `json:"avg_speed"`
+	ElevationGain float64    `json:"elevation_gain"`
+	ElevationLoss float64    `json:"elevation_loss"`
+	MovingTime    int64      `json:"moving_time"`
+	Duration      int64      `json:"duration"`
+	Pace          float64    `json:"pace"`
+	ActivityType  string     `json:"activity_type"`
+	IsPublic      bool       `json:"is_public"`
 	CreatedAt     time.Time  `json:"created_at"`
 
 	User   models.User           `json:"user"`
@@ -76,10 +84,11 @@ func (h *SkiSessionHandler) ListByResort(c *gin.Context) {
 func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
-	// Expect JSON body: { "resortId": "<uuid>", "isPublic": true }
+	// Expect JSON body: { "resortId": "<uuid>", "isPublic": true, "activityType": "walk" }
 	var payload struct {
-		ResortID string `json:"resortId"`
-		IsPublic *bool  `json:"isPublic"`
+		ResortID     *string `json:"resortId"`
+		IsPublic     *bool   `json:"isPublic"`
+		ActivityType *string `json:"activityType"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		httpErr := fmt.Errorf("invalid request body: %w", err)
@@ -92,22 +101,28 @@ func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 		isPublic = *payload.IsPublic
 	}
 
+	activityType := ""
+	if payload.ActivityType != nil {
+		activityType = *payload.ActivityType
+	}
+
 	ctx := c.Request.Context()
-	session, err := h.svc.StartSession(ctx, userID, payload.ResortID, isPublic)
+	session, err := h.svc.StartSession(ctx, userID, payload.ResortID, activityType, isPublic)
 	if err != nil {
 		slog.Error("failed to start session", slog.Any("error", err), slog.String("user_id", userID.String()))
 		if strings.Contains(err.Error(), "user not found") {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found, please log in again"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error creating ski session: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error creating session: %v", err)})
 		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message":   "Ski session started successfully",
-		"sessionId": session.ID,
-		"startTime": session.StartTime,
+		"message":      "Session started successfully",
+		"sessionId":    session.ID,
+		"startTime":    session.StartTime,
+		"activityType": session.ActivityType,
 	})
 }
 

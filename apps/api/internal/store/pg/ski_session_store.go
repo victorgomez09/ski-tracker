@@ -109,12 +109,18 @@ func (u *skiSessionStore) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-func (u *skiSessionStore) UpdateMetrics(ctx context.Context, sessionID uuid.UUID, totalDistance, maxSpeed, verticalDrop float64) error {
+func (u *skiSessionStore) UpdateMetrics(ctx context.Context, sessionID uuid.UUID, metrics models.SessionMetrics) error {
 	_, err := u.db.NewUpdate().
 		Model((*models.SkiSession)(nil)).
-		Set("total_distance = ?", totalDistance).
-		Set("max_speed = ?", maxSpeed).
-		Set("vertical_drop = ?", verticalDrop).
+		Set("total_distance = ?", metrics.TotalDistance).
+		Set("max_speed = ?", metrics.MaxSpeed).
+		Set("vertical_drop = ?", metrics.VerticalDrop).
+		Set("avg_speed = ?", metrics.AvgSpeed).
+		Set("elevation_gain = ?", metrics.ElevationGain).
+		Set("elevation_loss = ?", metrics.ElevationLoss).
+		Set("moving_time = ?", metrics.MovingTime).
+		Set("duration = ?", metrics.Duration).
+		Set("pace = ?", metrics.Pace).
 		Where("id = ?", sessionID).
 		Exec(ctx)
 
