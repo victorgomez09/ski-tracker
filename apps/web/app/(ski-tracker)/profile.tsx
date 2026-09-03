@@ -427,34 +427,49 @@ export default function ProfileView() {
               <Text style={styles.sectionTitle}>{t('preferred_activity', 'Actividad Predeterminada')}</Text>
             </View>
 
-            <View style={[styles.modalityButtons, { flexWrap: 'wrap', gap: 8 }]}>
+            <View style={styles.activityList}>
               {Object.values(ACTIVITY_CONFIGS).map((conf) => {
                 const isActive = (user?.activity_type || 'ski') === conf.type || (conf.type === 'snowboard' && user?.activity_type === 'snow');
                 return (
                   <TouchableOpacity
                     key={conf.type}
                     style={[
-                      styles.modalityButton,
-                      { minWidth: '45%', flex: 1, paddingVertical: 10 },
-                      isActive
-                        ? styles.modalityButtonActive
-                        : styles.modalityButtonInactive,
-                      { borderColor: isActive ? colors.primary : colors.border },
+                      styles.activityListItem,
+                      isActive && styles.activityListItemActive,
+                      {
+                        backgroundColor: isActive ? (colors.primary + '12') : colors.surface,
+                        borderColor: isActive ? colors.primary : colors.border,
+                      },
                     ]}
                     onPress={() => updateActivityType(conf.type)}
-                    activeOpacity={0.8}
+                    activeOpacity={0.7}
                   >
-                    <Text style={styles.modalityEmoji}>{conf.icon}</Text>
-                    <Text
+                    <View style={styles.activityListLeft}>
+                      <Text style={styles.activityListEmoji}>{conf.icon}</Text>
+                      <View>
+                        <Text
+                          style={[
+                            styles.activityListName,
+                            { color: isActive ? colors.primary : colors.textPrimary },
+                          ]}
+                        >
+                          {t(conf.labelKey, conf.defaultLabel)}
+                        </Text>
+                        <Text style={[styles.activityListSub, { color: colors.textSecondary }]}>
+                          {conf.speedUnit === 'min/km' ? t('pace_based', 'Ritmo (min/km)') : t('speed_based', 'Velocidad (km/h)')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View
                       style={[
-                        styles.modalityText,
-                        isActive
-                          ? styles.modalityTextActive
-                          : styles.modalityTextInactive,
+                        styles.radioCircle,
+                        { borderColor: isActive ? colors.primary : colors.border },
+                        isActive && { backgroundColor: colors.primary },
                       ]}
                     >
-                      {t(conf.labelKey, conf.defaultLabel)}
-                    </Text>
+                      {isActive && <Check size={12} color="#ffffff" />}
+                    </View>
                   </TouchableOpacity>
                 );
               })}
@@ -1017,37 +1032,45 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
       fontSize: 11,
       marginTop: 4,
     },
-    modalityButtons: {
-      flexDirection: 'row',
-      gap: SPACING.md,
+    activityList: {
+      gap: 8,
     },
-    modalityButton: {
-      flex: 1,
-      padding: 16,
+    activityListItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 10,
+      paddingHorizontal: 14,
       borderRadius: BORDER_RADIUS.md,
+      borderWidth: 1.5,
+    },
+    activityListItemActive: {
+      borderWidth: 1.5,
+    },
+    activityListLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      flex: 1,
+    },
+    activityListEmoji: {
+      fontSize: 22,
+    },
+    activityListName: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    activityListSub: {
+      fontSize: 11,
+      marginTop: 2,
+    },
+    radioCircle: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
       alignItems: 'center',
       justifyContent: 'center',
-      borderWidth: 2.5,
-      gap: 6,
-    },
-    modalityButtonActive: {
-      backgroundColor: colors.surface,
-    },
-    modalityButtonInactive: {
-      backgroundColor: colors.surface,
-    },
-    modalityEmoji: {
-      fontSize: 32,
-    },
-    modalityText: {
-      fontSize: 14,
-      fontWeight: '700',
-    },
-    modalityTextActive: {
-      color: colors.primary,
-    },
-    modalityTextInactive: {
-      color: colors.textSecondary,
     },
     trackingContainer: {
       gap: 12,

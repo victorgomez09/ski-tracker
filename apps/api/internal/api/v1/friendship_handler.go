@@ -184,6 +184,12 @@ func (h *FriendshipHandler) GetFriendsLiveLocations(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	resortID := c.Query("resort_id")
 	if resortID == "" {
+		resortID = c.Param("resortId")
+	}
+	if resortID == "" {
+		resortID = c.Param("id")
+	}
+	if resortID == "" {
 		httputil.RespondError(c, fmt.Errorf("missing query parameter: resort_id"))
 		return
 	}

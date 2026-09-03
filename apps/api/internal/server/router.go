@@ -136,6 +136,8 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.GET("/friends/feed", friendshipHandler.ListFriendsFeed)
 			protected.POST("/users/live-location", friendshipHandler.UpdateLiveLocation)
 			protected.GET("/friends/live-locations", friendshipHandler.GetFriendsLiveLocations)
+			protected.GET("/ski-sessions/live/resort/:resortId", friendshipHandler.GetFriendsLiveLocations)
+			protected.GET("/sessions/live/resort/:resortId", friendshipHandler.GetFriendsLiveLocations)
 			protected.GET("/friends/leaderboard", friendshipHandler.GetFriendsLeaderboard)
 
 			// Weather routes

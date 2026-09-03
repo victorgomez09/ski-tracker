@@ -260,9 +260,11 @@ export default function InteractiveSkiMapNative() {
         if (currentConfig.requiresResort && resort?.ID && !isOffline) {
             const fetchLocations = async () => {
                 try {
-                    const res = await api.get(`/ski-sessions/live/resort/${resort.ID}`);
-                    if (res.status === 200) {
-                        setFriendsLocations(res.data || []);
+                    const res = await api.get('/friends/live-locations', {
+                        params: { resort_id: resort.ID },
+                    });
+                    if (res.status === 200 && res.data) {
+                        setFriendsLocations(res.data.data || res.data || []);
                     }
                 } catch (err) {
                     console.error('Failed to fetch friends live locations:', err);
