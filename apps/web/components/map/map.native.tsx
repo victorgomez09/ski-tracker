@@ -398,8 +398,17 @@ export default function InteractiveSkiMapNative() {
         deletePack,
     } = useOfflineMaps(getMapStyleValue(mapStyleId) as any);
 
+    const isSnowLayer = mapStyleId === 'outdoor';
+
     const detectedRuns = useMemo(() => {
         if (trackPoints.length === 0) return [];
+        
+        // Only ski and snowboard sessions have downhill runs
+        const sessionActivity = (sessionDetails?.activity_type || 'ski') as ActivityType;
+        if (sessionActivity !== 'ski' && sessionActivity !== 'snowboard') {
+            return [];
+        }
+
         let currentType = 'unknown';
         let currentPoints: any[] = [];
         const result: { type: string; points: any[] }[] = [];
@@ -448,11 +457,11 @@ export default function InteractiveSkiMapNative() {
                     pointsCount: r.points.length,
                 };
             });
-    }, [trackPoints]);
+    }, [trackPoints, sessionDetails?.activity_type]);
 
     const [viewState, setViewState] = useState({
-        longitude: parseFloat((searchParams.lon as string) || '-3.971953'),
-        latitude: parseFloat((searchParams.lat as string) || '40.797891'),
+        longitude: parseFloat((searchParams.lon as string) || (searchParams.lng as string) || '0'),
+        latitude: parseFloat((searchParams.lat as string) || '40.0'),
         zoom: parseFloat((searchParams.zoom as string) || '13'),
         bearing: 0,
         pitch: 0
@@ -492,6 +501,14 @@ export default function InteractiveSkiMapNative() {
         zoom: number,
         bounds?: { minLon: number; minLat: number; maxLon: number; maxLat: number }
     ) => {
+        if (searchParams.sessionId || mapStyleId !== 'outdoor') {
+            setIsLoadingResorts(false);
+            if (mapStyleId !== 'outdoor') {
+                setResorts([]);
+            }
+            return;
+        }
+
         if (networkState?.isConnected === false) {
             setIsLoadingResorts(false);
             try {
@@ -562,7 +579,8 @@ export default function InteractiveSkiMapNative() {
                     signal
                 });
                 if (request.status === 200) {
-                    setResorts(request.data);
+                    const data = Array.isArray(request.data) ? request.data : [];
+                    setResorts(data);
 
                     // Save padded bounds as last fetched
                     lastFetchedBoundsRef.current = {
@@ -578,16 +596,18 @@ export default function InteractiveSkiMapNative() {
                     // Cache resorts in AsyncStorage
                     try {
                         const existingCached = await AsyncStorage.getItem('cached_resorts');
-                        let resortsToCache = request.data;
+                        let resortsToCache = data;
                         if (existingCached) {
-                            const parsed: ResortDetail[] = JSON.parse(existingCached);
-                            const merged = [...parsed];
-                            request.data.forEach(newResort => {
-                                if (!merged.some(r => r.ID === newResort.ID)) {
-                                    merged.push(newResort);
-                                }
-                            });
-                            resortsToCache = merged;
+                            const parsed = JSON.parse(existingCached);
+                            if (Array.isArray(parsed)) {
+                                const merged = [...parsed];
+                                data.forEach(newResort => {
+                                    if (newResort && !merged.some(r => r?.ID === newResort.ID)) {
+                                        merged.push(newResort);
+                                    }
+                                });
+                                resortsToCache = merged;
+                            }
                         }
                         await AsyncStorage.setItem('cached_resorts', JSON.stringify(resortsToCache));
                     } catch (e) {
@@ -632,7 +652,8 @@ export default function InteractiveSkiMapNative() {
                     signal
                 });
                 if (request.status === 200) {
-                    setResorts(request.data);
+                    const data = Array.isArray(request.data) ? request.data : [];
+                    setResorts(data);
 
                     lastFetchedCenterRef.current = { lat, lon };
                     lastFetchedZoomRef.current = zoom;
@@ -642,16 +663,18 @@ export default function InteractiveSkiMapNative() {
                     // Cache resorts in AsyncStorage
                     try {
                         const existingCached = await AsyncStorage.getItem('cached_resorts');
-                        let resortsToCache = request.data;
+                        let resortsToCache = data;
                         if (existingCached) {
-                            const parsed: ResortDetail[] = JSON.parse(existingCached);
-                            const merged = [...parsed];
-                            request.data.forEach(newResort => {
-                                if (!merged.some(r => r.ID === newResort.ID)) {
-                                    merged.push(newResort);
-                                }
-                            });
-                            resortsToCache = merged;
+                            const parsed = JSON.parse(existingCached);
+                            if (Array.isArray(parsed)) {
+                                const merged = [...parsed];
+                                data.forEach(newResort => {
+                                    if (newResort && !merged.some(r => r?.ID === newResort.ID)) {
+                                        merged.push(newResort);
+                                    }
+                                });
+                                resortsToCache = merged;
+                            }
                         }
                         await AsyncStorage.setItem('cached_resorts', JSON.stringify(resortsToCache));
                     } catch (e) {
@@ -674,7 +697,7 @@ export default function InteractiveSkiMapNative() {
                 }
             }
         }
-    }, [networkState, packs]);
+    }, [networkState, packs, mapStyleId]);
 
     useEffect(() => {
         const rawLat = searchParams.lat;
@@ -740,7 +763,8 @@ export default function InteractiveSkiMapNative() {
                                 .map((r: any) => r.matched_piste_id)
                                 .filter(Boolean);
                             setMatchedPisteIds(ids);
-                            if (session.runs.length > 0) {
+                            const sessionActivity = (session.activity_type || 'ski') as ActivityType;
+                            if (session.runs.length > 0 && (sessionActivity === 'ski' || sessionActivity === 'snowboard')) {
                                 setActiveTab('runs');
                             } else {
                                 setActiveTab('elevation');
@@ -759,6 +783,12 @@ export default function InteractiveSkiMapNative() {
     }, [searchParams.sessionId, token, applyExternalCameraMove]);
 
     useEffect(() => {
+        if (mapStyleId !== 'outdoor') {
+            setIsLoadingResorts(false);
+            setResorts([]);
+            return;
+        }
+
         const loadInitial = async () => {
             // When opening a session, wait for the session data to center camera first
             if (searchParams.sessionId && (!searchParams.lat || !searchParams.lon)) {
@@ -787,7 +817,7 @@ export default function InteractiveSkiMapNative() {
 
         const timeout = setTimeout(loadInitial, 350);
         return () => clearTimeout(timeout);
-    }, [viewState.latitude, viewState.longitude, viewState.zoom, token, networkState, searchParams.sessionId]);
+    }, [viewState.latitude, viewState.longitude, viewState.zoom, token, networkState, searchParams.sessionId, mapStyleId]);
 
     const pisteCasingStyle: any = {
         id: 'piste-casing',
@@ -797,10 +827,11 @@ export default function InteractiveSkiMapNative() {
         paint: {
             'line-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#2e7d32',
-                'easy', '#1565c0',
-                'intermediate', '#c62828',
-                'advanced', '#212121',
+                'novice', '#00703c',
+                'easy', '#005299',
+                'intermediate', '#b71c1c',
+                'advanced', '#000000',
+                'expert', '#000000',
                 '#616161'
             ],
             'line-width': [
@@ -820,11 +851,12 @@ export default function InteractiveSkiMapNative() {
         paint: {
             'line-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#81c784',
-                'easy', '#90caf9',
-                'intermediate', '#ef9a9a',
-                'advanced', '#757575',
-                '#cccccc'
+                'novice', '#00a859',
+                'easy', '#0072bc',
+                'intermediate', '#f0141e',
+                'advanced', '#000000',
+                'expert', '#000000',
+                '#94A3B8'
             ],
             'line-dasharray': [1, 0],
             'line-width': [
@@ -857,11 +889,12 @@ export default function InteractiveSkiMapNative() {
         paint: {
             'text-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#81c784',
-                'easy', '#90caf9',
-                'intermediate', '#ef9a9a',
-                'advanced', '#757575',
-                '#cccccc'
+                'novice', '#00a859',
+                'easy', '#0072bc',
+                'intermediate', '#f0141e',
+                'advanced', '#000000',
+                'expert', '#000000',
+                '#94A3B8'
             ],
             'text-halo-color': '#ffffff',
             'text-halo-width': 1
@@ -886,11 +919,12 @@ export default function InteractiveSkiMapNative() {
         paint: {
             'text-color': [
                 'match', ['get', 'difficulty'],
-                'novice', '#81c784',
-                'easy', '#90caf9',
-                'intermediate', '#ef9a9a',
-                'advanced', '#757575',
-                '#cccccc'
+                'novice', '#00a859',
+                'easy', '#0072bc',
+                'intermediate', '#f0141e',
+                'advanced', '#000000',
+                'expert', '#000000',
+                '#94A3B8'
             ],
             'text-halo-color': '#ffffff',
             'text-halo-width': 1.5
@@ -1010,8 +1044,9 @@ export default function InteractiveSkiMapNative() {
         if (!feature?.properties?.id) return undefined;
 
         const featureId = feature.properties.id;
-        for (const resort of resorts) {
-            const found = resort.pistes?.find(p => p.ID === featureId) || resort.lifts?.find(l => l.ID === featureId);
+        for (const resort of (resorts || [])) {
+            if (!resort) continue;
+            const found = resort.pistes?.find(p => p?.ID === featureId) || resort.lifts?.find(l => l?.ID === featureId);
             if (found) return found;
         }
 
@@ -1036,8 +1071,10 @@ export default function InteractiveSkiMapNative() {
     };
 
     const pistesGeoJSON = useMemo(() => {
-        const features = resorts.flatMap(resort =>
-            (resort.pistes || []).map(piste => {
+        const features = (resorts || []).flatMap(resort => {
+            if (!resort || !Array.isArray(resort.pistes)) return [];
+            return resort.pistes.map(piste => {
+                if (!piste) return null;
                 const baseGeom = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
                 if (!baseGeom) return null;
                 const geom = getOrientedPisteGeometry(baseGeom);
@@ -1048,20 +1085,22 @@ export default function InteractiveSkiMapNative() {
                         id: piste.ID,
                         resortId: resort.ID,
                         name: piste.Name || 'Piste',
-                        difficulty: piste.Difficulty?.toLowerCase() || 'novice',
+                        difficulty: piste.Difficulty ? piste.Difficulty.toLowerCase() : 'easy',
                         pisteType: piste.PisteType?.toLowerCase() || 'downhill',
                         grooming: piste.Grooming?.toLowerCase() || 'classic'
                     },
                     geometry: geom
                 };
-            }).filter((f): f is NonNullable<typeof f> => Boolean(f))
-        );
+            }).filter((f): f is NonNullable<typeof f> => Boolean(f));
+        });
         return { type: 'FeatureCollection' as const, features: features as any };
     }, [resorts]);
 
     const liftsGeoJSON = useMemo(() => {
-        const features = resorts.flatMap(resort =>
-            (resort.lifts || []).flatMap(lift => {
+        const features = (resorts || []).flatMap(resort => {
+            if (!resort || !Array.isArray(resort.lifts)) return [];
+            return resort.lifts.flatMap(lift => {
+                if (!lift) return [];
                 const geometry = normalizeGeoJSONLine(lift.GeometryGeoJSON) || normalizeGeoJSONLine(lift.Waypoints);
                 if (!geometry) return [];
                 return [{
@@ -1074,8 +1113,8 @@ export default function InteractiveSkiMapNative() {
                     },
                     geometry
                 }];
-            })
-        );
+            });
+        });
         return { type: 'FeatureCollection' as const, features: features as any };
     }, [resorts]);
 
@@ -1339,7 +1378,7 @@ export default function InteractiveSkiMapNative() {
                         }}
                     />
                 </NativeRasterSource>
-                {resorts.map((resort) => (
+                {!searchParams.sessionId && isSnowLayer && (resorts || []).filter(r => Boolean(r && r.ID)).map((resort) => (
                     <NativeMarker
                         key={resort.ID}
                         id={resort.ID}
@@ -1371,7 +1410,7 @@ export default function InteractiveSkiMapNative() {
                     </NativeMarker>
                 ))}
 
-                {viewState.zoom >= 10 && (
+                {!searchParams.sessionId && isSnowLayer && viewState.zoom >= 10 && (
                     <>
                         <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                             <NativeLayer {...pisteCasingStyle} />
@@ -1407,7 +1446,7 @@ export default function InteractiveSkiMapNative() {
                 )}
             </NativeMap>
 
-            {isLoadingResorts && (
+            {!searchParams.sessionId && isSnowLayer && isLoadingResorts && (
                 <View style={styles.loadingBanner} pointerEvents="none">
                     <ActivityIndicator size="small" color={colors.primary} />
                     <Text style={styles.loadingBannerText}>{t('loading_slopes')}</Text>

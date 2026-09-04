@@ -40,8 +40,6 @@ const metersToKm = (m: number): string => ((m || 0) / 1000).toFixed(2);
 
 const renderSessionStatsGrid = (
   session: Session,
-  config: any,
-  colors: typeof LIGHT_COLORS,
   styles: any,
   t: any,
   runsCount: number
@@ -346,9 +344,9 @@ export default function CommunityView() {
             </TouchableOpacity>
             <View style={styles.badge}>
               <Text style={styles.badgeText}>
-                {feedFilter === 'leaderboard' 
-                  ? (t('riders_count', { count: leaderboardData.length }) || `${leaderboardData.length} ${t('riders', 'Riders')}`)
-                  : (t('sessions_count', { count: communityData.length }) || `${communityData.length} ${t('sessions', 'Sesiones')}`)}
+                {feedFilter === 'leaderboard'
+                  ? `${leaderboardData?.length || 0} ${t('riders', 'Riders')}`
+                  : `${(communityData?.length || 0) === 1 ? t('sessions_count_one', { count: communityData?.length || 0 }) : t('sessions_count', { count: communityData?.length || 0 })}`}
               </Text>
             </View>
           </View>
@@ -585,7 +583,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
               {activityConfig.icon}
             </Text>
             <Text style={styles.activityTypeText}>
-              {t(activityConfig.labelKey, activityConfig.defaultLabel)}
+              {t(activityConfig.labelKey)}
             </Text>
           </View>
 
@@ -616,7 +614,7 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
 
       {/* Dynamic Adaptive Stats Grid */}
       <View style={styles.statsGrid}>
-        {renderSessionStatsGrid(session, activityConfig, colors, styles, t, runsCount)}
+        {renderSessionStatsGrid(session, styles, t, runsCount)}
       </View>
 
       {/* PHOTOS THUMBNAILS (UP TO 5) */}
@@ -1019,56 +1017,58 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
   },
   statsGrid: {
     backgroundColor: colors.surface,
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: BORDER_RADIUS.md,
     borderWidth: 1,
     borderColor: colors.border,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 4,
+    marginVertical: 6,
   },
   statCol: {
     alignItems: 'center',
     flex: 1,
+    paddingHorizontal: 2,
   },
   statLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: colors.textSecondary,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+    marginBottom: 2,
   },
   statValue: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
     color: colors.textPrimary,
-    marginTop: 2,
   },
   statUnit: {
-    fontSize: 10,
-    fontWeight: '400',
+    fontSize: 9.5,
+    fontWeight: '500',
     color: colors.textSecondary,
   },
   divider: {
     width: 1,
-    height: 28,
+    height: 24,
     backgroundColor: colors.border,
   },
   photosRow: {
     flexDirection: 'row',
     gap: 6,
-    marginTop: 12,
+    marginTop: 10,
     marginBottom: 4,
   },
   photoThumbnail: {
-    width: 30,
-    height: 30,
+    width: 34,
+    height: 34,
     borderRadius: BORDER_RADIUS.sm,
   },
   morePhotosBadge: {
-    width: 30,
-    height: 30,
+    width: 34,
+    height: 34,
     borderRadius: BORDER_RADIUS.sm,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -1085,14 +1085,15 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 4,
+    marginTop: 2,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
   runsTriggerText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.primaryDark,
   },
   runsContainer: {
@@ -1117,7 +1118,7 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 12,
+    padding: 10,
     borderRadius: BORDER_RADIUS.md,
   },
   runCardHeader: {
@@ -1134,15 +1135,15 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
   diffBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
+    gap: 5,
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: BORDER_RADIUS.round,
     borderWidth: 1,
   },
   diffDot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: BORDER_RADIUS.round,
   },
   diffText: {
@@ -1152,9 +1153,10 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
   runStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     backgroundColor: colors.card,
-    padding: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     borderRadius: BORDER_RADIUS.sm,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1165,9 +1167,9 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     gap: 4,
   },
   runStatText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.textPrimary,
   },
   modalBackground: {
     flex: 1,

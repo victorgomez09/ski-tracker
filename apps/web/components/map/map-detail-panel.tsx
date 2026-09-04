@@ -486,6 +486,14 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, o
     const [isFullscreen, setIsFullscreen] = useState(false);
     const styles = useMemo(() => getStyles(colors), [colors]);
 
+    useEffect(() => {
+        return () => {
+            if (onChartPointSelected) {
+                onChartPointSelected(null);
+            }
+        };
+    }, [onChartPointSelected]);
+
     const tags = data?.Tags || {};
     const elevationProfile = tags.elevationProfile || {};
     const heights = elevationProfile.heights || [];

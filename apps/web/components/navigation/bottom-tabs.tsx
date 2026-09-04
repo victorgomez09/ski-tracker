@@ -3,7 +3,7 @@ import { AlertTriangle } from "lucide-react-native";
 import { View, Text, TouchableOpacity, Platform, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useMemo } from 'react';
-import { useNetworkState } from 'expo-network';
+import { useIsOffline } from 'hooks/use-network.hook';
 
 import { useOta } from "context/ota.context";
 import { useTranslation } from "react-i18next";
@@ -15,8 +15,7 @@ export default function BottomTabs({ state, descriptors, navigation }: BottomTab
     const { hasOptionalUpdate, openOptionalModal } = useOta();
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
-    const networkState = useNetworkState();
-    const isOffline = networkState?.isConnected === false;
+    const isOffline = useIsOffline();
 
     return (
         <SafeAreaView edges={['bottom']} style={styles.safeArea}>

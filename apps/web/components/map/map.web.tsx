@@ -391,8 +391,17 @@ export default function InteractiveSkiMap() {
         } catch {}
     }, []);
 
+    const isSnowLayer = mapStyleId === 'outdoor';
+
     const detectedRuns = useMemo(() => {
         if (trackPoints.length === 0) return [];
+
+        // Only ski and snowboard sessions have downhill runs
+        const sessionActivity = (sessionDetails?.activity_type || 'ski') as ActivityType;
+        if (sessionActivity !== 'ski' && sessionActivity !== 'snowboard') {
+            return [];
+        }
+
         let currentType = 'unknown';
         let currentPoints: any[] = [];
         const result: { type: string; points: any[] }[] = [];
@@ -441,12 +450,12 @@ export default function InteractiveSkiMap() {
                     pointsCount: r.points.length,
                 };
             });
-    }, [trackPoints]);
+    }, [trackPoints, sessionDetails?.activity_type]);
 
     const [viewState, setViewState] = useState({
-        longitude: parseFloat(searchParams.lon as string || '-3.971953'),
-        latitude: parseFloat(searchParams.lat as string || '40.797891'),
-        zoom: parseInt(searchParams.zoom as string || '13'),
+        longitude: parseFloat((searchParams.lon as string) || (searchParams.lng as string) || '0'),
+        latitude: parseFloat((searchParams.lat as string) || '40.0'),
+        zoom: parseInt((searchParams.zoom as string) || '13'),
         bearing: 0,
         pitch: 0
     });
@@ -549,7 +558,8 @@ export default function InteractiveSkiMap() {
                                 .map((r: any) => r.matched_piste_id)
                                 .filter(Boolean);
                             setMatchedPisteIds(ids);
-                            if (session.runs.length > 0) {
+                            const sessionActivity = (session.activity_type || 'ski') as ActivityType;
+                            if (session.runs.length > 0 && (sessionActivity === 'ski' || sessionActivity === 'snowboard')) {
                                 setActiveTab('runs');
                             } else {
                                 setActiveTab('elevation');
@@ -572,6 +582,14 @@ export default function InteractiveSkiMap() {
         zoom: number,
         bounds?: { minLon: number; minLat: number; maxLon: number; maxLat: number }
     ) => {
+        if (searchParams.sessionId || mapStyleId !== 'outdoor') {
+            setIsLoadingResorts(false);
+            if (mapStyleId !== 'outdoor') {
+                setResorts([]);
+            }
+            return;
+        }
+
         if (fetchTimeoutRef.current) {
             clearTimeout(fetchTimeoutRef.current);
         }
@@ -700,9 +718,15 @@ export default function InteractiveSkiMap() {
                 }
             }
         }, 300);
-    }, []);
+    }, [mapStyleId]);
 
     useEffect(() => {
+        if (mapStyleId !== 'outdoor') {
+            setIsLoadingResorts(false);
+            setResorts([]);
+            return;
+        }
+
         const loadInitial = async () => {
             const zoom = Number(searchParams.zoom || '13');
             const lat = parseFloat(searchParams.lat as string || '40.797891');
@@ -721,7 +745,7 @@ export default function InteractiveSkiMap() {
         };
 
         loadInitial();
-    }, [token]);
+    }, [token, mapStyleId]);
 
     // --- Layer styles ---
     const pisteCasingStyle: LayerProps = {
@@ -1237,7 +1261,7 @@ export default function InteractiveSkiMap() {
 
     return (
         <div style={styles.container}>
-            {isLoadingResorts && (
+            {!searchParams.sessionId && isSnowLayer && isLoadingResorts && (
                 <div style={styles.loadingBanner}>
                     <div style={styles.spinner} />
                     <span style={styles.loadingBannerText}>{t('loading_slopes')}</span>
@@ -1363,7 +1387,7 @@ export default function InteractiveSkiMap() {
                         <CircleQuestionMark className="size-4" />
                     </button>
                 </div>
-                {resorts?.map(resort => (
+                {!searchParams.sessionId && isSnowLayer && resorts?.map(resort => (
                     <Marker
                         key={resort.ID}
                         longitude={resort.Longitude}
@@ -1412,7 +1436,7 @@ export default function InteractiveSkiMap() {
                     </Marker>
                 ))}
 
-                {viewState.zoom >= 10 && (
+                {!searchParams.sessionId && isSnowLayer && viewState.zoom >= 10 && (
                     <>
                         <Source id="pistes-source" type="geojson" data={pistesGeoJSON as any}>
                             <Layer {...pisteCasingStyle} />
