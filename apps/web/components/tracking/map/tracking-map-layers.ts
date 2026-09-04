@@ -1,4 +1,5 @@
 import { ResortDetail } from 'models/ski-resort.model';
+import { ActivityType } from 'models/activity.model';
 import { TrackPoint } from 'tracking/database';
 
 export const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -169,36 +170,64 @@ export const liftLabelStyle: any = {
     }
 };
 
-export const trackLineStyle: any = {
-    id: 'user-track-line',
-    sourceID: 'track-source',
-    type: 'line',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-        'line-color': '#e11d48',
-        'line-width': 5,
-        'line-opacity': 0.8
+export const getActivityTrackColor = (activityType?: ActivityType): string => {
+    switch (activityType) {
+        case 'ski':
+        case 'snowboard':
+            return '#e11d48'; // Rose
+        case 'hike':
+        case 'walk':
+            return '#f59e0b'; // Amber / Topo Orange
+        case 'bike':
+            return '#10b981'; // Emerald / Bike Green
+        case 'car':
+            return '#3b82f6'; // Blue / Nav
+        case 'general':
+        default:
+            return '#8b5cf6'; // Violet
     }
 };
 
-export const trackDirectionStyle: any = {
-    id: 'track-direction-arrow',
-    sourceID: 'track-direction-source',
-    type: 'symbol',
-    layout: {
-        'text-field': '▶',
-        'text-size': 14,
-        'text-rotate': ['get', 'rotation'],
-        'text-rotation-alignment': 'map',
-        'text-allow-overlap': true,
-        'text-ignore-placement': true
-    },
-    paint: {
-        'text-color': '#e11d48',
-        'text-halo-color': '#ffffff',
-        'text-halo-width': 1.5
-    }
+export const getTrackLineStyle = (activityType?: ActivityType): any => {
+    const color = getActivityTrackColor(activityType);
+    return {
+        id: 'user-track-line',
+        sourceID: 'track-source',
+        type: 'line',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+            'line-color': color,
+            'line-width': activityType === 'walk' || activityType === 'hike' ? 4 : 5,
+            'line-opacity': 0.85,
+        },
+    };
 };
+
+export const trackLineStyle: any = getTrackLineStyle('ski');
+
+export const getTrackDirectionStyle = (activityType?: ActivityType): any => {
+    const color = getActivityTrackColor(activityType);
+    return {
+        id: 'track-direction-arrow',
+        sourceID: 'track-direction-source',
+        type: 'symbol',
+        layout: {
+            'text-field': '▶',
+            'text-size': 14,
+            'text-rotate': ['get', 'rotation'],
+            'text-rotation-alignment': 'map',
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
+        },
+        paint: {
+            'text-color': color,
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.5,
+        },
+    };
+};
+
+export const trackDirectionStyle: any = getTrackDirectionStyle('ski');
 
 export const chartHoverPointStyle: any = {
     id: 'chart-hover-point-layer',

@@ -347,8 +347,8 @@ export default function CommunityView() {
             <View style={styles.badge}>
               <Text style={styles.badgeText}>
                 {feedFilter === 'leaderboard' 
-                  ? t('riders_count', { count: leaderboardData.length }) || `${leaderboardData.length} Riders`
-                  : t('sessions_count', { count: communityData.length })}
+                  ? (t('riders_count', { count: leaderboardData.length }) || `${leaderboardData.length} ${t('riders', 'Riders')}`)
+                  : (t('sessions_count', { count: communityData.length }) || `${communityData.length} ${t('sessions', 'Sesiones')}`)}
               </Text>
             </View>
           </View>
@@ -594,6 +594,16 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
             onPress={() => {
               if (session.resort?.Latitude && session.resort?.Longitude) {
                 router.push(`/map?sessionId=${session.id}&lat=${session.resort.Latitude}&lng=${session.resort.Longitude}&zoom=14`);
+              } else if (session.points && session.points.length > 0) {
+                const first = session.points[0];
+                const match = typeof first.geom === 'string' ? first.geom.match(/POINT\s*(?:Z\s*)?\(\s*([-\d.eE+]+)\s+([-\d.eE+]+)/i) : null;
+                const lon = match ? match[1] : (first.lon ?? first.lng ?? first.longitude);
+                const lat = match ? match[2] : (first.lat ?? first.latitude);
+                if (lat && lon) {
+                  router.push(`/map?sessionId=${session.id}&lat=${lat}&lng=${lon}&zoom=14`);
+                } else {
+                  router.push(`/map?sessionId=${session.id}`);
+                }
               } else {
                 router.push(`/map?sessionId=${session.id}`);
               }
@@ -979,14 +989,15 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
   },
   activityTypeBadge: {
     backgroundColor: colors.surface,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: BORDER_RADIUS.round,
     borderWidth: 1,
     borderColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
+    flexShrink: 0,
   },
   activityTypeIcon: {
     fontSize: 12,
@@ -995,7 +1006,8 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     fontSize: 10,
     color: colors.textSecondary,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    paddingRight: 2,
+    includeFontPadding: false,
   },
   mapButton: {
     backgroundColor: colors.primary,

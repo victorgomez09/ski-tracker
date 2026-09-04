@@ -4,17 +4,19 @@ import maplibregl from 'maplibre-gl';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, ViewStateChangeEvent } from 'react-map-gl/maplibre';
-import { CircleQuestionMark } from 'lucide-react-native';
+import { CircleQuestionMark, Layers } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { API_BASE_URL } from 'constants/constants';
+import { getMapStyleValue, MAP_STYLE_STORAGE_KEY, MapStyleId } from 'constants/map-styles';
 import { useAuth } from 'context/auth.context';
 import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
 import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 import { formatDuration, formatPace, formatPaceFromMinPerKm } from 'components/tracking/hooks/use-live-stats';
 import { useThemeColors, COLORS, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 import { MapDetailPanel } from './map-detail-panel';
+import { MapStyleSelectorModal } from './map-style-selector-modal';
 import { ResortDetailPanel } from './resort-detail-panel';
 import { LegendDetailPanel } from './legend-detail-panel';
 import api from 'interceptor/api';
@@ -70,26 +72,81 @@ interface GenericChartDatum {
     slopeDeg: number;
 }
 
+const parsePoint = (p: any) => {
+    if (!p) return null;
+    let lat: number | undefined;
+    let lon: number | undefined;
+
+    if (typeof p.lat === 'number' && !isNaN(p.lat)) lat = p.lat;
+    else if (typeof p.latitude === 'number' && !isNaN(p.latitude)) lat = p.latitude;
+
+    if (typeof p.lon === 'number' && !isNaN(p.lon)) lon = p.lon;
+    else if (typeof p.lng === 'number' && !isNaN(p.lng)) lon = p.lng;
+    else if (typeof p.longitude === 'number' && !isNaN(p.longitude)) lon = p.longitude;
+
+    if ((lat === undefined || lon === undefined) && typeof p.geom === 'string') {
+        const match = p.geom.match(/POINT\s*(?:Z\s*)?\(\s*([-\d.eE+]+)\s+([-\d.eE+]+)/i);
+        if (match) {
+            lon = parseFloat(match[1]);
+            lat = parseFloat(match[2]);
+        }
+    } else if ((lat === undefined || lon === undefined) && p.geom?.coordinates && Array.isArray(p.geom.coordinates)) {
+        lon = p.geom.coordinates[0];
+        lat = p.geom.coordinates[1];
+    }
+
+    if (lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
+        const alt = typeof p.altitude === 'number' && !isNaN(p.altitude) ? p.altitude : 0;
+        const spd = typeof p.speed === 'number' && !isNaN(p.speed) ? p.speed : 0;
+        return {
+            lat,
+            lon,
+            altitude: alt,
+            speed: spd,
+            timestamp: p.timestamp
+        };
+    }
+    return null;
+};
+
+const downsampleData = (data: GenericChartDatum[], maxPoints = 150): GenericChartDatum[] => {
+    if (!data || data.length <= maxPoints) return data || [];
+    const step = (data.length - 1) / (maxPoints - 1);
+    const sampled: GenericChartDatum[] = [];
+    for (let i = 0; i < maxPoints - 1; i++) {
+        sampled.push(data[Math.floor(i * step)]);
+    }
+    sampled.push(data[data.length - 1]);
+    return sampled;
+};
+
 const computeChartData = (points: any[]) => {
     if (!points || points.length === 0) return [];
+    const validPoints = points
+        .map(parsePoint)
+        .filter((p): p is NonNullable<typeof p> => p !== null);
+
+    if (validPoints.length === 0) return [];
+
     let cumulativeDistance = 0;
-    return points.map((p, idx) => {
+    return validPoints.map((p, idx) => {
         if (idx > 0) {
-            const prev = points[idx - 1];
-            cumulativeDistance += getDistance(prev.lat, prev.lon, p.lat, p.lon);
+            const prev = validPoints[idx - 1];
+            const d = getDistance(prev.lat, prev.lon, p.lat, p.lon);
+            if (!isNaN(d)) cumulativeDistance += d;
         }
-        const prevPoint = idx > 0 ? points[idx - 1] : p;
+        const prevPoint = idx > 0 ? validPoints[idx - 1] : p;
         const elevDiff = p.altitude - prevPoint.altitude;
         const distDiff = idx > 0 ? getDistance(prevPoint.lat, prevPoint.lon, p.lat, p.lon) * 1000 : 0; // meters
         const slopePct = distDiff > 0.1 ? Math.round((elevDiff / distDiff) * 100 * 10) / 10 : 0;
         const slopeDeg = Math.round(Math.atan(Math.abs(slopePct) / 100) * (180 / Math.PI));
 
         return {
-            distance: cumulativeDistance, // in km
+            distance: parseFloat(cumulativeDistance.toFixed(3)),
             elevation: Math.round(p.altitude),
-            speed: p.speed * 3.6, // km/h
-            slopePct,
-            slopeDeg,
+            speed: parseFloat((p.speed * 3.6).toFixed(1)),
+            slopePct: isNaN(slopePct) ? 0 : slopePct,
+            slopeDeg: isNaN(slopeDeg) ? 0 : slopeDeg,
         };
     });
 };
@@ -113,11 +170,13 @@ const WebChart: React.FC<{
 }> = ({ data, yKey, height, selectedIndex, onSelectIndex, colors, strokeColor }) => {
     const [containerWidth, setContainerWidth] = useState<number>(0);
 
-    if (!data || data.length === 0) return null;
+    const sampledData = useMemo(() => downsampleData(data, 150), [data]);
 
-    const minVal = Math.min(...data.map(d => d[yKey]));
-    const maxVal = Math.max(...data.map(d => d[yKey]));
-    const maxDist = Math.max(...data.map(d => d.distance)) || 1;
+    if (!sampledData || sampledData.length === 0) return null;
+
+    const minVal = Math.min(...sampledData.map(d => d[yKey]));
+    const maxVal = Math.max(...sampledData.map(d => d[yKey]));
+    const maxDist = Math.max(...sampledData.map(d => d.distance)) || 1;
     const valRange = maxVal - minVal || 1;
 
     const padding = { top: 10, bottom: 25, left: 40, right: 15 };
@@ -128,7 +187,7 @@ const WebChart: React.FC<{
     const chartH = svgHeight - padding.top - padding.bottom;
     const bottomY = padding.top + chartH;
 
-    const points = data.map((d) => {
+    const points = sampledData.map((d) => {
         const x = padding.left + (d.distance / maxDist) * chartW;
         const y = padding.top + chartH - ((d[yKey] - minVal) / valRange) * chartH;
         return { x, y, ...d };
@@ -300,6 +359,37 @@ export default function InteractiveSkiMap() {
     const [selectedRun, setSelectedRun] = useState<any | null>(null);
     const [hoveredRun, setHoveredRun] = useState<any | null>(null);
     const [sessionDetails, setSessionDetails] = useState<any | null>(null);
+    const [mapStyleId, setMapStyleId] = useState<MapStyleId>('outdoor');
+    const [showMapStyleModal, setShowMapStyleModal] = useState(false);
+    const [is3DMode, setIs3DMode] = useState(false);
+
+    const toggle3DMode = useCallback(() => {
+        setIs3DMode((prev) => {
+            const next = !prev;
+            const targetPitch = next ? 60 : 0;
+            const targetBearing = next ? -20 : 0;
+            setViewState((v) => ({ ...v, pitch: targetPitch, bearing: targetBearing }));
+            try {
+                mapRef.current?.easeTo({
+                    pitch: targetPitch,
+                    bearing: targetBearing,
+                    duration: 600,
+                });
+            } catch {}
+            return next;
+        });
+    }, []);
+
+    useEffect(() => {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                const saved = window.localStorage.getItem(MAP_STYLE_STORAGE_KEY);
+                if (saved && ['outdoor', 'topo', 'satellite', 'streets', 'dark'].includes(saved)) {
+                    setMapStyleId(saved as MapStyleId);
+                }
+            }
+        } catch {}
+    }, []);
 
     const detectedRuns = useMemo(() => {
         if (trackPoints.length === 0) return [];
@@ -436,25 +526,22 @@ export default function InteractiveSkiMap() {
                         const session = res.data.data || res.data;
                         setSessionDetails(session);
                         if (session.points && Array.isArray(session.points) && session.points.length > 0) {
-                            const parsedPoints = session.points.map((p: any) => {
-                                const match = p.geom?.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/i);
-                                return {
-                                    lat: match ? parseFloat(match[2]) : p.lat,
-                                    lon: match ? parseFloat(match[1]) : p.lon,
-                                    altitude: p.altitude,
-                                    speed: p.speed,
-                                    timestamp: p.timestamp
-                                };
-                            });
+                            const parsedPoints = session.points
+                                .map(parsePoint)
+                                .filter((p: any) => p !== null);
                             setTrackPoints(parsedPoints);
 
                             if (parsedPoints.length > 0) {
-                                setViewState(prev => ({
-                                    ...prev,
-                                    longitude: parsedPoints[0].lon,
-                                    latitude: parsedPoints[0].lat,
-                                    zoom: 14
-                                }));
+                                const targetLon = parsedPoints[0].lon;
+                                const targetLat = parsedPoints[0].lat;
+                                if (!isNaN(targetLon) && !isNaN(targetLat)) {
+                                    setViewState(prev => ({
+                                        ...prev,
+                                        longitude: targetLon,
+                                        latitude: targetLat,
+                                        zoom: 14
+                                    }));
+                                }
                             }
                         }
                         if (session.runs && Array.isArray(session.runs)) {
@@ -889,23 +976,13 @@ export default function InteractiveSkiMap() {
         return { type: 'FeatureCollection' as const, features: liftsFeatures };
     }, [resorts]);
 
-    const trackGeoJSON = useMemo(() => ({
-        type: 'FeatureCollection' as const,
-        features: trackPoints.length > 1 ? [{
-            type: 'Feature' as const,
-            properties: {},
-            geometry: {
-                type: 'LineString' as const,
-                coordinates: trackPoints.map(p => [p.lon, p.lat])
-            }
-        }] : []
-    }), [trackPoints]);
-
-    const highlightedRunGeoJSON = useMemo(() => {
-        const run = hoveredRun || selectedRun;
-        if (!run || !run.points || run.points.length === 0) {
-            return { type: 'FeatureCollection' as const, features: [] };
-        }
+    const trackGeoJSON = useMemo(() => {
+        if (!trackPoints || trackPoints.length === 0) return { type: 'FeatureCollection' as const, features: [] };
+        const coordinates = trackPoints
+            .filter(p => typeof p?.lon === 'number' && typeof p?.lat === 'number' && !isNaN(p.lon) && !isNaN(p.lat))
+            .map(p => [p.lon, p.lat]);
+        if (coordinates.length === 0) return { type: 'FeatureCollection' as const, features: [] };
+        const validCoords = coordinates.length === 1 ? [coordinates[0], coordinates[0]] : coordinates;
         return {
             type: 'FeatureCollection' as const,
             features: [{
@@ -913,7 +990,30 @@ export default function InteractiveSkiMap() {
                 properties: {},
                 geometry: {
                     type: 'LineString' as const,
-                    coordinates: run.points.map((p: any) => [p.lon, p.lat])
+                    coordinates: validCoords
+                }
+            }]
+        };
+    }, [trackPoints]);
+
+    const highlightedRunGeoJSON = useMemo(() => {
+        const run = hoveredRun || selectedRun;
+        if (!run || !run.points || run.points.length === 0) {
+            return { type: 'FeatureCollection' as const, features: [] };
+        }
+        const coordinates = run.points
+            .filter((p: any) => typeof p?.lon === 'number' && typeof p?.lat === 'number' && !isNaN(p.lon) && !isNaN(p.lat))
+            .map((p: any) => [p.lon, p.lat]);
+        if (coordinates.length === 0) return { type: 'FeatureCollection' as const, features: [] };
+        const validCoords = coordinates.length === 1 ? [coordinates[0], coordinates[0]] : coordinates;
+        return {
+            type: 'FeatureCollection' as const,
+            features: [{
+                type: 'Feature' as const,
+                properties: {},
+                geometry: {
+                    type: 'LineString' as const,
+                    coordinates: validCoords
                 }
             }]
         };
@@ -1146,6 +1246,21 @@ export default function InteractiveSkiMap() {
             {selectedLegend && (
                 <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
             )}
+
+            <MapStyleSelectorModal
+                visible={showMapStyleModal}
+                onClose={() => setShowMapStyleModal(false)}
+                selectedStyle={mapStyleId}
+                onSelect={(newStyle) => {
+                    setMapStyleId(newStyle);
+                    try {
+                        if (typeof window !== 'undefined' && window.localStorage) {
+                            window.localStorage.setItem(MAP_STYLE_STORAGE_KEY, newStyle);
+                        }
+                    } catch {}
+                }}
+            />
+
             {selectedFeature && (
                 <MapDetailPanel
                     data={selectedFeature}
@@ -1162,6 +1277,10 @@ export default function InteractiveSkiMap() {
             <Map
                 ref={mapRef}
                 {...viewState}
+                maxPitch={85}
+                pitch={viewState.pitch}
+                bearing={viewState.bearing}
+                terrain={is3DMode ? { source: 'maplibre-dem', exaggeration: 1.5 } : undefined}
                 onMove={evt => setViewState(evt.viewState)}
                 onMouseMove={handleMouseMove}
                 onMoveEnd={handleMoveEnd}
@@ -1174,15 +1293,69 @@ export default function InteractiveSkiMap() {
                 }}
                 interactiveLayerIds={['piste-lines', 'lift-lines']}
                 style={{ width: '100%', height: '100%' }}
-                mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+                mapStyle={getMapStyleValue(mapStyleId) as any}
                 mapLib={maplibregl}
                 maplibreLogo={false}
                 attributionControl={false}
             >
+                <Source
+                    id="maplibre-dem"
+                    type="raster-dem"
+                    url="https://demotiles.maplibre.org/terrain-tiles/tiles.json"
+                    tileSize={256}
+                />
+                <Source
+                    id="terrain-hillshade"
+                    type="raster"
+                    tiles={[
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
+                    ]}
+                    tileSize={256}
+                    maxzoom={17}
+                >
+                    <Layer
+                        id="terrain-hillshade-layer"
+                        type="raster"
+                        paint={{
+                            'raster-opacity': is3DMode ? 0.38 : 0.18,
+                        }}
+                    />
+                </Source>
                 <div style={styles.controlsContainer}>
                     <NavigationControl showCompass={true} showZoom={true} />
 
                     <button
+                        type="button"
+                        title={is3DMode ? '2D View' : '3D View'}
+                        onClick={toggle3DMode}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 'bold',
+                            fontSize: '11px',
+                            color: is3DMode ? colors.primary : colors.textPrimary,
+                        }}
+                    >
+                        {is3DMode ? '3D' : '2D'}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setShowMapStyleModal(true);
+                        }}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}
+                    >
+                        <Layers className="size-4" />
+                    </button>
+
+                    <button
+                        type="button"
                         onClick={() => {
                             setSelectedLegend(true);
                         }}
@@ -1252,19 +1425,19 @@ export default function InteractiveSkiMap() {
                             <Layer {...liftLineStyle} />
                             <Layer {...liftLabelStyle} />
                         </Source>
+                    </>
+                )}
 
-                        {trackPoints.length > 0 && (
-                            <>
-                                <Source id="track-source" type="geojson" data={trackGeoJSON}>
-                                    <Layer {...trackLineStyle} />
-                                </Source>
-                                {(hoveredRun || selectedRun) && (
-                                    <Source id="highlighted-run-source" type="geojson" data={highlightedRunGeoJSON}>
-                                        <Layer {...highlightedRunCaseStyle} />
-                                        <Layer {...highlightedRunLineStyle} />
-                                    </Source>
-                                )}
-                            </>
+                {trackPoints.length > 0 && (
+                    <>
+                        <Source id="track-source" type="geojson" data={trackGeoJSON}>
+                            <Layer {...trackLineStyle} />
+                        </Source>
+                        {(hoveredRun || selectedRun) && (
+                            <Source id="highlighted-run-source" type="geojson" data={highlightedRunGeoJSON}>
+                                <Layer {...highlightedRunCaseStyle} />
+                                <Layer {...highlightedRunLineStyle} />
+                            </Source>
                         )}
                     </>
                 )}
@@ -1661,7 +1834,7 @@ const getStyles = (colors: typeof LIGHT_COLORS) => ({
         display: 'flex',
         flexDirection: 'column' as const,
         gap: '8px',
-        // maxHeight: '288px',
+        maxHeight: '260px',
         overflowY: 'auto' as const,
         paddingRight: '4px',
     },

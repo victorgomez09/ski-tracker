@@ -124,10 +124,10 @@ La **versión 2.0** evoluciona la plataforma de un rastreador exclusivo de esqu�
 ### Fase 4: Experiencia Cartográfica Multi-Entorno
 > **Objetivo:** Adaptar las capas visuales del mapa según el tipo de actividad.
 
-- [ ] **Capas Condicionales en el Mapa:**
+- [x] **Capas Condicionales en el Mapa:**
   - Ocultar capas vectoriales de pistas de esquí y remontes cuando la actividad no sea invernal.
   - Soporte para estilo de mapa topográfico / senderos (OpenStreetMap Outdoors o MapTiler/Carto Outdoors) para rutas de senderismo o bici.
-- [ ] **Pintado de Ruta Personalizado:**
+- [x] **Pintado de Ruta Personalizado:**
   - Color de trazado o gradiente por velocidad o altitud según la actividad (ej. gradiente de pendiente para senderismo/ciclismo, velocidad para coche).
 
 ---

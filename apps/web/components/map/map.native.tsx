@@ -5,6 +5,7 @@ import {
     Layer as NativeLayer,
     Map as NativeMap,
     Marker as NativeMarker,
+    RasterSource as NativeRasterSource,
     type CameraRef,
 } from '@maplibre/maplibre-react-native';
 import { useNetworkState } from 'expo-network';
@@ -12,13 +13,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
-import { ArrowLeft, CircleHelp, Download, MapPin, X } from 'lucide-react-native';
+import { ArrowLeft, CircleHelp, Download, Layers, MapPin, X } from 'lucide-react-native';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Platform, processColor, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { API_BASE_URL } from 'constants/constants';
+import { getMapStyleValue, MAP_STYLE_STORAGE_KEY, MapStyleId } from 'constants/map-styles';
 import { useAuth } from 'context/auth.context';
 import { useToast } from 'context/toast.context';
 import api from 'interceptor/api';
@@ -28,6 +30,7 @@ import { formatDuration, formatPace, formatPaceFromMinPerKm } from 'components/t
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from '../../constants/theme';
 import { LegendDetailPanel } from './legend-detail-panel';
 import { MapDetailPanel } from './map-detail-panel';
+import { MapStyleSelectorModal } from './map-style-selector-modal';
 import { OfflineMapsModal } from './offline-maps-panel';
 import { ResortDetailPanel } from './resort-detail-panel';
 
@@ -90,28 +93,83 @@ interface GenericChartDatum {
     slopeDeg: number;
 }
 
+const parsePoint = (p: any) => {
+    if (!p) return null;
+    let lat: number | undefined;
+    let lon: number | undefined;
+
+    if (typeof p.lat === 'number' && !isNaN(p.lat)) lat = p.lat;
+    else if (typeof p.latitude === 'number' && !isNaN(p.latitude)) lat = p.latitude;
+
+    if (typeof p.lon === 'number' && !isNaN(p.lon)) lon = p.lon;
+    else if (typeof p.lng === 'number' && !isNaN(p.lng)) lon = p.lng;
+    else if (typeof p.longitude === 'number' && !isNaN(p.longitude)) lon = p.longitude;
+
+    if ((lat === undefined || lon === undefined) && typeof p.geom === 'string') {
+        const match = p.geom.match(/POINT\s*(?:Z\s*)?\(\s*([-\d.eE+]+)\s+([-\d.eE+]+)/i);
+        if (match) {
+            lon = parseFloat(match[1]);
+            lat = parseFloat(match[2]);
+        }
+    } else if ((lat === undefined || lon === undefined) && p.geom?.coordinates && Array.isArray(p.geom.coordinates)) {
+        lon = p.geom.coordinates[0];
+        lat = p.geom.coordinates[1];
+    }
+
+    if (lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
+        const alt = typeof p.altitude === 'number' && !isNaN(p.altitude) ? p.altitude : 0;
+        const spd = typeof p.speed === 'number' && !isNaN(p.speed) ? p.speed : 0;
+        return {
+            lat,
+            lon,
+            altitude: alt,
+            speed: spd,
+            timestamp: p.timestamp
+        };
+    }
+    return null;
+};
+
 const computeChartData = (points: any[]) => {
     if (!points || points.length === 0) return [];
+    const validPoints = points
+        .map(parsePoint)
+        .filter((p): p is NonNullable<typeof p> => p !== null);
+
+    if (validPoints.length === 0) return [];
+
     let cumulativeDistance = 0;
-    return points.map((p, idx) => {
+    return validPoints.map((p, idx) => {
         if (idx > 0) {
-            const prev = points[idx - 1];
-            cumulativeDistance += getDistance(prev.lat, prev.lon, p.lat, p.lon);
+            const prev = validPoints[idx - 1];
+            const d = getDistance(prev.lat, prev.lon, p.lat, p.lon);
+            if (!isNaN(d)) cumulativeDistance += d;
         }
-        const prevPoint = idx > 0 ? points[idx - 1] : p;
+        const prevPoint = idx > 0 ? validPoints[idx - 1] : p;
         const elevDiff = p.altitude - prevPoint.altitude;
         const distDiff = idx > 0 ? getDistance(prevPoint.lat, prevPoint.lon, p.lat, p.lon) * 1000 : 0; // meters
         const slopePct = distDiff > 0.1 ? Math.round((elevDiff / distDiff) * 100 * 10) / 10 : 0;
         const slopeDeg = Math.round(Math.atan(Math.abs(slopePct) / 100) * (180 / Math.PI));
 
         return {
-            distance: cumulativeDistance, // in km
+            distance: parseFloat(cumulativeDistance.toFixed(3)),
             elevation: Math.round(p.altitude),
-            speed: p.speed * 3.6, // km/h
-            slopePct,
-            slopeDeg,
+            speed: parseFloat((p.speed * 3.6).toFixed(1)),
+            slopePct: isNaN(slopePct) ? 0 : slopePct,
+            slopeDeg: isNaN(slopeDeg) ? 0 : slopeDeg,
         };
     });
+};
+
+const downsampleData = (data: GenericChartDatum[], maxPoints = 120): GenericChartDatum[] => {
+    if (!data || data.length <= maxPoints) return data || [];
+    const step = (data.length - 1) / (maxPoints - 1);
+    const sampled: GenericChartDatum[] = [];
+    for (let i = 0; i < maxPoints - 1; i++) {
+        sampled.push(data[Math.floor(i * step)]);
+    }
+    sampled.push(data[data.length - 1]);
+    return sampled;
 };
 
 const getSlopeColor = (slopePct: number) => {
@@ -133,49 +191,24 @@ const NativeChart: React.FC<{
 }> = ({ data, yKey, height, onSelectIndex, colors, styles, strokeColor }) => {
     if (!LineChart || !data || data.length === 0) return null;
 
-    const chartValues = data.map(d => ({ x: d.distance, y: d[yKey] }));
-    const circleColors = data.map(d => processColor(strokeColor || getSlopeColor(d.slopePct)));
+    const sampledData = useMemo(() => downsampleData(data, 120), [data]);
+    const chartValues = sampledData.map(d => ({ x: d.distance, y: d[yKey] }));
+    const color = strokeColor || (yKey === 'elevation' ? colors.primary : colors.danger);
 
-    const segmentDataSets = [];
-
-    for (let i = 0; i < data.length - 1; i++) {
-        const p1 = data[i];
-        const p2 = data[i + 1];
-        const segmentColor = processColor(strokeColor || getSlopeColor(p2.slopePct));
-
-        segmentDataSets.push({
-            values: [
-                { x: p1.distance, y: p1[yKey] },
-                { x: p2.distance, y: p2[yKey] },
-            ],
-            label: `segment_${i}`,
-            config: {
-                color: segmentColor,
-                lineWidth: 2.5,
-                drawCircles: false,
-                drawValues: false,
-                drawFilled: true,
-                fillColor: segmentColor,
-                fillAlpha: yKey === 'elevation' ? 60 : 35,
-            },
-        });
-    }
-
-    segmentDataSets.push({
+    const dataSets = [{
         values: chartValues,
-        label: 'points_overlay',
+        label: yKey,
         config: {
-            color: processColor('transparent'),
-            lineWidth: 0,
+            color: processColor(color),
+            lineWidth: 2.5,
             drawCircles: false,
-            circleRadius: 4,
-            circleColors: circleColors,
-            circleHoleColor: processColor('#ffffff'),
-            drawCircleHole: true,
             drawValues: false,
-            drawFilled: false,
+            drawFilled: true,
+            fillColor: processColor(color),
+            fillAlpha: yKey === 'elevation' ? 60 : 35,
+            mode: 'CUBIC_BEZIER',
         },
-    });
+    }];
 
     const formatStr = yKey === 'elevation' ? "###0'm'" : "###0.0'km/h'";
 
@@ -183,9 +216,7 @@ const NativeChart: React.FC<{
         <View style={{ height }}>
             <LineChart
                 style={{ flex: 1 }}
-                data={{
-                    dataSets: segmentDataSets,
-                }}
+                data={{ dataSets }}
                 xAxis={{
                     position: 'BOTTOM',
                     textColor: processColor(colors.textSecondary),
@@ -324,13 +355,48 @@ export default function InteractiveSkiMapNative() {
     const [hoveredRun, setHoveredRun] = useState<any | null>(null);
     const [sessionDetails, setSessionDetails] = useState<any | null>(null);
     const [showOfflineModal, setShowOfflineModal] = useState(false);
+    const [mapStyleId, setMapStyleId] = useState<MapStyleId>('outdoor');
+    const [showMapStyleModal, setShowMapStyleModal] = useState(false);
+    const [is3DMode, setIs3DMode] = useState(false);
+
+    const toggle3DMode = useCallback(() => {
+        setIs3DMode((prev) => {
+            const next = !prev;
+            const targetPitch = next ? 55 : 0;
+            setViewState((v) => {
+                try {
+                    cameraRef.current?.easeTo({
+                        center: [v.longitude, v.latitude],
+                        pitch: targetPitch,
+                        bearing: next ? v.bearing : 0,
+                        duration: 600,
+                    });
+                } catch {}
+                return { ...v, pitch: targetPitch, bearing: next ? v.bearing : 0 };
+            });
+            return next;
+        });
+    }, []);
+
+    useEffect(() => {
+        const loadMapStyle = async () => {
+            try {
+                const saved = await AsyncStorage.getItem(MAP_STYLE_STORAGE_KEY);
+                if (saved && ['outdoor', 'topo', 'satellite', 'streets', 'dark'].includes(saved)) {
+                    setMapStyleId(saved as MapStyleId);
+                }
+            } catch {}
+        };
+        loadMapStyle();
+    }, []);
+
     const {
         packs,
         downloadingPack,
         downloadingProgress,
         downloadRegion,
         deletePack,
-    } = useOfflineMaps(mapStyleUrl);
+    } = useOfflineMaps(getMapStyleValue(mapStyleId) as any);
 
     const detectedRuns = useMemo(() => {
         if (trackPoints.length === 0) return [];
@@ -656,20 +722,17 @@ export default function InteractiveSkiMapNative() {
                         const session = res.data.data || res.data;
                         setSessionDetails(session);
                         if (session.points && Array.isArray(session.points) && session.points.length > 0) {
-                            const parsedPoints = session.points.map((p: any) => {
-                                const match = p.geom?.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/i);
-                                return {
-                                    lat: match ? parseFloat(match[2]) : p.lat,
-                                    lon: match ? parseFloat(match[1]) : p.lon,
-                                    altitude: p.altitude,
-                                    speed: p.speed,
-                                    timestamp: p.timestamp
-                                };
-                            });
+                            const parsedPoints = session.points
+                                .map(parsePoint)
+                                .filter((p: any) => p !== null);
                             setTrackPoints(parsedPoints);
 
                             if (parsedPoints.length > 0) {
-                                applyExternalCameraMove(parsedPoints[0].lon, parsedPoints[0].lat, 14, 400);
+                                const targetLon = parsedPoints[0].lon;
+                                const targetLat = parsedPoints[0].lat;
+                                if (!isNaN(targetLon) && !isNaN(targetLat)) {
+                                    applyExternalCameraMove(targetLon, targetLat, 14, 400);
+                                }
                             }
                         }
                         if (session.runs && Array.isArray(session.runs)) {
@@ -697,6 +760,11 @@ export default function InteractiveSkiMapNative() {
 
     useEffect(() => {
         const loadInitial = async () => {
+            // When opening a session, wait for the session data to center camera first
+            if (searchParams.sessionId && (!searchParams.lat || !searchParams.lon)) {
+                return;
+            }
+
             const boundsVal = latestBoundsRef.current;
             let bounds = undefined;
             if (boundsVal) {
@@ -719,7 +787,7 @@ export default function InteractiveSkiMapNative() {
 
         const timeout = setTimeout(loadInitial, 350);
         return () => clearTimeout(timeout);
-    }, [viewState.latitude, viewState.longitude, viewState.zoom, token, networkState]);
+    }, [viewState.latitude, viewState.longitude, viewState.zoom, token, networkState, searchParams.sessionId]);
 
     const pisteCasingStyle: any = {
         id: 'piste-casing',
@@ -764,7 +832,7 @@ export default function InteractiveSkiMapNative() {
                 ['==', ['get', 'id'], selectedFeature?.ID || ''], 7,
                 ['==', ['get', 'id'], hoveredFeatureId || ''], 8,
                 ['==', ['get', 'resortId'], selectedResort?.ID || ''], 8,
-                ['in', ['get', 'id'], ['literal', matchedPisteIds]], 7,
+                ['in', ['get', 'id'], ['literal', matchedPisteIds.length > 0 ? matchedPisteIds : ['__none__']]], 7,
                 5
             ]
         }
@@ -787,7 +855,7 @@ export default function InteractiveSkiMapNative() {
             'text-max-angle': 30
         },
         paint: {
-            'line-color': [
+            'text-color': [
                 'match', ['get', 'difficulty'],
                 'novice', '#81c784',
                 'easy', '#90caf9',
@@ -802,6 +870,7 @@ export default function InteractiveSkiMapNative() {
 
     const pisteDirectionStyle: any = {
         id: 'piste-directions',
+        sourceID: 'pistes-source',
         type: 'symbol',
         minzoom: 14,
         layout: {
@@ -1011,8 +1080,13 @@ export default function InteractiveSkiMapNative() {
     }, [resorts]);
 
     const trackGeoJSON = useMemo(() => {
-        if (trackPoints.length === 0) return { type: 'FeatureCollection' as const, features: [] };
-        const coordinates = trackPoints.map(p => [p.lon, p.lat]);
+        if (!trackPoints || trackPoints.length === 0) return { type: 'FeatureCollection' as const, features: [] };
+        const coordinates = trackPoints
+            .filter(p => typeof p?.lon === 'number' && typeof p?.lat === 'number' && !isNaN(p.lon) && !isNaN(p.lat))
+            .map(p => [p.lon, p.lat]);
+        if (coordinates.length === 0) return { type: 'FeatureCollection' as const, features: [] };
+        // GeoJSON LineString requires at least 2 points
+        const validCoords = coordinates.length === 1 ? [coordinates[0], coordinates[0]] : coordinates;
         return {
             type: 'FeatureCollection' as const,
             features: [{
@@ -1020,16 +1094,20 @@ export default function InteractiveSkiMapNative() {
                 properties: {},
                 geometry: {
                     type: 'LineString' as const,
-                    coordinates
+                    coordinates: validCoords
                 }
             }]
         };
     }, [trackPoints]);
 
     const trackDirectionGeoJSON = useMemo(() => {
-        if (trackPoints.length < 2) return { type: 'FeatureCollection' as const, features: [] };
+        if (!trackPoints || trackPoints.length < 2) return { type: 'FeatureCollection' as const, features: [] };
 
-        const coordinates = trackPoints.map(p => [p.lon, p.lat]);
+        const coordinates = trackPoints
+            .filter(p => typeof p?.lon === 'number' && typeof p?.lat === 'number' && !isNaN(p.lon) && !isNaN(p.lat))
+            .map(p => [p.lon, p.lat]);
+        if (coordinates.length < 2) return { type: 'FeatureCollection' as const, features: [] };
+
         const start = coordinates[0];
         const end = coordinates[coordinates.length - 1];
         const dx = end[0] - start[0];
@@ -1059,7 +1137,11 @@ export default function InteractiveSkiMapNative() {
         if (!activeHighlightedRun || !activeHighlightedRun.points || activeHighlightedRun.points.length === 0) {
             return { type: 'FeatureCollection' as const, features: [] };
         }
-        const coordinates = activeHighlightedRun.points.map((p: any) => [p.lon, p.lat]);
+        const coordinates = activeHighlightedRun.points
+            .filter((p: any) => typeof p?.lon === 'number' && typeof p?.lat === 'number' && !isNaN(p.lon) && !isNaN(p.lat))
+            .map((p: any) => [p.lon, p.lat]);
+        if (coordinates.length === 0) return { type: 'FeatureCollection' as const, features: [] };
+        const validCoords = coordinates.length === 1 ? [coordinates[0], coordinates[0]] : coordinates;
         return {
             type: 'FeatureCollection' as const,
             features: [{
@@ -1067,7 +1149,7 @@ export default function InteractiveSkiMapNative() {
                 properties: {},
                 geometry: {
                     type: 'LineString' as const,
-                    coordinates
+                    coordinates: validCoords
                 }
             }]
         };
@@ -1219,7 +1301,7 @@ export default function InteractiveSkiMapNative() {
         <View style={styles.container}>
             <NativeMap
                 style={styles.flex1}
-                mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+                mapStyle={getMapStyleValue(mapStyleId) as any}
                 onRegionDidChange={handleNativeRegionDidChange}
                 onPress={handleNativeMapPress}
                 attribution={false}
@@ -1233,11 +1315,30 @@ export default function InteractiveSkiMapNative() {
                 <NativeCamera
                     ref={cameraRef}
                     maxZoom={16}
+                    pitch={viewState.pitch}
+                    bearing={viewState.bearing}
                     initialViewState={{
                         zoom: firstViewStateRef.current.zoom,
                         center: [firstViewStateRef.current.longitude, firstViewStateRef.current.latitude],
                     }}
                 />
+
+                <NativeRasterSource
+                    id="terrain-hillshade-source"
+                    tiles={[
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
+                    ]}
+                    tileSize={256}
+                    maxzoom={17}
+                >
+                    <NativeLayer
+                        id="terrain-hillshade-layer"
+                        type="raster"
+                        style={{
+                            rasterOpacity: is3DMode ? 0.38 : 0.18,
+                        }}
+                    />
+                </NativeRasterSource>
                 {resorts.map((resort) => (
                     <NativeMarker
                         key={resort.ID}
@@ -1283,19 +1384,19 @@ export default function InteractiveSkiMapNative() {
                             <NativeLayer {...liftLineStyle} onPress={handleNativeFeaturePress} />
                             <NativeLayer {...liftLabelStyle} onPress={handleNativeFeaturePress} />
                         </NativeGeoJSONSource>
+                    </>
+                )}
 
-                        {trackPoints.length > 0 && (
-                            <>
-                                <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
-                                    <NativeLayer {...trackLineStyle} />
-                                </NativeGeoJSONSource>
-                                {(hoveredRun || selectedRun) && (
-                                    <NativeGeoJSONSource id="highlighted-run-source" data={highlightedRunGeoJSON}>
-                                        <NativeLayer {...highlightedRunCaseStyle} />
-                                        <NativeLayer {...highlightedRunLineStyle} />
-                                    </NativeGeoJSONSource>
-                                )}
-                            </>
+                {trackPoints.length > 0 && (
+                    <>
+                        <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
+                            <NativeLayer {...trackLineStyle} />
+                        </NativeGeoJSONSource>
+                        {(hoveredRun || selectedRun) && (
+                            <NativeGeoJSONSource id="highlighted-run-source" data={highlightedRunGeoJSON}>
+                                <NativeLayer {...highlightedRunCaseStyle} />
+                                <NativeLayer {...highlightedRunLineStyle} />
+                            </NativeGeoJSONSource>
                         )}
                     </>
                 )}
@@ -1331,12 +1432,43 @@ export default function InteractiveSkiMapNative() {
                             <View style={styles.indicatorDot} />
                         )}
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                        onPress={() => setShowMapStyleModal(true)}
+                        style={styles.layersButton}
+                    >
+                        <Layers size={18} color={colors.primary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        onPress={toggle3DMode}
+                        style={[
+                            styles.dim3dButton,
+                            is3DMode && { backgroundColor: colors.primary, borderColor: colors.primary }
+                        ]}
+                    >
+                        <Text style={[styles.dim3dButtonText, is3DMode && { color: '#FFFFFF' }]}>
+                            {is3DMode ? '3D' : '2D'}
+                        </Text>
+                    </TouchableOpacity>
                 </>
             )}
 
             {selectedLegend && (
                 <LegendDetailPanel onClose={() => setSelectedLegend(false)} />
             )}
+
+            <MapStyleSelectorModal
+                visible={showMapStyleModal}
+                onClose={() => setShowMapStyleModal(false)}
+                selectedStyle={mapStyleId}
+                onSelect={async (newStyle) => {
+                    setMapStyleId(newStyle);
+                    try {
+                        await AsyncStorage.setItem(MAP_STYLE_STORAGE_KEY, newStyle);
+                    } catch {}
+                }}
+            />
 
             {showOfflineModal && (
                 <OfflineMapsModal
@@ -1441,7 +1573,12 @@ export default function InteractiveSkiMapNative() {
                         )}
 
                         {selectedRun ? (
-                            <ScrollView contentContainerStyle={styles.spaceY3}>
+                            <ScrollView
+                                style={{ flex: 1, maxHeight: 320 }}
+                                contentContainerStyle={styles.spaceY3}
+                                showsVerticalScrollIndicator={false}
+                                nestedScrollEnabled={true}
+                            >
                                 <TouchableOpacity
                                     style={styles.backButton}
                                     onPress={() => setSelectedRun(null)}
@@ -1460,14 +1597,14 @@ export default function InteractiveSkiMapNative() {
 
                                 <View style={styles.spaceY2}>
                                     <Text style={styles.profileLabel}>{t('elevation_profile')}</Text>
-                                    <AnalyserChart data={computeChartData(selectedRun.points)} yKey="elevation" />
+                                    <AnalyserChart data={computeChartData(selectedRun.points)} yKey="elevation" height={100} />
 
                                     <Text style={styles.profileLabel}>{t('speed_profile')}</Text>
-                                    <AnalyserChart data={computeChartData(selectedRun.points)} yKey="speed" strokeColor={colors.danger} />
+                                    <AnalyserChart data={computeChartData(selectedRun.points)} yKey="speed" strokeColor={colors.danger} height={100} />
                                 </View>
                             </ScrollView>
                         ) : (
-                            <View style={styles.spaceY3}>
+                            <View style={{ flex: 1, gap: SPACING.sm }}>
                                 <View style={styles.tabsContainer}>
                                     {hasRuns && (
                                         <TouchableOpacity
@@ -1492,7 +1629,12 @@ export default function InteractiveSkiMapNative() {
                                 </View>
 
                                 {hasRuns && activeTab === 'runs' && (
-                                    <ScrollView style={styles.runsScroll} contentContainerStyle={styles.spaceY2}>
+                                    <ScrollView
+                                        style={styles.runsScroll}
+                                        contentContainerStyle={styles.spaceY2}
+                                        showsVerticalScrollIndicator={false}
+                                        nestedScrollEnabled={true}
+                                    >
                                         <Text style={styles.runsHeader}>{t('descent_runs')} ({detectedRuns.length})</Text>
                                         {detectedRuns.map((run) => (
                                             <TouchableOpacity
@@ -1513,11 +1655,15 @@ export default function InteractiveSkiMapNative() {
                                 )}
 
                                 {activeTab === 'elevation' && (
-                                    <AnalyserChart data={computeChartData(trackPoints)} yKey="elevation" />
+                                    <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
+                                        <AnalyserChart data={computeChartData(trackPoints)} yKey="elevation" height={100} />
+                                    </ScrollView>
                                 )}
 
                                 {activeTab === 'speed' && (
-                                    <AnalyserChart data={computeChartData(trackPoints)} yKey="speed" strokeColor={colors.danger} />
+                                    <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
+                                        <AnalyserChart data={computeChartData(trackPoints)} yKey="speed" strokeColor={colors.danger} height={100} />
+                                    </ScrollView>
                                 )}
                             </View>
                         )}
@@ -1591,6 +1737,42 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         gap: 8,
         ...SHADOWS.md,
     },
+    layersButton: {
+        position: 'absolute',
+        bottom: 16,
+        left: 112,
+        zIndex: 50,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        ...SHADOWS.md,
+    },
+    dim3dButton: {
+        position: 'absolute',
+        bottom: 16,
+        left: 160,
+        zIndex: 50,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        paddingHorizontal: 12,
+        paddingVertical: 11,
+        borderRadius: BORDER_RADIUS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 42,
+        ...SHADOWS.md,
+    },
+    dim3dButtonText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: colors.primary,
+    },
     indicatorDot: {
         width: 8,
         height: 8,
@@ -1599,7 +1781,7 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     },
     analyserPanel: {
         position: 'absolute',
-        bottom: 20,
+        bottom: 16,
         left: 16,
         right: 16,
         zIndex: 40,
@@ -1608,7 +1790,8 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         borderColor: colors.border,
         borderRadius: BORDER_RADIUS.xl,
         padding: SPACING.md,
-        maxHeight: '45%',
+        maxHeight: '65%',
+        overflow: 'hidden',
         ...SHADOWS.lg,
     },
     analyserHeader: {

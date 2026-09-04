@@ -23,6 +23,7 @@ export interface Session {
     runs?: SessionRun[];
     resort?: Resort | null;
     photos?: SessionPhoto[];
+    points?: any[];
 }
 
 export interface SessionPhoto {

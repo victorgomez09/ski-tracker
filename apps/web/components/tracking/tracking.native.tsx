@@ -5,6 +5,7 @@ import {
     GeoJSONSource as NativeGeoJSONSource,
     Layer as NativeLayer,
     Map as NativeMap,
+    RasterSource as NativeRasterSource,
     UserLocation,
     type CameraRef,
     type LngLatBounds,
@@ -16,12 +17,14 @@ import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useSQLiteContext } from 'expo-sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { AlertTriangle, ChevronDown, Compass, MapPin } from 'lucide-react-native';
+import { AlertTriangle, ChevronDown, Compass, Layers, MapPin } from 'lucide-react-native';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
+import { MapStyleSelectorModal } from 'components/map/map-style-selector-modal';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
 import { CoverageWarningModal } from 'components/tracking/coverage-warning-modal';
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from 'constants/theme';
+import { DEFAULT_STYLE_BY_ACTIVITY, getMapStyleValue, MAP_STYLE_STORAGE_KEY, MapStyleId } from 'constants/map-styles';
 import { useToast } from 'context/toast.context';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
 import api from 'interceptor/api';
@@ -44,11 +47,11 @@ import {
     getDistanceFromLatLonInKm,
     getLiftLineStyle,
     getPisteLineStyle,
+    getTrackDirectionStyle,
+    getTrackLineStyle,
     liftLabelStyle,
     pisteDirectionStyle,
     pisteLabelStyle,
-    trackDirectionStyle,
-    trackLineStyle,
 } from './map/tracking-map-layers';
 import { useLiveStats } from './hooks/use-live-stats';
 import { useTrackingSession } from './hooks/use-tracking-session';
@@ -59,7 +62,6 @@ import { TrackingControls } from './tracking-controls';
 const DEFAULT_LAT = 0;
 const DEFAULT_LON = 0;
 const DEFAULT_ZOOM = 13;
-const MAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 
 export default function InteractiveSkiMapNative() {
     const searchParams = useLocalSearchParams();
@@ -78,6 +80,9 @@ export default function InteractiveSkiMapNative() {
     // --- State: Resort, Activity & Selection ---
     const [resort, setResort] = useState<ResortDetail>({} as ResortDetail);
     const [activityType, setActivityType] = useState<ActivityType>('ski');
+    const [mapStyleId, setMapStyleId] = useState<MapStyleId>('outdoor');
+    const [showMapStyleModal, setShowMapStyleModal] = useState(false);
+    const [is3DMode, setIs3DMode] = useState(false);
     const [activityModalVisible, setActivityModalVisible] = useState(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
     const [chartHoverPoint, setChartHoverPoint] = useState<[number, number] | null>(null);
@@ -93,23 +98,55 @@ export default function InteractiveSkiMapNative() {
 
     const currentConfig = useMemo(() => ACTIVITY_CONFIGS[activityType] || ACTIVITY_CONFIGS.ski, [activityType]);
 
-    // Load saved activity preference on mount
+    const toggle3DMode = useCallback(() => {
+        setIs3DMode((prev) => {
+            const next = !prev;
+            const targetPitch = next ? 55 : 0;
+            setViewState((v) => {
+                try {
+                    cameraRef.current?.easeTo({
+                        center: [v.longitude, v.latitude],
+                        pitch: targetPitch,
+                        bearing: next ? v.bearing : 0,
+                        duration: 600,
+                    });
+                } catch {}
+                return { ...v, pitch: targetPitch, bearing: next ? v.bearing : 0 };
+            });
+            return next;
+        });
+    }, []);
+
+    // Load saved activity and map style preferences on mount
     useEffect(() => {
-        const loadSavedActivity = async () => {
+        const loadPreferences = async () => {
             try {
-                const saved = await AsyncStorage.getItem('LAST_SELECTED_ACTIVITY');
-                if (saved && saved in ACTIVITY_CONFIGS) {
-                    setActivityType(saved as ActivityType);
+                const [savedActivity, savedMapStyle] = await Promise.all([
+                    AsyncStorage.getItem('LAST_SELECTED_ACTIVITY'),
+                    AsyncStorage.getItem(MAP_STYLE_STORAGE_KEY),
+                ]);
+                if (savedActivity && savedActivity in ACTIVITY_CONFIGS) {
+                    setActivityType(savedActivity as ActivityType);
+                    if (!savedMapStyle) {
+                        setMapStyleId(DEFAULT_STYLE_BY_ACTIVITY[savedActivity as ActivityType] || 'outdoor');
+                    }
+                }
+                if (savedMapStyle && ['outdoor', 'topo', 'satellite', 'streets', 'dark'].includes(savedMapStyle)) {
+                    setMapStyleId(savedMapStyle as MapStyleId);
                 }
             } catch {}
         };
-        loadSavedActivity();
+        loadPreferences();
     }, []);
 
     const handleSelectActivity = useCallback(async (selected: ActivityType) => {
         setActivityType(selected);
         try {
             await AsyncStorage.setItem('LAST_SELECTED_ACTIVITY', selected);
+            const savedStyle = await AsyncStorage.getItem(MAP_STYLE_STORAGE_KEY);
+            if (!savedStyle) {
+                setMapStyleId(DEFAULT_STYLE_BY_ACTIVITY[selected] || 'outdoor');
+            }
         } catch {}
 
         const config = ACTIVITY_CONFIGS[selected];
@@ -175,7 +212,7 @@ export default function InteractiveSkiMapNative() {
 
     // --- Offline Maps Hook ---
     const { packs, downloadingPack, downloadingProgress, downloadRegion, deletePack } =
-        useOfflineMaps(MAP_STYLE_URL);
+        useOfflineMaps(getMapStyleValue(mapStyleId) as any);
 
     // --- React to SearchParams URL updates ---
     useEffect(() => {
@@ -253,6 +290,27 @@ export default function InteractiveSkiMapNative() {
         const interval = setInterval(checkLocationServices, 3000);
         return () => clearInterval(interval);
     }, [checkLocationServices]);
+
+    // --- 3D Camera Follow Mode during Active Tracking ---
+    useEffect(() => {
+        if (isTracking && is3DMode && trackPoints.length >= 2) {
+            const last = trackPoints[trackPoints.length - 1];
+            const prev = trackPoints[trackPoints.length - 2];
+            const dx = last.lon - prev.lon;
+            const dy = last.lat - prev.lat;
+            if (Math.abs(dx) > 0.00002 || Math.abs(dy) > 0.00002) {
+                const calculatedBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+                try {
+                    cameraRef.current?.easeTo({
+                        center: [last.lon, last.lat],
+                        bearing: calculatedBearing,
+                        pitch: 55,
+                        duration: 800,
+                    });
+                } catch {}
+            }
+        }
+    }, [isTracking, is3DMode, trackPoints]);
 
     // --- Friends Live Location Polling ---
     useEffect(() => {
@@ -405,6 +463,8 @@ export default function InteractiveSkiMapNative() {
     // --- Dynamic Layer Styles ---
     const dynamicPisteLineStyle = useMemo(() => getPisteLineStyle(selectedFeature?.ID), [selectedFeature?.ID]);
     const dynamicLiftLineStyle = useMemo(() => getLiftLineStyle(selectedFeature?.ID), [selectedFeature?.ID]);
+    const dynamicTrackLineStyle = useMemo(() => getTrackLineStyle(activityType), [activityType]);
+    const dynamicTrackDirectionStyle = useMemo(() => getTrackDirectionStyle(activityType), [activityType]);
 
     if (!isFocused) {
         return <View style={[styles.container, { backgroundColor: colors.background }]} />;
@@ -412,43 +472,79 @@ export default function InteractiveSkiMapNative() {
 
     return (
         <View style={styles.container}>
-            {/* Top Bar - Activity & Resort Selectors */}
-            {!takePictureMode && (
+            {/* Top Bar - Activity, Resort & Layer Selectors */}
+            {(!takePictureMode || !isTracking) && (
                 <View style={styles.topBar}>
-                    {/* Activity Selector Button */}
-                    <TouchableOpacity
-                        style={[styles.topBarButton, isTracking && styles.topBarButtonDisabled]}
-                        onPress={() => !isTracking && setActivityModalVisible(true)}
-                        activeOpacity={isTracking ? 1 : 0.7}
-                    >
-                        <Text style={styles.activityEmoji}>{currentConfig.icon}</Text>
-                        <Text style={styles.topBarButtonText}>
-                            {t(currentConfig.labelKey, currentConfig.defaultLabel)}
-                        </Text>
-                        {!isTracking && <ChevronDown size={14} color={colors.textSecondary} style={{ marginLeft: 4 }} />}
-                    </TouchableOpacity>
-
-                    {/* Resort Selector Button if required, otherwise Free Mode badge */}
-                    {currentConfig.requiresResort ? (
+                    <View style={styles.topBarLeft}>
+                        {/* Activity Selector Button */}
                         <TouchableOpacity
-                            style={[styles.topBarButton, isTracking && styles.topBarButtonDisabled]}
-                            onPress={() => !isTracking && setSearchModalVisible(true)}
+                            style={[
+                                styles.topBarButton,
+                                isTracking && styles.topBarButtonTracking
+                            ]}
+                            onPress={() => !isTracking && setActivityModalVisible(true)}
                             activeOpacity={isTracking ? 1 : 0.7}
+                            disabled={isTracking}
                         >
-                            <MapPin size={16} color={colors.primary} />
+                            <Text style={styles.activityEmoji}>{currentConfig.icon}</Text>
                             <Text style={styles.topBarButtonText} numberOfLines={1}>
-                                {resort?.ID ? resort.Name : t('select_resort_to_ski', 'Seleccionar estación')}
+                                {t(currentConfig.labelKey, currentConfig.defaultLabel)}
                             </Text>
-                            {!isTracking && <ChevronDown size={14} color={colors.textSecondary} style={{ marginLeft: 4 }} />}
+                            {!isTracking && <ChevronDown size={12} color={colors.textSecondary} style={{ marginLeft: 2 }} />}
                         </TouchableOpacity>
-                    ) : (
-                        <View style={styles.freeModeBadge}>
-                            <Compass size={14} color={colors.success || '#10b981'} />
-                            <Text style={[styles.freeModeText, { color: colors.success || '#10b981' }]}>
-                                {t('free_mode', 'Modo libre')}
+
+                        {/* Resort Selector Button if required, otherwise Free Mode badge */}
+                        {currentConfig.requiresResort ? (
+                            <TouchableOpacity
+                                style={[
+                                    styles.topBarButton,
+                                    styles.resortButton,
+                                    isTracking && styles.topBarButtonTracking
+                                ]}
+                                onPress={() => !isTracking && setSearchModalVisible(true)}
+                                activeOpacity={isTracking ? 1 : 0.7}
+                                disabled={isTracking}
+                            >
+                                <MapPin size={13} color={colors.primary} />
+                                <Text style={styles.topBarButtonText} numberOfLines={1}>
+                                    {resort?.ID ? resort.Name : t('select_resort_to_ski', 'Seleccionar')}
+                                </Text>
+                                {!isTracking && <ChevronDown size={12} color={colors.textSecondary} style={{ marginLeft: 2 }} />}
+                            </TouchableOpacity>
+                        ) : (
+                            <View style={styles.freeModeBadge}>
+                                <Compass size={13} color={colors.success || '#10b981'} />
+                                <Text style={[styles.freeModeText, { color: colors.success || '#10b981' }]} numberOfLines={1}>
+                                    {t('free_mode', 'Libre')}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+
+                    <View style={styles.topBarRight}>
+                        {/* Map Layers Selector Button */}
+                        <TouchableOpacity
+                            style={styles.layerButton}
+                            onPress={() => setShowMapStyleModal(true)}
+                            activeOpacity={0.7}
+                        >
+                            <Layers size={18} color={colors.textPrimary} />
+                        </TouchableOpacity>
+
+                        {/* 2D / 3D Mode Toggle Button */}
+                        <TouchableOpacity
+                            style={[
+                                styles.layerButton,
+                                is3DMode && { backgroundColor: colors.primary, borderColor: colors.primary }
+                            ]}
+                            onPress={toggle3DMode}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={[styles.dimToggleText, is3DMode && { color: '#FFFFFF' }]}>
+                                {is3DMode ? '3D' : '2D'}
                             </Text>
-                        </View>
-                    )}
+                        </TouchableOpacity>
+                    </View>
                 </View>
             )}
 
@@ -458,6 +554,18 @@ export default function InteractiveSkiMapNative() {
                 onClose={() => setActivityModalVisible(false)}
                 selectedActivity={activityType}
                 onSelect={handleSelectActivity}
+            />
+
+            <MapStyleSelectorModal
+                visible={showMapStyleModal}
+                onClose={() => setShowMapStyleModal(false)}
+                selectedStyle={mapStyleId}
+                onSelect={async (newStyle) => {
+                    setMapStyleId(newStyle);
+                    try {
+                        await AsyncStorage.setItem(MAP_STYLE_STORAGE_KEY, newStyle);
+                    } catch {}
+                }}
             />
 
             <ResortSearchModal
@@ -511,7 +619,7 @@ export default function InteractiveSkiMapNative() {
             {/* Native Map */}
             <NativeMap
                 style={{ flex: 1 }}
-                mapStyle={MAP_STYLE_URL}
+                mapStyle={getMapStyleValue(mapStyleId) as any}
                 onRegionDidChange={handleNativeRegionDidChange}
                 attribution={false}
                 logo={false}
@@ -522,8 +630,27 @@ export default function InteractiveSkiMapNative() {
                     ref={cameraRef}
                     minZoom={10}
                     maxZoom={17}
+                    pitch={viewState.pitch}
+                    bearing={viewState.bearing}
                     initialViewState={initialViewState}
                 />
+
+                <NativeRasterSource
+                    id="terrain-hillshade-source"
+                    tiles={[
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
+                    ]}
+                    tileSize={256}
+                    maxzoom={17}
+                >
+                    <NativeLayer
+                        id="terrain-hillshade-layer"
+                        type="raster"
+                        style={{
+                            rasterOpacity: is3DMode ? 0.38 : 0.18,
+                        }}
+                    />
+                </NativeRasterSource>
 
                 {viewState.zoom >= 10 && (
                     <>
@@ -555,11 +682,11 @@ export default function InteractiveSkiMapNative() {
                         {trackPoints.length > 0 && (
                             <>
                                 <NativeGeoJSONSource id="track-source" data={trackGeoJSON}>
-                                    <NativeLayer {...trackLineStyle} />
+                                    <NativeLayer {...dynamicTrackLineStyle} />
                                 </NativeGeoJSONSource>
                                 {trackPoints.length > 1 && (
                                     <NativeGeoJSONSource id="track-direction-source" data={trackDirectionGeoJSON}>
-                                        <NativeLayer {...trackDirectionStyle} />
+                                        <NativeLayer {...dynamicTrackDirectionStyle} />
                                     </NativeGeoJSONSource>
                                 )}
                             </>
@@ -671,53 +798,90 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
         topBar: {
             position: 'absolute',
             top: SPACING.xl,
-            left: SPACING.md,
-            right: SPACING.md,
+            left: SPACING.sm,
+            right: SPACING.sm,
             zIndex: 10,
             flexDirection: 'row',
-            justifyContent: 'center',
+            justifyContent: 'space-between',
             alignItems: 'center',
-            gap: SPACING.sm,
+        },
+        topBarLeft: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            flex: 1,
+            marginRight: 6,
+            overflow: 'hidden',
+        },
+        topBarRight: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            flexShrink: 0,
         },
         topBarButton: {
             backgroundColor: colors.surface,
             flexDirection: 'row',
             alignItems: 'center',
-            paddingVertical: SPACING.sm,
-            paddingHorizontal: SPACING.md,
+            paddingVertical: SPACING.xs + 2,
+            paddingHorizontal: SPACING.sm + 2,
             borderRadius: BORDER_RADIUS.round,
             ...SHADOWS.sm,
             borderWidth: 1,
             borderColor: colors.border,
-            maxWidth: '55%',
+            flexShrink: 1,
+            height: 38,
         },
-        topBarButtonDisabled: {
-            opacity: 0.9,
+        resortButton: {
+            maxWidth: 150,
+        },
+        topBarButtonTracking: {
+            backgroundColor: colors.surface,
+            borderColor: colors.primary + '50',
         },
         topBarButtonText: {
-            marginLeft: SPACING.xs + 2,
-            fontSize: 13,
+            marginLeft: SPACING.xs,
+            fontSize: 12,
             fontWeight: '600',
             color: colors.textPrimary,
+            flexShrink: 1,
         },
         activityEmoji: {
-            fontSize: 16,
+            fontSize: 14,
         },
         freeModeBadge: {
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: colors.surface,
-            paddingVertical: SPACING.sm,
-            paddingHorizontal: SPACING.sm + 4,
+            paddingVertical: SPACING.xs + 2,
+            paddingHorizontal: SPACING.sm,
             borderRadius: BORDER_RADIUS.round,
             borderWidth: 1,
             borderColor: colors.border,
             ...SHADOWS.sm,
             gap: 4,
+            height: 38,
         },
         freeModeText: {
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: '600',
+        },
+        layerButton: {
+            backgroundColor: colors.surface,
+            padding: SPACING.xs,
+            borderRadius: BORDER_RADIUS.round,
+            ...SHADOWS.sm,
+            borderWidth: 1,
+            borderColor: colors.border,
+            justifyContent: 'center',
+            alignItems: 'center',
+            width: 38,
+            height: 38,
+        },
+        dimToggleText: {
+            fontSize: 12,
+            fontWeight: 'bold',
+            color: colors.textPrimary,
         },
         resortSelectButton: {
             backgroundColor: colors.surface,
