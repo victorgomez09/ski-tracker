@@ -117,6 +117,33 @@ func (s *UserService) Login(ctx context.Context, input LoginInput) (*AuthResult,
 	}, nil
 }
 
+func (s *UserService) RefreshToken(ctx context.Context, refreshToken string) (*AuthResult, error) {
+	userID, err := s.jwtManager.ValidateRefreshToken(refreshToken)
+	if err != nil {
+		s.logger.Error("invalid refresh token", "error", err)
+		return nil, err
+	}
+
+	user, err := s.store.User().GetByID(ctx, userID)
+	if err != nil {
+		s.logger.Error("failed to get user for refresh token", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	tokens, err := s.jwtManager.GenerateTokenPair(user.ID)
+	if err != nil {
+		s.logger.Error("failed to generate token pair on refresh", "user_id", user.ID, "error", err)
+		return nil, err
+	}
+
+	return &AuthResult{
+		User:         user,
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		ExpiresAt:    tokens.ExpiresAt,
+	}, nil
+}
+
 func (s *UserService) Update(ctx context.Context, user *models.User) error {
 	userToUpdate, err := s.store.User().GetByID(ctx, user.ID)
 	if err != nil {

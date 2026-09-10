@@ -138,6 +138,133 @@ export const startTracking = async (
   }
 };
 
+export const TRACKING_STORAGE_KEYS = {
+  IS_ACTIVE: 'TRACKING_IS_ACTIVE',
+  IS_PAUSED: 'TRACKING_IS_PAUSED',
+  START_TIME: 'TRACKING_START_TIME',
+  PAUSED_TIME: 'TRACKING_PAUSED_TIME',
+  ACCUMULATED_PAUSED_MS: 'TRACKING_ACCUMULATED_PAUSED_MS',
+  RESORT_ID: 'ACTIVE_RESORT_ID',
+  ACTIVITY_TYPE: 'ACTIVE_ACTIVITY_TYPE',
+};
+
+export interface PersistedTrackingState {
+  isActive: boolean;
+  isPaused: boolean;
+  startTime: number | null;
+  pausedTime: number | null;
+  accumulatedPausedMs: number;
+  resortId: string | null;
+  activityType: string | null;
+  isServiceRunning: boolean;
+}
+
+export const getPersistedTrackingState = async (): Promise<PersistedTrackingState> => {
+  try {
+    const isServiceRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+    const [
+      isActiveStr,
+      isPausedStr,
+      startTimeStr,
+      pausedTimeStr,
+      accumulatedPausedMsStr,
+      resortId,
+      activityType,
+    ] = await Promise.all([
+      AsyncStorage.getItem(TRACKING_STORAGE_KEYS.IS_ACTIVE),
+      AsyncStorage.getItem(TRACKING_STORAGE_KEYS.IS_PAUSED),
+      AsyncStorage.getItem(TRACKING_STORAGE_KEYS.START_TIME),
+      AsyncStorage.getItem(TRACKING_STORAGE_KEYS.PAUSED_TIME),
+      AsyncStorage.getItem(TRACKING_STORAGE_KEYS.ACCUMULATED_PAUSED_MS),
+      AsyncStorage.getItem(TRACKING_STORAGE_KEYS.RESORT_ID),
+      AsyncStorage.getItem(TRACKING_STORAGE_KEYS.ACTIVITY_TYPE),
+    ]);
+
+    const isActive = isActiveStr === 'true' || isServiceRunning;
+    const isPaused = isPausedStr === 'true';
+    const startTime = startTimeStr ? parseInt(startTimeStr, 10) : null;
+    const pausedTime = pausedTimeStr ? parseInt(pausedTimeStr, 10) : null;
+    const accumulatedPausedMs = accumulatedPausedMsStr ? parseInt(accumulatedPausedMsStr, 10) : 0;
+
+    return {
+      isActive,
+      isPaused,
+      startTime,
+      pausedTime,
+      accumulatedPausedMs,
+      resortId,
+      activityType,
+      isServiceRunning,
+    };
+  } catch (err) {
+    console.error('Error getting persisted tracking state:', err);
+    return {
+      isActive: false,
+      isPaused: false,
+      startTime: null,
+      pausedTime: null,
+      accumulatedPausedMs: 0,
+      resortId: null,
+      activityType: null,
+      isServiceRunning: false,
+    };
+  }
+};
+
+export const persistTrackingStart = async (resortId?: string, activityType?: string) => {
+  const now = Date.now().toString();
+  await Promise.all([
+    AsyncStorage.setItem(TRACKING_STORAGE_KEYS.IS_ACTIVE, 'true'),
+    AsyncStorage.setItem(TRACKING_STORAGE_KEYS.IS_PAUSED, 'false'),
+    AsyncStorage.setItem(TRACKING_STORAGE_KEYS.START_TIME, now),
+    AsyncStorage.setItem(TRACKING_STORAGE_KEYS.ACCUMULATED_PAUSED_MS, '0'),
+    AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.PAUSED_TIME),
+    resortId ? AsyncStorage.setItem(TRACKING_STORAGE_KEYS.RESORT_ID, resortId) : AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.RESORT_ID),
+    activityType ? AsyncStorage.setItem(TRACKING_STORAGE_KEYS.ACTIVITY_TYPE, activityType) : AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.ACTIVITY_TYPE),
+  ]);
+};
+
+export const persistTrackingPause = async () => {
+  const now = Date.now().toString();
+  await Promise.all([
+    AsyncStorage.setItem(TRACKING_STORAGE_KEYS.IS_PAUSED, 'true'),
+    AsyncStorage.setItem(TRACKING_STORAGE_KEYS.PAUSED_TIME, now),
+  ]);
+};
+
+export const persistTrackingResume = async () => {
+  try {
+    const pausedTimeStr = await AsyncStorage.getItem(TRACKING_STORAGE_KEYS.PAUSED_TIME);
+    const accumulatedPausedMsStr = await AsyncStorage.getItem(TRACKING_STORAGE_KEYS.ACCUMULATED_PAUSED_MS);
+
+    let accumulated = accumulatedPausedMsStr ? parseInt(accumulatedPausedMsStr, 10) : 0;
+    if (pausedTimeStr) {
+      const pausedTime = parseInt(pausedTimeStr, 10);
+      accumulated += (Date.now() - pausedTime);
+    }
+
+    await Promise.all([
+      AsyncStorage.setItem(TRACKING_STORAGE_KEYS.IS_PAUSED, 'false'),
+      AsyncStorage.setItem(TRACKING_STORAGE_KEYS.ACCUMULATED_PAUSED_MS, accumulated.toString()),
+      AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.PAUSED_TIME),
+    ]);
+  } catch (e) {
+    console.error('Error persisting tracking resume:', e);
+  }
+};
+
+export const persistTrackingClear = async () => {
+  await Promise.all([
+    AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.IS_ACTIVE),
+    AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.IS_PAUSED),
+    AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.START_TIME),
+    AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.PAUSED_TIME),
+    AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.ACCUMULATED_PAUSED_MS),
+    AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.RESORT_ID),
+    AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.ACTIVITY_TYPE),
+  ]);
+};
+
 /**
  * Detiene el rastreo de ubicación en segundo plano.
  */
@@ -148,8 +275,6 @@ export const stopTracking = async (): Promise<void> => {
       await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
       console.log('Rastreo de ubicación detenido.');
     }
-    await AsyncStorage.removeItem('ACTIVE_RESORT_ID');
-    await AsyncStorage.removeItem('ACTIVE_ACTIVITY_TYPE');
   } catch (err) {
     console.error('Error al detener tracking:', err);
   }

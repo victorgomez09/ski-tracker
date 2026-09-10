@@ -121,18 +121,31 @@ export default function InteractiveSkiMapNative() {
     useEffect(() => {
         const loadPreferences = async () => {
             try {
-                const [savedActivity, savedMapStyle] = await Promise.all([
+                const [savedActivity, savedMapStyle, activeResortId, activeActivityType] = await Promise.all([
                     AsyncStorage.getItem('LAST_SELECTED_ACTIVITY'),
                     AsyncStorage.getItem(MAP_STYLE_STORAGE_KEY),
+                    AsyncStorage.getItem('ACTIVE_RESORT_ID'),
+                    AsyncStorage.getItem('ACTIVE_ACTIVITY_TYPE'),
                 ]);
-                if (savedActivity && savedActivity in ACTIVITY_CONFIGS) {
-                    setActivityType(savedActivity as ActivityType);
+                const preferredActivity = activeActivityType || savedActivity;
+                if (preferredActivity && preferredActivity in ACTIVITY_CONFIGS) {
+                    setActivityType(preferredActivity as ActivityType);
                     if (!savedMapStyle) {
-                        setMapStyleId(DEFAULT_STYLE_BY_ACTIVITY[savedActivity as ActivityType] || 'outdoor');
+                        setMapStyleId(DEFAULT_STYLE_BY_ACTIVITY[preferredActivity as ActivityType] || 'outdoor');
                     }
                 }
                 if (savedMapStyle && ['outdoor', 'topo', 'satellite', 'streets', 'dark'].includes(savedMapStyle)) {
                     setMapStyleId(savedMapStyle as MapStyleId);
+                }
+                if (activeResortId) {
+                    try {
+                        const res = await api.get<ResortDetail>(`/resorts/by-id/${activeResortId}`);
+                        if (res.status === 200 && res.data) {
+                            setResort(res.data);
+                        }
+                    } catch (e) {
+                        console.warn('Could not fetch active resort details:', e);
+                    }
                 }
             } catch {}
         };

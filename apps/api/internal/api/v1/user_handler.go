@@ -87,6 +87,24 @@ func (h *UserHandler) Login(c *gin.Context) {
 	httputil.RespondOK(c, authResult)
 }
 
+func (h *UserHandler) RefreshToken(c *gin.Context) {
+	var input struct {
+		RefreshToken string `json:"refresh_token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		httputil.RespondError(c, fmt.Errorf("invalid request body: %w", err))
+		return
+	}
+
+	authResult, err := h.svc.RefreshToken(c.Request.Context(), input.RefreshToken)
+	if err != nil {
+		httputil.RespondError(c, apierr.ErrUnauthorized.WithDetail("invalid or expired refresh token"))
+		return
+	}
+
+	httputil.RespondOK(c, authResult)
+}
+
 func (h *UserHandler) Create(c *gin.Context) {
 	var input service.RegisterInput
 	if err := c.ShouldBindJSON(&input); err != nil {

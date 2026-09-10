@@ -52,6 +52,7 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		userHandler := v1.NewUserHandler(deps.Services.User, deps.Store)
 		apiV1.POST("/auth/login", userHandler.Login)
 		apiV1.POST("/auth/register", userHandler.Create)
+		apiV1.POST("/auth/refresh", userHandler.RefreshToken)
 
 		// Expo Updates protocol (must be public: expo-updates does not send a JWT)
 		otaHandler := v1.NewOTAHandler(deps.Services.OTA, deps.APIPublicURL)

@@ -17,6 +17,11 @@ import {
 } from 'tracking/database';
 import {
     getInitialCurrentLocation,
+    getPersistedTrackingState,
+    persistTrackingClear,
+    persistTrackingPause,
+    persistTrackingResume,
+    persistTrackingStart,
     startTracking,
     stopTracking,
 } from 'tracking/task-manager';
@@ -59,9 +64,47 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
         }
     }, [db]);
 
-    // Initial check on mount
+    // Initial check on mount & session recovery
     useEffect(() => {
-        loadTrackPoints();
+        const initSession = async () => {
+            await loadTrackPoints();
+            try {
+                const persisted = await getPersistedTrackingState();
+                if (persisted.isActive) {
+                    setIsTracking(true);
+                    setIsPaused(persisted.isPaused);
+                    if (persisted.startTime) {
+                        const now = Date.now();
+                        const referenceTime = persisted.isPaused && persisted.pausedTime ? persisted.pausedTime : now;
+                        const elapsed = Math.max(0, Math.floor((referenceTime - persisted.startTime - (persisted.accumulatedPausedMs || 0)) / 1000));
+                        setElapsedSeconds(elapsed);
+                    }
+
+                    // If tracking is active, not paused, but service died in background, restart service
+                    if (!persisted.isPaused && !persisted.isServiceRunning) {
+                        const curActivity = (persisted.activityType as ActivityType) || activityTypeRef.current || 'ski';
+                        const activityConfig = ACTIVITY_CONFIGS[curActivity] || ACTIVITY_CONFIGS.ski;
+                        let trackingTime = activityConfig.gpsTimeInterval;
+                        const distanceInterval = activityConfig.gpsDistanceInterval;
+
+                        if (curActivity === 'ski' || curActivity === 'snowboard') {
+                            try {
+                                const cachedTime = await AsyncStorage.getItem('CACHED_TIME_TRACKING');
+                                if (cachedTime) {
+                                    trackingTime = parseInt(cachedTime, 10);
+                                }
+                            } catch {}
+                        }
+
+                        await startTracking(persisted.resortId || '', trackingTime, distanceInterval, curActivity);
+                    }
+                }
+            } catch (e) {
+                console.error('Error initializing tracking session:', e);
+            }
+        };
+
+        initSession();
     }, [loadTrackPoints]);
 
     // --- Live Duration Timer ---
@@ -100,6 +143,7 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
                 // STOPPING TRACKING
                 try {
                     await stopTracking();
+                    await persistTrackingClear();
                 } catch (stopErr) {
                     console.error('Error in stopTracking():', stopErr);
                     showToast(`stopTracking error: ${stopErr instanceof Error ? stopErr.message : String(stopErr)}`, 'error', 15000);
@@ -189,6 +233,7 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
                     showToast(t('tracking_start_permission_denied', 'Permiso de ubicación denegado.'), 'error');
                     return;
                 }
+                await persistTrackingStart(currentResortId, curActivity);
                 setIsTracking(true);
                 setIsPaused(false);
             }
@@ -234,6 +279,7 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
             try {
                 const started = await startTracking(currentResortId, trackingTime, distanceInterval, curActivity);
                 if (started) {
+                    await persistTrackingResume();
                     setIsPaused(false);
                 } else {
                     showToast(t('tracking_resume_failed', 'Error al reanudar seguimiento'), 'error');
@@ -243,6 +289,7 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
             }
         } else {
             await stopTracking();
+            await persistTrackingPause();
             setIsPaused(true);
         }
     }, [isTracking, isPaused, user, showToast, t]);
@@ -250,7 +297,9 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
     // --- Discard Track ---
     const discardTrack = useCallback(async () => {
         try {
+            await stopTracking();
             await clearTrack(db);
+            await persistTrackingClear();
             setTrackPoints([]);
             setHasTrackData(false);
             setShowUploadModal(false);
@@ -348,7 +397,9 @@ export const useTrackingSession = ({ db, resortId, activityType = 'ski' }: UseTr
 
             if (finishResponse.status === 200 || finishResponse.status === 201) {
                 showToast(t('track_uploaded_success', 'Sesión subida con éxito.'), 'success');
+                await stopTracking();
                 await clearTrack(db);
+                await persistTrackingClear();
                 setTrackPoints([]);
                 setHasTrackData(false);
                 setIsTracking(false);

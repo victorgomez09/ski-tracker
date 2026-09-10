@@ -12,7 +12,7 @@ const AuthContext = createContext<{
   user: UserType | null;
   isLoading: boolean;
   connectionRequiredError: boolean;
-  signIn: (token: string) => Promise<void>;
+  signIn: (token: string, refreshToken?: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateUser: (user: UserType) => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -101,11 +101,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkAuth();
   }, [retryTrigger]);
 
-  const signIn = async (newToken: string) => {
+  const signIn = async (newToken: string, newRefreshToken?: string) => {
     if (Platform.OS === 'web') {
       localStorage.setItem('jwt_key', newToken);
+      if (newRefreshToken) {
+        localStorage.setItem('jwt_refresh_key', newRefreshToken);
+      }
     } else {
       await SecureStore.setItemAsync('jwt_key', newToken);
+      if (newRefreshToken) {
+        await SecureStore.setItemAsync('jwt_refresh_key', newRefreshToken);
+      }
     }
     setToken(newToken);
     await fetchUser(newToken);
@@ -114,8 +120,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     if (Platform.OS === 'web') {
       localStorage.removeItem('jwt_key');
+      localStorage.removeItem('jwt_refresh_key');
     } else {
       await SecureStore.deleteItemAsync('jwt_key');
+      await SecureStore.deleteItemAsync('jwt_refresh_key');
     }
     await AsyncStorage.removeItem('user_profile');
     setToken(null);
