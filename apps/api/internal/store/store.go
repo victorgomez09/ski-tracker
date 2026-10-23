@@ -66,6 +66,8 @@ type SkiResortStore interface {
 	ListFavorites(ctx context.Context, userID uuid.UUID) ([]models.SkiResort, error)
 	AddFavorite(ctx context.Context, userID uuid.UUID, resortID string) error
 	RemoveFavorite(ctx context.Context, userID uuid.UUID, resortID string) error
+	GetPOIsByResortID(ctx context.Context, resortID string) ([]models.SkiResortPOI, error)
+	SavePOIs(ctx context.Context, pois []models.SkiResortPOI) error
 }
 
 type SkiPisteStore interface {

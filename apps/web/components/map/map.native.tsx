@@ -1364,20 +1364,46 @@ export default function InteractiveSkiMapNative() {
 
     // --- Active Route GeoJSON & Routing Engine ---
     const routeGeoJSON = useMemo(() => {
-        if (!activeRoute || activeRoute.fullCoordinates.length < 2) return null;
-        return {
-            type: 'FeatureCollection' as const,
-            features: [
-                {
+        if (!activeRoute) return null;
+        if (activeRoute.legs && activeRoute.legs.length > 0) {
+            const features = activeRoute.legs
+                .filter((leg) => leg.coordinates && leg.coordinates.length >= 2)
+                .map((leg, idx) => ({
                     type: 'Feature' as const,
-                    properties: {},
+                    properties: {
+                        id: `leg-${idx}`,
+                        kind: leg.kind, // 'run', 'lift', 'walk'
+                        name: leg.name,
+                        difficulty: leg.difficulty || '',
+                    },
                     geometry: {
                         type: 'LineString' as const,
-                        coordinates: activeRoute.fullCoordinates,
+                        coordinates: leg.coordinates,
                     },
-                },
-            ],
-        };
+                }));
+            if (features.length > 0) {
+                return {
+                    type: 'FeatureCollection' as const,
+                    features,
+                };
+            }
+        }
+        if (activeRoute.fullCoordinates && activeRoute.fullCoordinates.length >= 2) {
+            return {
+                type: 'FeatureCollection' as const,
+                features: [
+                    {
+                        type: 'Feature' as const,
+                        properties: { kind: 'run' },
+                        geometry: {
+                            type: 'LineString' as const,
+                            coordinates: activeRoute.fullCoordinates,
+                        },
+                    },
+                ],
+            };
+        }
+        return null;
     }, [activeRoute]);
 
     const routingEngine = useMemo(() => {
@@ -1814,17 +1840,31 @@ export default function InteractiveSkiMapNative() {
                                 lineJoin: 'round',
                                 lineColor: '#ffffff',
                                 lineWidth: 10,
-                                lineOpacity: 0.85,
+                                lineOpacity: 0.88,
                             }}
                         />
                         <NativeLayer
-                            id="active-route-line"
+                            id="active-route-run"
                             type="line"
+                            filter={['!=', ['get', 'kind'], 'lift']}
                             style={{
                                 lineCap: 'round',
                                 lineJoin: 'round',
                                 lineColor: '#2563eb',
                                 lineWidth: 6,
+                                lineOpacity: 1,
+                            }}
+                        />
+                        <NativeLayer
+                            id="active-route-lift"
+                            type="line"
+                            filter={['==', ['get', 'kind'], 'lift']}
+                            style={{
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                lineColor: '#0284c7',
+                                lineWidth: 5,
+                                lineDasharray: [2, 2],
                                 lineOpacity: 1,
                             }}
                         />

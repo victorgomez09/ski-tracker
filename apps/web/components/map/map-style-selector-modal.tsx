@@ -9,7 +9,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { Check, Globe, Layers, Map, Moon, Mountain, Navigation, X } from 'lucide-react-native';
+import { Check, Globe, Layers, Map, MapPin, Moon, Mountain, Navigation, X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { BORDER_RADIUS, SHADOWS, SPACING, useThemeColors } from 'constants/theme';
 import { MAP_STYLES, MapStyleId, MapStyleOption } from 'constants/map-styles';
@@ -21,6 +21,8 @@ interface MapStyleSelectorModalProps {
     onSelect: (styleId: MapStyleId) => void;
     is3DMode?: boolean;
     onToggle3D?: (enabled: boolean) => void;
+    isPoiEnabled?: boolean;
+    onTogglePoi?: (enabled: boolean) => void;
 }
 
 export const MapStyleSelectorModal: React.FC<MapStyleSelectorModalProps> = ({
@@ -30,6 +32,8 @@ export const MapStyleSelectorModal: React.FC<MapStyleSelectorModalProps> = ({
     onSelect,
     is3DMode = false,
     onToggle3D,
+    isPoiEnabled = true,
+    onTogglePoi,
 }) => {
     const colors = useThemeColors();
     const { t } = useTranslation();
@@ -108,6 +112,29 @@ export const MapStyleSelectorModal: React.FC<MapStyleSelectorModalProps> = ({
                                 <Switch
                                     value={is3DMode}
                                     onValueChange={onToggle3D}
+                                    trackColor={{ false: colors.border, true: colors.primary }}
+                                    thumbColor="#FFFFFF"
+                                />
+                            </View>
+                        )}
+
+                        {/* POI Layer Toggle Card */}
+                        {onTogglePoi && (
+                            <View style={styles.elevation3DCard}>
+                                <View style={styles.elevation3DIcon}>
+                                    <MapPin size={22} color={isPoiEnabled ? colors.primary : colors.textSecondary} />
+                                </View>
+                                <View style={styles.elevation3DInfo}>
+                                    <Text style={styles.elevation3DTitle}>
+                                        {t('pois_layer', 'Puntos de interés (POIs)')}
+                                    </Text>
+                                    <Text style={styles.elevation3DDesc}>
+                                        {t('pois_layer_desc', 'Restaurantes, cafeterías, aseos, taquillas y servicios')}
+                                    </Text>
+                                </View>
+                                <Switch
+                                    value={isPoiEnabled}
+                                    onValueChange={onTogglePoi}
                                     trackColor={{ false: colors.border, true: colors.primary }}
                                     thumbColor="#FFFFFF"
                                 />

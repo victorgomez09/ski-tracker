@@ -77,29 +77,68 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
     const stats = useMemo(() => {
         const pistes = resort?.pistes || [];
         const lifts = resort?.lifts || [];
+        const validPistes = pistes.filter(p => Boolean(p.Name && !('category' in p) && (p.PisteType === 'downhill' || !p.PisteType)));
 
         const tagsStats = resort?.Tags?.statistics;
         if (tagsStats) {
             const liftsType = tagsStats.lifts?.byType;
+            const downhillByDiff = tagsStats.runs?.byActivity?.downhill?.byDifficulty;
 
-            const difficultyCounts = {
-                novice: pistes.filter(p => p.Difficulty?.toLowerCase() === 'novice').length ?? 0,
-                easy: pistes.filter(p => p.Difficulty?.toLowerCase() === 'easy').length ?? 0,
-                intermediate: pistes.filter(p => p.Difficulty?.toLowerCase() === 'intermediate').length ?? 0,
-                advanced: pistes.filter(p => p.Difficulty?.toLowerCase() === 'advanced' || p.Difficulty?.toLowerCase() === 'expert').length ?? 0,
+            let difficultyCounts = {
+                novice: 0,
+                easy: 0,
+                intermediate: 0,
+                advanced: 0,
+                other: 0
+            };
+            let difficultyLengths = {
+                novice: 0,
+                easy: 0,
+                intermediate: 0,
+                advanced: 0,
                 other: 0
             };
 
-            const difficultyLengths = {
-                novice: pistes.filter(p => p.Difficulty?.toLowerCase() === 'novice').reduce((sum, p) => sum + getPisteDistance(p), 0),
-                easy: pistes.filter(p => p.Difficulty?.toLowerCase() === 'easy').reduce((sum, p) => sum + getPisteDistance(p), 0),
-                intermediate: pistes.filter(p => p.Difficulty?.toLowerCase() === 'intermediate').reduce((sum, p) => sum + getPisteDistance(p), 0),
-                advanced: pistes.filter(p => p.Difficulty?.toLowerCase() === 'advanced' || p.Difficulty?.toLowerCase() === 'expert').reduce((sum, p) => sum + getPisteDistance(p), 0),
-                other: 0
-            };
+            if (downhillByDiff) {
+                const noviceLen = Math.round((downhillByDiff.novice?.lengthInKm || 0) * 1000);
+                const easyLen = Math.round((downhillByDiff.easy?.lengthInKm || 0) * 1000);
+                const intermediateLen = Math.round((downhillByDiff.intermediate?.lengthInKm || 0) * 1000);
+                const advancedLen = Math.round(((downhillByDiff.advanced?.lengthInKm || 0) + (downhillByDiff.expert?.lengthInKm || 0)) * 1000);
+                const otherLen = Math.round((downhillByDiff.other?.lengthInKm || 0) * 1000);
 
-            const totalPisteLength = difficultyLengths.novice + difficultyLengths.easy + difficultyLengths.intermediate + difficultyLengths.advanced;
-            const totalPistes = difficultyCounts.novice + difficultyCounts.easy + difficultyCounts.intermediate + difficultyCounts.advanced;
+                difficultyCounts = {
+                    novice: downhillByDiff.novice?.count ?? 0,
+                    easy: downhillByDiff.easy?.count ?? 0,
+                    intermediate: downhillByDiff.intermediate?.count ?? 0,
+                    advanced: (downhillByDiff.advanced?.count ?? 0) + (downhillByDiff.expert?.count ?? 0),
+                    other: downhillByDiff.other?.count ?? 0
+                };
+                difficultyLengths = {
+                    novice: noviceLen,
+                    easy: easyLen,
+                    intermediate: intermediateLen,
+                    advanced: advancedLen,
+                    other: otherLen
+                };
+            } else {
+                difficultyCounts = {
+                    novice: validPistes.filter(p => p.Difficulty?.toLowerCase() === 'novice').length ?? 0,
+                    easy: validPistes.filter(p => p.Difficulty?.toLowerCase() === 'easy').length ?? 0,
+                    intermediate: validPistes.filter(p => p.Difficulty?.toLowerCase() === 'intermediate').length ?? 0,
+                    advanced: validPistes.filter(p => p.Difficulty?.toLowerCase() === 'advanced' || p.Difficulty?.toLowerCase() === 'expert').length ?? 0,
+                    other: 0
+                };
+                difficultyLengths = {
+                    novice: validPistes.filter(p => p.Difficulty?.toLowerCase() === 'novice').reduce((sum, p) => sum + getPisteDistance(p), 0),
+                    easy: validPistes.filter(p => p.Difficulty?.toLowerCase() === 'easy').reduce((sum, p) => sum + getPisteDistance(p), 0),
+                    intermediate: validPistes.filter(p => p.Difficulty?.toLowerCase() === 'intermediate').reduce((sum, p) => sum + getPisteDistance(p), 0),
+                    advanced: validPistes.filter(p => p.Difficulty?.toLowerCase() === 'advanced' || p.Difficulty?.toLowerCase() === 'expert').reduce((sum, p) => sum + getPisteDistance(p), 0),
+                    other: 0
+                };
+            }
+
+            const totalPisteLength = difficultyLengths.novice + difficultyLengths.easy + difficultyLengths.intermediate + difficultyLengths.advanced + difficultyLengths.other;
+            const totalPistes = difficultyCounts.novice + difficultyCounts.easy + difficultyCounts.intermediate + difficultyCounts.advanced + difficultyCounts.other;
 
             const minElev = tagsStats.minElevation ?? tagsStats.runs?.minElevation ?? tagsStats.lifts?.minElevation ?? null;
             const maxElev = tagsStats.maxElevation ?? tagsStats.runs?.maxElevation ?? tagsStats.lifts?.maxElevation ?? null;
@@ -133,7 +172,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
         const difficultyCounts = { novice: 0, easy: 0, intermediate: 0, advanced: 0, other: 0 };
         const difficultyLengths = { novice: 0, easy: 0, intermediate: 0, advanced: 0, other: 0 };
 
-        pistes.forEach(p => {
+        validPistes.forEach(p => {
             const len = getPisteDistance(p);
             totalPisteLength += len;
             const diff = p.Difficulty?.toLowerCase() || '';
@@ -157,7 +196,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
 
         let minElev = Infinity;
         let maxElev = -Infinity;
-        pistes.forEach(p => {
+        validPistes.forEach(p => {
             const coords = p.GeometryGeoJSON?.coordinates || [];
             coords.forEach(coord => {
                 if (coord[2] !== undefined && coord[2] > 0) {
@@ -182,7 +221,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
         });
 
         return {
-            totalPistes: pistes.length,
+            totalPistes: validPistes.length,
             totalPisteLength: Math.round(totalPisteLength),
             difficultyCounts,
             difficultyLengths,

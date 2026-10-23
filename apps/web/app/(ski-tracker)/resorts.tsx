@@ -218,6 +218,7 @@ export default function ResortsView() {
 
     const stats = selectedResort.Tags?.statistics;
     const liftsType = stats?.lifts?.byType;
+    const downhillByDiff = stats?.runs?.byActivity?.downhill?.byDifficulty;
     const pistes = selectedResort.pistes || [];
 
     return {
@@ -226,15 +227,20 @@ export default function ResortsView() {
       distance: selectedResort.distance_km ?? 0,
       country: selectedResort.Country || t('unknown'),
       website: selectedResort.Website || null,
-      pistesBreakdown: {
-        novice: pistes.filter((p) => p.Difficulty?.toLowerCase() === 'novice').length ?? 0,
-        easy: pistes.filter((p) => p.Difficulty?.toLowerCase() === 'easy').length ?? 0,
+      pistesBreakdown: downhillByDiff ? {
+        novice: downhillByDiff.novice?.count ?? 0,
+        easy: downhillByDiff.easy?.count ?? 0,
+        intermediate: downhillByDiff.intermediate?.count ?? 0,
+        advanced: (downhillByDiff.advanced?.count ?? 0) + ((downhillByDiff as any).expert?.count ?? 0),
+      } : {
+        novice: pistes.filter((p) => p.Name && !('category' in p) && p.Difficulty?.toLowerCase() === 'novice').length ?? 0,
+        easy: pistes.filter((p) => p.Name && !('category' in p) && p.Difficulty?.toLowerCase() === 'easy').length ?? 0,
         intermediate:
-          pistes.filter((p) => p.Difficulty?.toLowerCase() === 'intermediate').length ?? 0,
+          pistes.filter((p) => p.Name && !('category' in p) && p.Difficulty?.toLowerCase() === 'intermediate').length ?? 0,
         advanced:
           pistes.filter(
             (p) =>
-              p.Difficulty?.toLowerCase() === 'advanced' || p.Difficulty?.toLowerCase() === 'expert'
+              p.Name && !('category' in p) && (p.Difficulty?.toLowerCase() === 'advanced' || p.Difficulty?.toLowerCase() === 'expert')
           ).length ?? 0,
       },
       liftsBreakdown: {

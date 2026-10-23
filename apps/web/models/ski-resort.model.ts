@@ -35,6 +35,16 @@ export interface Area {
     Type: 'beginner_area' | 'off_piste' | 'building';
 }
 
+export interface ResortPOI {
+    id: string;
+    resort_id: string;
+    name: string;
+    category: 'toilets' | 'restaurant' | 'cafe' | 'first_aid' | 'ticket' | 'rental' | 'ski_school' | 'parking' | 'viewpoint' | 'hotel' | 'info' | 'dressing_room' | string;
+    latitude: number;
+    longitude: number;
+    tags?: Record<string, any>;
+}
+
 export interface Resort {
         ID: string;
         Name: string;
@@ -153,7 +163,8 @@ export interface Resort {
                                     minElevation: number;
                                     snowfarmingLengthInKm: number,
                                     snowmakingLengthInKm: number
-                                }
+                                };
+                                [key: string]: any;
                             }
                         }
                     },
@@ -176,6 +187,7 @@ export interface Resort {
         CreatedAt: string;
         pistes: Piste[] | null;
         lifts: Lift[] | null;
+        pois?: ResortPOI[] | null;
         distance_km: number | null;
         total_pistes: number | null;
         total_lifts: number | null;
@@ -191,6 +203,7 @@ export interface ResortDetail {
     Tags?: any;
     pistes: Piste[];
     lifts?: Lift[];
+    pois?: ResortPOI[];
     areas?: Area[];
     statistics: {
         maxElevation: number;

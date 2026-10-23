@@ -3,10 +3,16 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"math"
+	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/victorgomez09/ski-tracker/internal/apierr"
@@ -16,11 +22,12 @@ import (
 
 type ResortDetailDTO struct {
 	models.SkiResort
-	DistanceKM  float64           `json:"distance_km"`
-	TotalPistes int               `json:"total_pistes"`
-	TotalLifts  int               `json:"total_lifts"`
-	Pistes      []models.SkiPiste `json:"pistes"`
-	Lifts       []models.SkiLift  `json:"lifts"`
+	DistanceKM  float64               `json:"distance_km"`
+	TotalPistes int                   `json:"total_pistes"`
+	TotalLifts  int                   `json:"total_lifts"`
+	Pistes      []models.SkiPiste     `json:"pistes"`
+	Lifts       []models.SkiLift      `json:"lifts"`
+	POIs        []models.SkiResortPOI `json:"pois"`
 }
 
 type SkiResortService struct {
@@ -50,36 +57,9 @@ func (s *SkiResortService) GetByID(ctx context.Context, id string) (ResortDetail
 		return ResortDetailDTO{}, err
 	}
 
-	// calculate total distance of pistes for the resort, including nameless trails
+	// calculate total distance of valid pistes for the resort
 	pistes = mergeContiguousPistes(pistes)
-	totalKmOfPistes := 0.0
-	for _, piste := range pistes {
-		coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{})
-		if !ok || len(coords) < 2 {
-			continue
-		}
-
-		// Calculate the total distance of the piste by summing the distances between consecutive points
-		for j := 0; j < len(coords)-1; j++ {
-			pointA, okA := coords[j].([]interface{})
-			pointB, okB := coords[j+1].([]interface{})
-			if !okA || !okB || len(pointA) < 2 || len(pointB) < 2 {
-				continue
-			}
-
-			latA, okLatA := pointA[1].(float64)
-			lonA, okLonA := pointA[0].(float64)
-			latB, okLatB := pointB[1].(float64)
-			lonB, okLonB := pointB[0].(float64)
-
-			if !okLatA || !okLonA || !okLatB || !okLonB {
-				continue
-			}
-
-			totalKmOfPistes += calculateDistance(latA, lonA, latB, lonB)
-		}
-	}
-	result.DistanceKM = totalKmOfPistes
+	result.DistanceKM = calculateResortDownhillDistanceKM(resort, pistes)
 
 	// Filter pistes with name for listing / display
 	filterPistes := make([]models.SkiPiste, 0, len(pistes))
@@ -98,6 +78,12 @@ func (s *SkiResortService) GetByID(ctx context.Context, id string) (ResortDetail
 	result.TotalLifts = len(lifts)
 	result.Pistes = pistes
 	result.Lifts = lifts
+
+	pois, err := s.GetPOIsByResortID(ctx, resort.ID)
+	if err != nil {
+		s.logger.Warn("failed to get POIs for resort", "resort_id", resort.ID, "error", err)
+	}
+	result.POIs = pois
 
 	return result, nil
 }
@@ -124,36 +110,9 @@ func (s *SkiResortService) ListByName(ctx context.Context, name string) ([]Resor
 			continue
 		}
 
-		// calculate total distance of pistes for the resort, including nameless trails
+		// calculate total distance of valid downhill pistes for the resort
 		pistes = mergeContiguousPistes(pistes)
-		totalKmOfPistes := 0.0
-		for _, piste := range pistes {
-			coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{})
-			if !ok || len(coords) < 2 {
-				continue
-			}
-
-			// Calculate the total distance of the piste by summing the distances between consecutive points
-			for j := 0; j < len(coords)-1; j++ {
-				pointA, okA := coords[j].([]interface{})
-				pointB, okB := coords[j+1].([]interface{})
-				if !okA || !okB || len(pointA) < 2 || len(pointB) < 2 {
-					continue
-				}
-
-				latA, okLatA := pointA[1].(float64)
-				lonA, okLonA := pointA[0].(float64)
-				latB, okLatB := pointB[1].(float64)
-				lonB, okLonB := pointB[0].(float64)
-
-				if !okLatA || !okLonA || !okLatB || !okLonB {
-					continue
-				}
-
-				totalKmOfPistes += calculateDistance(latA, lonA, latB, lonB)
-			}
-		}
-		result[i].DistanceKM = totalKmOfPistes
+		result[i].DistanceKM = calculateResortDownhillDistanceKM(resort, pistes)
 
 		// Filter pistes with name for listing / display
 		filterPistes := make([]models.SkiPiste, 0, len(pistes))
@@ -172,6 +131,12 @@ func (s *SkiResortService) ListByName(ctx context.Context, name string) ([]Resor
 		result[i].TotalLifts = len(lifts)
 		result[i].Pistes = pistes
 		result[i].Lifts = lifts
+
+		pois, err := s.GetPOIsByResortID(ctx, resort.ID)
+		if err != nil {
+			s.logger.Warn("failed to get POIs for resort", "resort_id", resort.ID, "error", err)
+		}
+		result[i].POIs = pois
 	}
 
 	return result, nil
@@ -199,33 +164,7 @@ func (s *SkiResortService) ListFavorites(ctx context.Context, userID uuid.UUID) 
 		}
 
 		pistes = mergeContiguousPistes(pistes)
-		totalKmOfPistes := 0.0
-		for _, piste := range pistes {
-			coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{})
-			if !ok || len(coords) < 2 {
-				continue
-			}
-
-			for j := 0; j < len(coords)-1; j++ {
-				pointA, okA := coords[j].([]interface{})
-				pointB, okB := coords[j+1].([]interface{})
-				if !okA || !okB || len(pointA) < 2 || len(pointB) < 2 {
-					continue
-				}
-
-				latA, okLatA := pointA[1].(float64)
-				lonA, okLonA := pointA[0].(float64)
-				latB, okLatB := pointB[1].(float64)
-				lonB, okLonB := pointB[0].(float64)
-
-				if !okLatA || !okLonA || !okLatB || !okLonB {
-					continue
-				}
-
-				totalKmOfPistes += calculateDistance(latA, lonA, latB, lonB)
-			}
-		}
-		result[i].DistanceKM = totalKmOfPistes
+		result[i].DistanceKM = calculateResortDownhillDistanceKM(resort, pistes)
 
 		filterPistes := make([]models.SkiPiste, 0, len(pistes))
 		for _, piste := range pistes {
@@ -243,6 +182,12 @@ func (s *SkiResortService) ListFavorites(ctx context.Context, userID uuid.UUID) 
 		result[i].TotalLifts = len(lifts)
 		result[i].Pistes = pistes
 		result[i].Lifts = lifts
+
+		pois, err := s.GetPOIsByResortID(ctx, resort.ID)
+		if err != nil {
+			s.logger.Warn("failed to get POIs for favorite resort", "resort_id", resort.ID, "error", err)
+		}
+		result[i].POIs = pois
 	}
 
 	return result, nil
@@ -295,11 +240,17 @@ func (s *SkiResortService) List(ctx context.Context, latStr, lngStr, radStr stri
 
 		dist := calculateDistance(userLat, userLng, resort.Latitude, resort.Longitude)
 
+		pois, err := s.GetPOIsByResortID(ctx, resort.ID)
+		if err != nil {
+			pois = []models.SkiResortPOI{}
+		}
+
 		detailedResorts = append(detailedResorts, ResortDetailDTO{
 			SkiResort:  resort,
 			DistanceKM: dist,
 			Pistes:     pistes,
 			Lifts:      lifts,
+			POIs:       pois,
 		})
 	}
 
@@ -365,11 +316,17 @@ func (s *SkiResortService) GetByCloseness(ctx context.Context, latStr, lngStr st
 
 	dist := calculateDistance(userLat, userLng, resort.Latitude, resort.Longitude)
 
+	pois, err := s.GetPOIsByResortID(ctx, resort.ID)
+	if err != nil {
+		pois = []models.SkiResortPOI{}
+	}
+
 	detailedResort := &ResortDetailDTO{
 		SkiResort:  *resort,
 		DistanceKM: dist,
 		Pistes:     pistes,
 		Lifts:      lifts,
+		POIs:       pois,
 	}
 
 	return detailedResort, nil
@@ -661,4 +618,319 @@ func calculateDistance(lat1, lon1, lat2, lon2 float64) float64 {
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 
 	return earthRadiusKm * c
+}
+
+func (s *SkiResortService) GetPOIsByResortID(ctx context.Context, resortID string) ([]models.SkiResortPOI, error) {
+	pois, err := s.store.SkiResort().GetPOIsByResortID(ctx, resortID)
+	if err == nil && len(pois) > 0 {
+		return pois, nil
+	}
+
+	resort, err := s.store.SkiResort().GetByID(ctx, resortID)
+	if err != nil {
+		return nil, err
+	}
+
+	fetched, err := s.fetchPOIsFromOSM(ctx, resortID, resort.Latitude, resort.Longitude)
+	if err != nil {
+		s.logger.Warn("failed to fetch POIs from OSM", "resort_id", resortID, "error", err)
+		return pois, nil
+	}
+
+	if len(fetched) > 0 {
+		if err := s.store.SkiResort().SavePOIs(ctx, fetched); err != nil {
+			s.logger.Warn("failed to save POIs to database", "resort_id", resortID, "error", err)
+		}
+		return fetched, nil
+	}
+
+	return pois, nil
+}
+
+func (s *SkiResortService) RefreshPOIs(ctx context.Context, resortID string) ([]models.SkiResortPOI, error) {
+	resort, err := s.store.SkiResort().GetByID(ctx, resortID)
+	if err != nil {
+		return nil, err
+	}
+
+	fetched, err := s.fetchPOIsFromOSM(ctx, resortID, resort.Latitude, resort.Longitude)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch POIs from OSM: %w", err)
+	}
+
+	if len(fetched) > 0 {
+		if err := s.store.SkiResort().SavePOIs(ctx, fetched); err != nil {
+			return nil, fmt.Errorf("failed to save refreshed POIs: %w", err)
+		}
+	}
+
+	return fetched, nil
+}
+
+type osmXMLDoc struct {
+	XMLName xml.Name     `xml:"osm"`
+	Nodes   []osmXMLNode `xml:"node"`
+	Ways    []osmXMLWay  `xml:"way"`
+}
+
+type osmXMLNode struct {
+	ID   int64        `xml:"id,attr"`
+	Lat  float64      `xml:"lat,attr"`
+	Lon  float64      `xml:"lon,attr"`
+	Tags []osmXMLTag  `xml:"tag"`
+}
+
+type osmXMLWay struct {
+	ID    int64        `xml:"id,attr"`
+	Nodes []osmXMLNd   `xml:"nd"`
+	Tags  []osmXMLTag  `xml:"tag"`
+}
+
+type osmXMLNd struct {
+	Ref int64 `xml:"ref,attr"`
+}
+
+type osmXMLTag struct {
+	K string `xml:"k,attr"`
+	V string `xml:"v,attr"`
+}
+
+func (s *SkiResortService) fetchPOIsFromOSM(ctx context.Context, resortID string, lat, lon float64) ([]models.SkiResortPOI, error) {
+	// 3.5 km bounding box around resort center
+	deltaLat := 3.5 / 111.0
+	cosLat := math.Cos(lat * math.Pi / 180.0)
+	if cosLat < 0.1 {
+		cosLat = 0.1
+	}
+	deltaLon := 3.5 / (111.0 * cosLat)
+
+	minLat := lat - deltaLat
+	maxLat := lat + deltaLat
+	minLon := lon - deltaLon
+	maxLon := lon + deltaLon
+
+	url := fmt.Sprintf("https://api.openstreetmap.org/api/0.6/map?bbox=%.6f,%.6f,%.6f,%.6f", minLon, minLat, maxLon, maxLat)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "SkiTrackerApp/1.0 (contact@skitracker.com)")
+
+	client := &http.Client{Timeout: 12 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OSM API returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var osmDoc osmXMLDoc
+	if err := xml.Unmarshal(body, &osmDoc); err != nil {
+		return nil, fmt.Errorf("failed to parse OSM XML: %w", err)
+	}
+
+	nodeMap := make(map[int64][2]float64, len(osmDoc.Nodes))
+	for _, n := range osmDoc.Nodes {
+		nodeMap[n.ID] = [2]float64{n.Lat, n.Lon}
+	}
+
+	var pois []models.SkiResortPOI
+
+	for _, n := range osmDoc.Nodes {
+		tags := make(map[string]string, len(n.Tags))
+		tagsInterface := make(map[string]interface{}, len(n.Tags))
+		for _, t := range n.Tags {
+			tags[t.K] = t.V
+			tagsInterface[t.K] = t.V
+		}
+
+		cat, name := classifyPOICategory(tags)
+		if cat == "" {
+			continue
+		}
+
+		pois = append(pois, models.SkiResortPOI{
+			ID:        fmt.Sprintf("osm-node-%d", n.ID),
+			ResortID:  resortID,
+			Name:      name,
+			Category:  cat,
+			Latitude:  n.Lat,
+			Longitude: n.Lon,
+			Tags:      tagsInterface,
+			CreatedAt: time.Now(),
+		})
+	}
+
+	for _, w := range osmDoc.Ways {
+		tags := make(map[string]string, len(w.Tags))
+		tagsInterface := make(map[string]interface{}, len(w.Tags))
+		for _, t := range w.Tags {
+			tags[t.K] = t.V
+			tagsInterface[t.K] = t.V
+		}
+
+		cat, name := classifyPOICategory(tags)
+		if cat == "" {
+			continue
+		}
+
+		var sumLat, sumLon float64
+		var count int
+		for _, nd := range w.Nodes {
+			if pt, ok := nodeMap[nd.Ref]; ok {
+				sumLat += pt[0]
+				sumLon += pt[1]
+				count++
+			}
+		}
+
+		if count == 0 {
+			continue
+		}
+
+		pois = append(pois, models.SkiResortPOI{
+			ID:        fmt.Sprintf("osm-way-%d", w.ID),
+			ResortID:  resortID,
+			Name:      name,
+			Category:  cat,
+			Latitude:  sumLat / float64(count),
+			Longitude: sumLon / float64(count),
+			Tags:      tagsInterface,
+			CreatedAt: time.Now(),
+		})
+	}
+
+	return pois, nil
+}
+
+func classifyPOICategory(tags map[string]string) (string, string) {
+	amenity := tags["amenity"]
+	tourism := tags["tourism"]
+	shop := tags["shop"]
+	emergency := tags["emergency"]
+	ski := tags["ski"]
+	aerialway := tags["aerialway"]
+	name := tags["name"]
+
+	var category string
+	var defaultName string
+
+	switch {
+	case amenity == "toilets":
+		category = "toilets"
+		defaultName = "Aseos"
+	case amenity == "restaurant" || amenity == "fast_food":
+		category = "restaurant"
+		defaultName = "Restaurante"
+	case amenity == "cafe" || amenity == "bar" || amenity == "pub":
+		category = "cafe"
+		defaultName = "Cafetería / Bar"
+	case emergency == "first_aid" || emergency == "defibrillator" || amenity == "first_aid":
+		category = "first_aid"
+		defaultName = "Primeros Auxilios"
+	case ski == "rental" || shop == "rental" || shop == "ski" || shop == "sports":
+		category = "rental"
+		defaultName = "Alquiler de Esquí"
+	case ski == "school" || amenity == "ski_school":
+		category = "ski_school"
+		defaultName = "Escuela de Esquí"
+	case tourism == "viewpoint":
+		category = "viewpoint"
+		defaultName = "Mirador"
+	case tourism == "information" || aerialway == "ticket":
+		category = "info"
+		defaultName = "Información / Taquillas"
+	case amenity == "parking":
+		category = "parking"
+		defaultName = "Aparcamiento"
+	case tourism == "alpine_hut" || tourism == "hotel" || tourism == "hostel" || amenity == "shelter":
+		category = "hotel"
+		defaultName = "Refugio / Alojamiento"
+	case amenity == "dressing_room":
+		category = "dressing_room"
+		defaultName = "Vestuarios"
+	default:
+		if amenity != "" {
+			category = amenity
+			defaultName = strings.Title(amenity)
+		} else if tourism != "" {
+			category = tourism
+			defaultName = strings.Title(tourism)
+		} else {
+			return "", ""
+		}
+	}
+
+	if name == "" {
+		name = defaultName
+	}
+
+	return category, name
+}
+
+func calculateResortDownhillDistanceKM(resort models.SkiResort, pistes []models.SkiPiste) float64 {
+	// 1. Try reading official downhill statistics from resort tags (precomputed by OpenSkiMap)
+	if resort.Tags != nil {
+		if stats, ok := resort.Tags["statistics"].(map[string]interface{}); ok {
+			if runs, ok := stats["runs"].(map[string]interface{}); ok {
+				if byActivity, ok := runs["byActivity"].(map[string]interface{}); ok {
+					if downhill, ok := byActivity["downhill"].(map[string]interface{}); ok {
+						if byDiff, ok := downhill["byDifficulty"].(map[string]interface{}); ok {
+							var totalKm float64
+							for _, diffData := range byDiff {
+								if diffMap, ok := diffData.(map[string]interface{}); ok {
+									if length, ok := diffMap["lengthInKm"].(float64); ok {
+										totalKm += length
+									}
+								}
+							}
+							if totalKm > 0 {
+								return math.Round(totalKm*10) / 10
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Fallback: calculate distance of named downhill pistes from geometry (excluding unnamed connectors)
+	var totalKm float64
+	for _, piste := range pistes {
+		if piste.Name == "" {
+			continue
+		}
+		if piste.PisteType != "" && piste.PisteType != "downhill" && piste.PisteType != "alpine" {
+			continue
+		}
+		coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{})
+		if !ok || len(coords) < 2 {
+			continue
+		}
+		for j := 0; j < len(coords)-1; j++ {
+			pointA, okA := coords[j].([]interface{})
+			pointB, okB := coords[j+1].([]interface{})
+			if !okA || !okB || len(pointA) < 2 || len(pointB) < 2 {
+				continue
+			}
+			latA, okLatA := pointA[1].(float64)
+			lonA, okLonA := pointA[0].(float64)
+			latB, okLatB := pointB[1].(float64)
+			lonB, okLonB := pointB[0].(float64)
+			if !okLatA || !okLonA || !okLatB || !okLonB {
+				continue
+			}
+			totalKm += calculateDistance(latA, lonA, latB, lonB)
+		}
+	}
+	return math.Round(totalKm*10) / 10
 }

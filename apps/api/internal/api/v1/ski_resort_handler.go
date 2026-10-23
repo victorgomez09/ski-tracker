@@ -162,3 +162,36 @@ func (h *SkiResortHandler) RemoveFavorite(c *gin.Context) {
 	httputil.RespondOK(c, gin.H{"status": "ok"})
 }
 
+func (h *SkiResortHandler) GetPOIs(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		httputil.RespondError(c, fmt.Errorf("missing required path parameter: id"))
+		return
+	}
+
+	pois, err := h.svc.GetPOIsByResortID(c.Request.Context(), id)
+	if err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+
+	httputil.RespondOK(c, pois)
+}
+
+func (h *SkiResortHandler) RefreshPOIs(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		httputil.RespondError(c, fmt.Errorf("missing required path parameter: id"))
+		return
+	}
+
+	pois, err := h.svc.RefreshPOIs(c.Request.Context(), id)
+	if err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+
+	httputil.RespondOK(c, pois)
+}
+
+

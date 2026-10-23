@@ -101,6 +101,8 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.GET("/resorts/nearby", skiResortHandler.ListNearby)
 			protected.GET("/resorts/by-name", skiResortHandler.ListByName)
 			protected.GET("/resorts/by-id/:id", skiResortHandler.GetByID)
+			protected.GET("/resorts/by-id/:id/pois", skiResortHandler.GetPOIs)
+			protected.POST("/resorts/by-id/:id/pois/refresh", skiResortHandler.RefreshPOIs)
 			protected.GET("/resorts/closeness", skiResortHandler.GetByCloseness)
 
 			// Session routes (supports both /sessions and legacy /ski-sessions)

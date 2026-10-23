@@ -18,6 +18,7 @@ type SkiResort struct {
 	Tags      map[string]interface{} `bun:"tags,type:jsonb"`
 	CreatedAt time.Time              `bun:"created_at,default:current_timestamp"`
 
-	Pistes []*SkiPiste `bun:"rel:has-many,join:id=resort_id"`
-	Lifts  []*SkiLift  `bun:"rel:has-many,join:id=resort_id"`
+	Pistes []*SkiPiste    `bun:"rel:has-many,join:id=resort_id"`
+	Lifts  []*SkiLift     `bun:"rel:has-many,join:id=resort_id"`
+	POIs   []*SkiResortPOI `bun:"rel:has-many,join:id=resort_id"`
 }

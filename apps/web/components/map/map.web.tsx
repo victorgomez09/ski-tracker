@@ -4,15 +4,29 @@ import maplibregl from 'maplibre-gl';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Source, useControl, ViewStateChangeEvent } from 'react-map-gl/maplibre';
-import { CircleQuestionMark, Crosshair, Layers } from 'lucide-react-native';
+import Map, { Layer, LayerProps, MapRef, Marker, NavigationControl, Popup, Source, useControl, ViewStateChangeEvent } from 'react-map-gl/maplibre';
+import {
+    Camera,
+    CircleParking,
+    CircleQuestionMark,
+    Coffee,
+    Crosshair,
+    HeartPulse,
+    Hotel,
+    Info,
+    Layers,
+    MapPin,
+    ShoppingBag,
+    Toilet,
+    Utensils,
+} from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { API_BASE_URL } from 'constants/constants';
 import { getMapStyleValue, MAP_STYLE_STORAGE_KEY, MapStyleId } from 'constants/map-styles';
 import { useAuth } from 'context/auth.context';
-import { Lift, Piste, Resort, ResortDetail } from 'models/ski-resort.model';
+import { Lift, Piste, Resort, ResortDetail, ResortPOI } from 'models/ski-resort.model';
 import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 import { formatDuration, formatPace, formatPaceFromMinPerKm } from 'components/tracking/hooks/use-live-stats';
 import { useThemeColors, COLORS, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
@@ -176,6 +190,71 @@ const getOrientedPisteGeometry = (
         };
     }
     return geometry;
+};
+
+const POI_CATEGORY_CONFIG: Record<
+    string,
+    {
+        label: string;
+        bgColor: string;
+        icon: React.ComponentType<{ size?: number; color?: string; className?: string }>;
+    }
+> = {
+    toilets: {
+        label: 'Aseos',
+        bgColor: '#0284c7',
+        icon: Toilet,
+    },
+    restaurant: {
+        label: 'Restaurante',
+        bgColor: '#ea580c',
+        icon: Utensils,
+    },
+    cafe: {
+        label: 'Cafetería / Bar',
+        bgColor: '#d97706',
+        icon: Coffee,
+    },
+    first_aid: {
+        label: 'Primeros Auxilios',
+        bgColor: '#dc2626',
+        icon: HeartPulse,
+    },
+    rental: {
+        label: 'Alquiler de Esquí',
+        bgColor: '#7c3aed',
+        icon: ShoppingBag,
+    },
+    viewpoint: {
+        label: 'Mirador',
+        bgColor: '#4f46e5',
+        icon: Camera,
+    },
+    parking: {
+        label: 'Aparcamiento',
+        bgColor: '#475569',
+        icon: CircleParking,
+    },
+    info: {
+        label: 'Información / Taquillas',
+        bgColor: '#0891b2',
+        icon: Info,
+    },
+    hotel: {
+        label: 'Refugio / Hotel',
+        bgColor: '#b45309',
+        icon: Hotel,
+    },
+    dressing_room: {
+        label: 'Vestuarios',
+        bgColor: '#0d9488',
+        icon: Info,
+    },
+    other: {
+        label: 'Punto de Interés',
+        bgColor: '#64748b',
+        icon: MapPin,
+    },
 };
 
 interface GenericChartDatum {
@@ -528,6 +607,8 @@ export default function InteractiveSkiMap() {
     });
 
     const [showMapStyleModal, setShowMapStyleModal] = useState(false);
+    const [selectedPoi, setSelectedPoi] = useState<ResortPOI | null>(null);
+    const [isPoiEnabled, setIsPoiEnabled] = useState<boolean>(true);
 
     // Ski Routing State
     const [activeRoute, setActiveRoute] = useState<RouteResult | null>(null);
@@ -738,7 +819,7 @@ export default function InteractiveSkiMap() {
                         isFetchingRef.current = false;
                         setTimeout(() => {
                             const map = mapRef.current?.getMap();
-                            if (!map || (map as any)?.isIdle()) {
+                            if (!map || (map as any)?.isIdle) {
                                 setIsLoadingResorts(false);
                             }
                         }, 200);
@@ -927,6 +1008,49 @@ export default function InteractiveSkiMap() {
 
         loadInitial();
     }, [token, mapStyleId]);
+
+    const fetchedPoiResortIds = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (!isPoiEnabled || viewState.zoom < 11 || searchParams.sessionId) return;
+
+        resorts.forEach((resort) => {
+            if (!resort.ID || fetchedPoiResortIds.current.has(resort.ID)) return;
+            if (resort.pois && resort.pois.length > 0) {
+                fetchedPoiResortIds.current.add(resort.ID);
+                return;
+            }
+
+            fetchedPoiResortIds.current.add(resort.ID);
+            api.get<ResortPOI[]>(`${API_BASE_URL}/resorts/by-id/${resort.ID}/pois`)
+                .then((res) => {
+                    if (res.status === 200 && Array.isArray(res.data) && res.data.length > 0) {
+                        setResorts((prevResorts) =>
+                            prevResorts.map((r) =>
+                                r.ID === resort.ID ? { ...r, pois: res.data } : r
+                            )
+                        );
+                    }
+                })
+                .catch(() => {});
+        });
+    }, [isPoiEnabled, viewState.zoom, resorts, searchParams.sessionId]);
+
+    useEffect(() => {
+        if (!isPoiEnabled || !selectedResort?.ID || (selectedResort.pois && selectedResort.pois.length > 0)) return;
+        if (fetchedPoiResortIds.current.has(selectedResort.ID)) return;
+
+        fetchedPoiResortIds.current.add(selectedResort.ID);
+        api.get<ResortPOI[]>(`${API_BASE_URL}/resorts/by-id/${selectedResort.ID}/pois`)
+            .then((res) => {
+                if (res.status === 200 && Array.isArray(res.data) && res.data.length > 0) {
+                    setSelectedResort((prev) =>
+                        prev && prev.ID === selectedResort.ID ? { ...prev, pois: res.data } : prev
+                    );
+                }
+            })
+            .catch(() => {});
+    }, [isPoiEnabled, selectedResort]);
 
     // --- Layer styles ---
     const pisteCasingStyle: LayerProps = {
@@ -1181,6 +1305,23 @@ export default function InteractiveSkiMap() {
         return { type: 'FeatureCollection' as const, features: liftsFeatures };
     }, [resorts]);
 
+    const allVisiblePois: ResortPOI[] = useMemo(() => {
+        const poiMap: Record<string, ResortPOI> = {};
+        resorts?.forEach((r) => {
+            r.pois?.forEach((p) => {
+                if (p && p.id) {
+                    poiMap[p.id] = p;
+                }
+            });
+        });
+        selectedResort?.pois?.forEach((p) => {
+            if (p && p.id) {
+                poiMap[p.id] = p;
+            }
+        });
+        return Object.values(poiMap);
+    }, [resorts, selectedResort]);
+
     const trackGeoJSON = useMemo(() => {
         if (!trackPoints || trackPoints.length === 0) return { type: 'FeatureCollection' as const, features: [] };
         const coordinates = trackPoints
@@ -1253,20 +1394,46 @@ export default function InteractiveSkiMap() {
 
     // --- Active Route GeoJSON & Routing Engine ---
     const routeGeoJSON = useMemo(() => {
-        if (!activeRoute || activeRoute.fullCoordinates.length < 2) return null;
-        return {
-            type: 'FeatureCollection' as const,
-            features: [
-                {
+        if (!activeRoute) return null;
+        if (activeRoute.legs && activeRoute.legs.length > 0) {
+            const features = activeRoute.legs
+                .filter((leg) => leg.coordinates && leg.coordinates.length >= 2)
+                .map((leg, idx) => ({
                     type: 'Feature' as const,
-                    properties: {},
+                    properties: {
+                        id: `leg-${idx}`,
+                        kind: leg.kind, // 'run', 'lift', 'walk'
+                        name: leg.name,
+                        difficulty: leg.difficulty || '',
+                    },
                     geometry: {
                         type: 'LineString' as const,
-                        coordinates: activeRoute.fullCoordinates,
+                        coordinates: leg.coordinates,
                     },
-                },
-            ],
-        };
+                }));
+            if (features.length > 0) {
+                return {
+                    type: 'FeatureCollection' as const,
+                    features,
+                };
+            }
+        }
+        if (activeRoute.fullCoordinates && activeRoute.fullCoordinates.length >= 2) {
+            return {
+                type: 'FeatureCollection' as const,
+                features: [
+                    {
+                        type: 'Feature' as const,
+                        properties: { kind: 'run' },
+                        geometry: {
+                            type: 'LineString' as const,
+                            coordinates: activeRoute.fullCoordinates,
+                        },
+                    },
+                ],
+            };
+        }
+        return null;
     }, [activeRoute]);
 
     const routingEngine = useMemo(() => {
@@ -1514,7 +1681,7 @@ export default function InteractiveSkiMap() {
             isFetchingRef.current = false;
             setTimeout(() => {
                 const map = mapRef.current?.getMap();
-                if (!map || (map as any)?.isIdle()) {
+                if (!map || (map as any)?.isIdle) {
                     setIsLoadingResorts(false);
                 }
             }, 200);
@@ -1699,6 +1866,8 @@ export default function InteractiveSkiMap() {
                 selectedStyle={mapStyleId}
                 is3DMode={is3DMode}
                 onToggle3D={(enabled) => toggle3DMode(enabled)}
+                isPoiEnabled={isPoiEnabled}
+                onTogglePoi={(enabled) => setIsPoiEnabled(enabled)}
                 onSelect={(newStyle) => {
                     setMapStyleId(newStyle);
                     try {
@@ -1955,6 +2124,131 @@ export default function InteractiveSkiMap() {
                     </>
                 )}
 
+                {/* Ski Resort POIs (toilets, restaurants, cafes, first aid, rental, etc.) */}
+                {!searchParams.sessionId && isPoiEnabled && viewState.zoom >= 11 && (
+                    <>
+                        {allVisiblePois.map((poi) => {
+                            const config = POI_CATEGORY_CONFIG[poi.category] || POI_CATEGORY_CONFIG.other;
+                            const IconComponent = config.icon;
+                            const isSelected = selectedPoi?.id === poi.id;
+
+                            return (
+                                <Marker
+                                    key={poi.id}
+                                    longitude={poi.longitude}
+                                    latitude={poi.latitude}
+                                    anchor="center"
+                                    onClick={(e) => {
+                                        if (e && e.originalEvent) {
+                                            e.originalEvent.stopPropagation();
+                                        }
+                                        setSelectedPoi(poi);
+                                    }}
+                                >
+                                    <div
+                                        style={{
+                                            width: isSelected ? '30px' : '26px',
+                                            height: isSelected ? '30px' : '26px',
+                                            borderRadius: '50%',
+                                            backgroundColor: config.bgColor,
+                                            border: '2px solid #ffffff',
+                                            boxShadow: isSelected
+                                                ? `0 0 0 3px ${colors.primary}, 0 4px 10px rgba(0,0,0,0.35)`
+                                                : '0 2px 6px rgba(0,0,0,0.3)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            cursor: 'pointer',
+                                            transform: isSelected ? 'scale(1.15)' : 'scale(1)',
+                                            transition: 'transform 0.15s ease',
+                                        }}
+                                        title={`${poi.name} (${config.label})`}
+                                    >
+                                        <IconComponent size={isSelected ? 15 : 13} color="#FFFFFF" />
+                                    </div>
+                                </Marker>
+                            );
+                        })}
+
+                        {selectedPoi && (
+                            <Popup
+                                longitude={selectedPoi.longitude}
+                                latitude={selectedPoi.latitude}
+                                anchor="bottom"
+                                closeOnClick={false}
+                                onClose={() => setSelectedPoi(null)}
+                                offset={18}
+                            >
+                                <div style={{ padding: '6px 4px', minWidth: '180px', maxWidth: '240px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                        <span
+                                            style={{
+                                                fontSize: '10px',
+                                                fontWeight: 'bold',
+                                                padding: '2px 6px',
+                                                borderRadius: '4px',
+                                                backgroundColor: (POI_CATEGORY_CONFIG[selectedPoi.category] || POI_CATEGORY_CONFIG.other).bgColor,
+                                                color: '#FFFFFF',
+                                            }}
+                                        >
+                                            {(POI_CATEGORY_CONFIG[selectedPoi.category] || POI_CATEGORY_CONFIG.other).label}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#111827', marginBottom: '6px' }}>
+                                        {selectedPoi.name}
+                                    </div>
+                                    {selectedPoi.tags?.opening_hours && (
+                                        <div style={{ fontSize: '11px', color: '#4b5563', marginBottom: '6px' }}>
+                                            🕒 {selectedPoi.tags.opening_hours}
+                                        </div>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const allPistes = [
+                                                ...(resorts ? resorts.flatMap((r) => r.pistes || []) : []),
+                                                ...(selectedResort?.pistes || []),
+                                            ];
+                                            if (allPistes.length > 0) {
+                                                let closestPiste = allPistes[0];
+                                                let minD = Infinity;
+                                                for (const p of allPistes) {
+                                                    const c = p.GeometryGeoJSON?.coordinates;
+                                                    if (c && c.length > 0) {
+                                                        for (const pt of c) {
+                                                            const d = getDistance(selectedPoi.latitude, selectedPoi.longitude, pt[1], pt[0]);
+                                                            if (d < minD) {
+                                                                minD = d;
+                                                                closestPiste = p;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                handleInitiateRoute(closestPiste, [selectedPoi.longitude, selectedPoi.latitude]);
+                                            }
+                                            setSelectedPoi(null);
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '6px 10px',
+                                            borderRadius: '6px',
+                                            backgroundColor: colors.primary,
+                                            color: '#FFFFFF',
+                                            border: 'none',
+                                            fontSize: '11px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            marginTop: '4px',
+                                        }}
+                                    >
+                                        {t('route_to_poi', 'Calcular ruta hasta aquí')}
+                                    </button>
+                                </div>
+                            </Popup>
+                        )}
+                    </>
+                )}
+
                 {trackPoints.length > 0 && (
                     <>
                         <Source id="track-source" type="geojson" data={trackGeoJSON}>
@@ -1983,16 +2277,34 @@ export default function InteractiveSkiMap() {
                             paint={{
                                 'line-color': '#ffffff',
                                 'line-width': 10,
-                                'line-opacity': 0.85,
+                                'line-opacity': 0.88,
                             }}
                         />
+                        {/* Downhill pistes / walk */}
                         <Layer
-                            id="active-route-line"
+                            id="active-route-run"
                             type="line"
+                            filter={['!=', ['get', 'kind'], 'lift']}
                             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
                             paint={{
                                 'line-color': '#2563eb',
                                 'line-width': 6,
+                                'line-opacity': 1,
+                            }}
+                        />
+                        {/* Uphill ski lifts: visually distinct dashed line */}
+                        <Layer
+                            id="active-route-lift"
+                            type="line"
+                            filter={['==', ['get', 'kind'], 'lift']}
+                            layout={{
+                                'line-cap': 'round',
+                                'line-join': 'round',
+                            }}
+                            paint={{
+                                'line-color': '#0284c7',
+                                'line-width': 5,
+                                'line-dasharray': [2, 2],
                                 'line-opacity': 1,
                             }}
                         />

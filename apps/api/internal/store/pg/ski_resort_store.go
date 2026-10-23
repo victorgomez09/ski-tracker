@@ -190,3 +190,33 @@ func (s *skiResortStore) RemoveFavorite(ctx context.Context, userID uuid.UUID, r
 	return err
 }
 
+func (s *skiResortStore) GetPOIsByResortID(ctx context.Context, resortID string) ([]models.SkiResortPOI, error) {
+	var pois []models.SkiResortPOI
+	err := s.db.NewSelect().
+		Model(&pois).
+		Where("resort_id = ?", resortID).
+		Order("category ASC", "name ASC").
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return pois, nil
+}
+
+func (s *skiResortStore) SavePOIs(ctx context.Context, pois []models.SkiResortPOI) error {
+	if len(pois) == 0 {
+		return nil
+	}
+	_, err := s.db.NewInsert().
+		Model(&pois).
+		On("CONFLICT (id) DO UPDATE").
+		Set("name = EXCLUDED.name").
+		Set("category = EXCLUDED.category").
+		Set("latitude = EXCLUDED.latitude").
+		Set("longitude = EXCLUDED.longitude").
+		Set("tags = EXCLUDED.tags").
+		Exec(ctx)
+	return err
+}
+
+
