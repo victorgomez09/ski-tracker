@@ -6,14 +6,16 @@ import {
     Map as NativeMap,
     Marker as NativeMarker,
     RasterSource as NativeRasterSource,
+    RasterDEMSource as NativeRasterDEMSource,
     type CameraRef,
 } from '@maplibre/maplibre-react-native';
+import * as Location from 'expo-location';
 import { useNetworkState } from 'expo-network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
-import { ArrowLeft, CircleHelp, Download, Layers, MapPin, X } from 'lucide-react-native';
+import { ArrowLeft, CircleHelp, Crosshair, Download, Layers, MapPin, X } from 'lucide-react-native';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +35,9 @@ import { MapDetailPanel } from './map-detail-panel';
 import { MapStyleSelectorModal } from './map-style-selector-modal';
 import { OfflineMapsModal } from './offline-maps-panel';
 import { ResortDetailPanel } from './resort-detail-panel';
+import { RouteNavigationPanel } from './route-navigation-panel';
+import { RouteOriginModal } from './route-origin-modal';
+import { SkiRoutingEngine, RouteResult, SkillLevel, RouteLeg, calculateDistanceM } from '../../utils/ski-routing.util';
 
 let LineChart: any = null;
 if (Platform.OS !== 'web') {
@@ -55,31 +60,139 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
     return R * c;
 };
 
-const orientLineDownhill = (coords: any[]): any[] => {
+const orientLineDownhill = (
+    coords: any[],
+    piste?: Piste,
+    resortLifts?: Lift[]
+): any[] => {
     if (!coords || coords.length < 2) return coords;
-    const first = coords[0];
-    const last = coords[coords.length - 1];
-    if (first && last && first.length >= 3 && last.length >= 3) {
-        const startElev = first[2];
-        const endElev = last[2];
-        if (typeof startElev === 'number' && typeof endElev === 'number' && endElev > startElev) {
-            return [...coords].reverse();
+
+    // 1. Check cumulative elevation change along line coordinates
+    let totalAscent = 0;
+    let totalDescent = 0;
+    let validElevations = 0;
+
+    for (let i = 0; i < coords.length - 1; i++) {
+        const c0 = coords[i];
+        const c1 = coords[i + 1];
+        if (c0 && c1 && c0.length >= 3 && c1.length >= 3) {
+            const e0 = Number(c0[2]);
+            const e1 = Number(c1[2]);
+            if (!isNaN(e0) && !isNaN(e1) && e0 > 0 && e1 > 0) {
+                validElevations++;
+                const diff = e1 - e0;
+                if (diff > 0) totalAscent += diff;
+                else totalDescent += Math.abs(diff);
+            }
         }
     }
+
+    if (validElevations >= 1 && (totalAscent > 0 || totalDescent > 0)) {
+        if (totalAscent > totalDescent + 2) {
+            return [...coords].reverse();
+        }
+        if (totalDescent > totalAscent + 2) {
+            return coords;
+        }
+    }
+
+    const first = coords[0];
+    const last = coords[coords.length - 1];
+
+    // Fallback: Check 3D coordinates elevation of endpoints if available
+    if (first && last && first.length >= 3 && last.length >= 3) {
+        const startElev = Number(first[2]);
+        const endElev = Number(last[2]);
+        if (!isNaN(startElev) && !isNaN(endElev) && Math.abs(startElev - endElev) > 1.5) {
+            if (endElev > startElev) {
+                return [...coords].reverse();
+            }
+            return coords;
+        }
+    }
+
+    // 2. Check elevationProfile heights in tags
+    const heights = piste?.Tags?.elevationProfile?.heights;
+    if (Array.isArray(heights) && heights.length >= 2) {
+        const hStart = Number(heights[0]);
+        const hEnd = Number(heights[heights.length - 1]);
+        if (!isNaN(hStart) && !isNaN(hEnd) && Math.abs(hStart - hEnd) > 1.5) {
+            if (hEnd > hStart) {
+                return [...coords].reverse();
+            }
+            return coords;
+        }
+    }
+
+    // 3. Topological Lift Proximity Fallback (works for 2D coordinates)
+    // Ski lifts ALWAYS transport passengers from Base (bottom) to Summit (top).
+    // If coords[0] is closer to lift bases and coords[last] is closer to lift summits,
+    // the piste was drawn bottom-to-top (uphill) and MUST be reversed!
+    if (resortLifts && resortLifts.length > 0) {
+        const liftBases: [number, number][] = [];
+        const liftSummits: [number, number][] = [];
+
+        resortLifts.forEach((l) => {
+            const lc = l.GeometryGeoJSON?.coordinates;
+            if (lc && lc.length >= 2) {
+                const b = [lc[0][0], lc[0][1]] as [number, number];
+                const s = [lc[lc.length - 1][0], lc[lc.length - 1][1]] as [number, number];
+                if (lc[0].length >= 3 && lc[lc.length - 1].length >= 3) {
+                    const e0 = Number(lc[0][2]);
+                    const e1 = Number(lc[lc.length - 1][2]);
+                    if (!isNaN(e0) && !isNaN(e1) && e0 > e1 + 1.5) {
+                        liftBases.push(s);
+                        liftSummits.push(b);
+                        return;
+                    }
+                }
+                liftBases.push(b);
+                liftSummits.push(s);
+            }
+        });
+
+        if (liftBases.length > 0 && liftSummits.length > 0) {
+            const c0: [number, number] = [first[0], first[1]];
+            const c1: [number, number] = [last[0], last[1]];
+
+            const minBaseDist0 = Math.min(...liftBases.map((b) => calculateDistanceM(c0, b)));
+            const minSummitDist0 = Math.min(...liftSummits.map((s) => calculateDistanceM(c0, s)));
+            const minBaseDist1 = Math.min(...liftBases.map((b) => calculateDistanceM(c1, b)));
+            const minSummitDist1 = Math.min(...liftSummits.map((s) => calculateDistanceM(c1, s)));
+
+            // If c0 is near a lift base and c1 is near a lift summit:
+            // c0 is base, c1 is summit => UPHILL! Must reverse so it flows summit -> base!
+            if (minBaseDist0 < 140 && minSummitDist1 < 160 && minSummitDist0 > minBaseDist0) {
+                return [...coords].reverse();
+            }
+            // If c0 is near a lift summit and c1 is near a lift base:
+            // c0 is summit, c1 is base => DOWNHILL! Keep as-is.
+            if (minSummitDist0 < 160 && minBaseDist1 < 140 && minBaseDist0 > minSummitDist0) {
+                return coords;
+            }
+        }
+    }
+
     return coords;
 };
 
-const getOrientedPisteGeometry = (geometry: any): any => {
+const getOrientedPisteGeometry = (
+    geometry: any,
+    piste?: Piste,
+    resortLifts?: Lift[]
+): any => {
     if (!geometry || !geometry.coordinates) return null;
     if (geometry.type === 'LineString') {
         return {
             type: 'LineString',
-            coordinates: orientLineDownhill(geometry.coordinates)
+            coordinates: orientLineDownhill(geometry.coordinates, piste, resortLifts)
         };
     } else if (geometry.type === 'MultiLineString') {
         return {
             type: 'MultiLineString',
-            coordinates: geometry.coordinates.map((line: any[]) => orientLineDownhill(line))
+            coordinates: geometry.coordinates.map((line: any[]) =>
+                orientLineDownhill(line, piste, resortLifts)
+            )
         };
     }
     return geometry;
@@ -189,9 +302,13 @@ const NativeChart: React.FC<{
     styles: any;
     strokeColor?: string;
 }> = ({ data, yKey, height, onSelectIndex, colors, styles, strokeColor }) => {
+    const sampledData = useMemo(() => {
+        if (!data || data.length === 0) return [];
+        return downsampleData(data, 120);
+    }, [data]);
+
     if (!LineChart || !data || data.length === 0) return null;
 
-    const sampledData = useMemo(() => downsampleData(data, 120), [data]);
     const chartValues = sampledData.map(d => ({ x: d.distance, y: d[yKey] }));
     const color = strokeColor || (yKey === 'elevation' ? colors.primary : colors.danger);
 
@@ -271,17 +388,10 @@ const AnalyserChart: React.FC<{
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
-    useEffect(() => {
-        if (!data || data.length === 0) {
-            setSelectedIndex(null);
-            return;
-        }
-        setSelectedIndex(prev => (prev === null || prev >= data.length ? Math.floor(data.length / 2) : prev));
-    }, [data]);
-
     if (!data || data.length === 0) return null;
 
-    const selectedDatum = selectedIndex !== null ? data[selectedIndex] : null;
+    const activeIndex = selectedIndex !== null && selectedIndex < data.length ? selectedIndex : Math.floor(data.length / 2);
+    const selectedDatum = data[activeIndex] || null;
 
     return (
         <View style={styles.chartWrapper}>
@@ -359,9 +469,35 @@ export default function InteractiveSkiMapNative() {
     const [showMapStyleModal, setShowMapStyleModal] = useState(false);
     const [is3DMode, setIs3DMode] = useState(false);
 
-    const toggle3DMode = useCallback(() => {
+    // Ski Routing State
+    const [activeRoute, setActiveRoute] = useState<RouteResult | null>(null);
+    const [routeDestination, setRouteDestination] = useState<{ piste: Piste; coord?: [number, number] } | null>(null);
+    const [routeOriginCoord, setRouteOriginCoord] = useState<[number, number] | null>(null);
+    const [showOriginModal, setShowOriginModal] = useState(false);
+    const [isSelectingRouteOrigin, setIsSelectingRouteOrigin] = useState(false);
+    const [routeSkillLevel, setRouteSkillLevel] = useState<SkillLevel>('all');
+    const [isLoadingGps, setIsLoadingGps] = useState(false);
+
+    const isSelectingRouteOriginRef = useRef(isSelectingRouteOrigin);
+    const routeDestinationRef = useRef(routeDestination);
+    useEffect(() => {
+        isSelectingRouteOriginRef.current = isSelectingRouteOrigin;
+    }, [isSelectingRouteOrigin]);
+    useEffect(() => {
+        routeDestinationRef.current = routeDestination;
+    }, [routeDestination]);
+
+    const [viewState, setViewState] = useState({
+        longitude: parseFloat((searchParams.lon as string) || (searchParams.lng as string) || '0'),
+        latitude: parseFloat((searchParams.lat as string) || '40.0'),
+        zoom: parseFloat((searchParams.zoom as string) || '13'),
+        bearing: 0,
+        pitch: 0
+    });
+
+    const toggle3DMode = useCallback((forced?: boolean) => {
         setIs3DMode((prev) => {
-            const next = !prev;
+            const next = typeof forced === 'boolean' ? forced : !prev;
             const targetPitch = next ? 55 : 0;
             setViewState((v) => {
                 try {
@@ -374,6 +510,7 @@ export default function InteractiveSkiMapNative() {
                 } catch {}
                 return { ...v, pitch: targetPitch, bearing: next ? v.bearing : 0 };
             });
+            AsyncStorage.setItem('PREF_MAP_3D', String(next)).catch(() => {});
             return next;
         });
     }, []);
@@ -384,6 +521,10 @@ export default function InteractiveSkiMapNative() {
                 const saved = await AsyncStorage.getItem(MAP_STYLE_STORAGE_KEY);
                 if (saved && ['outdoor', 'topo', 'satellite', 'streets', 'dark'].includes(saved)) {
                     setMapStyleId(saved as MapStyleId);
+                }
+                const saved3D = await AsyncStorage.getItem('PREF_MAP_3D');
+                if (saved3D === 'true') {
+                    setIs3DMode(true);
                 }
             } catch {}
         };
@@ -459,18 +600,16 @@ export default function InteractiveSkiMapNative() {
             });
     }, [trackPoints, sessionDetails?.activity_type]);
 
-    const [viewState, setViewState] = useState({
-        longitude: parseFloat((searchParams.lon as string) || (searchParams.lng as string) || '0'),
-        latitude: parseFloat((searchParams.lat as string) || '40.0'),
-        zoom: parseFloat((searchParams.zoom as string) || '13'),
-        bearing: 0,
-        pitch: 0
-    });
     const { token } = useAuth();
 
-    const firstViewStateRef = useRef(viewState);
+    const [initialCameraState] = useState(() => ({
+        zoom: viewState.zoom,
+        center: [viewState.longitude, viewState.latitude] as [number, number],
+    }));
     const viewStateRef = useRef(viewState);
-    viewStateRef.current = viewState;
+    useEffect(() => {
+        viewStateRef.current = viewState;
+    }, [viewState]);
     const skipNextUrlCameraRef = useRef(true);
 
     const applyExternalCameraMove = useCallback((longitude: number, latitude: number, zoom: number, duration = 0) => {
@@ -784,8 +923,10 @@ export default function InteractiveSkiMapNative() {
 
     useEffect(() => {
         if (mapStyleId !== 'outdoor') {
-            setIsLoadingResorts(false);
-            setResorts([]);
+            queueMicrotask(() => {
+                setIsLoadingResorts(false);
+                setResorts([]);
+            });
             return;
         }
 
@@ -1077,7 +1218,7 @@ export default function InteractiveSkiMapNative() {
                 if (!piste) return null;
                 const baseGeom = normalizeGeoJSONLine(piste.GeometryGeoJSON) || normalizeGeoJSONLine(piste.Waypoints);
                 if (!baseGeom) return null;
-                const geom = getOrientedPisteGeometry(baseGeom);
+                const geom = getOrientedPisteGeometry(baseGeom, piste, resort.lifts);
                 if (!geom) return null;
                 return {
                     type: 'Feature' as const,
@@ -1221,15 +1362,228 @@ export default function InteractiveSkiMapNative() {
         }
     }), []);
 
+    // --- Active Route GeoJSON & Routing Engine ---
+    const routeGeoJSON = useMemo(() => {
+        if (!activeRoute || activeRoute.fullCoordinates.length < 2) return null;
+        return {
+            type: 'FeatureCollection' as const,
+            features: [
+                {
+                    type: 'Feature' as const,
+                    properties: {},
+                    geometry: {
+                        type: 'LineString' as const,
+                        coordinates: activeRoute.fullCoordinates,
+                    },
+                },
+            ],
+        };
+    }, [activeRoute]);
+
+    const routingEngine = useMemo(() => {
+        if (!resorts || resorts.length === 0) return null;
+        const allPistes = resorts.flatMap((r) =>
+            (r?.pistes || []).map((p) => {
+                const baseGeom = normalizeGeoJSONLine(p.GeometryGeoJSON) || normalizeGeoJSONLine(p.Waypoints);
+                const geom = baseGeom ? getOrientedPisteGeometry(baseGeom, p, r?.lifts) : null;
+                return geom ? { ...p, GeometryGeoJSON: geom } : p;
+            })
+        );
+        const allLifts = resorts.flatMap((r) => r?.lifts || []);
+        if (allPistes.length === 0) return null;
+        return new SkiRoutingEngine(allPistes, allLifts);
+    }, [resorts]);
+
+    const handleInitiateRoute = useCallback((targetPiste: Piste, targetCoord?: [number, number]) => {
+        setRouteDestination({ piste: targetPiste, coord: targetCoord });
+        routeDestinationRef.current = { piste: targetPiste, coord: targetCoord };
+        setSelectedFeature(null);
+        setShowOriginModal(true);
+    }, []);
+
+    const executeRouting = useCallback(
+        (
+            originCoord: [number, number],
+            originName: string,
+            destPiste: Piste,
+            destCoord?: [number, number],
+            level: SkillLevel = routeSkillLevel,
+            originPiste?: Piste,
+            originLift?: Lift
+        ) => {
+            if (!routingEngine) {
+                alert(t('no_route_found', 'No se pudo calcular la ruta: mapa no disponible'));
+                return;
+            }
+            const result = routingEngine.calculateRoute(
+                originCoord,
+                destPiste,
+                destCoord,
+                level,
+                originPiste,
+                originLift
+            );
+            if (result.success) {
+                result.originName = originName;
+                setActiveRoute(result);
+                setRouteOriginCoord(originCoord);
+                setTimeout(() => {
+                    if (result.fullCoordinates.length >= 2) {
+                        let minLon = result.fullCoordinates[0][0], maxLon = result.fullCoordinates[0][0];
+                        let minLat = result.fullCoordinates[0][1], maxLat = result.fullCoordinates[0][1];
+                        result.fullCoordinates.forEach(([lon, lat]) => {
+                            if (lon < minLon) minLon = lon;
+                            if (lon > maxLon) maxLon = lon;
+                            if (lat < minLat) minLat = lat;
+                            if (lat > maxLat) maxLat = lat;
+                        });
+                        try {
+                            cameraRef.current?.fitBounds(
+                                [minLon, minLat, maxLon, maxLat],
+                                { padding: { top: 60, right: 60, bottom: 60, left: 60 }, duration: 800 }
+                            );
+                        } catch {}
+                    }
+                }, 150);
+            } else {
+                alert(t(result.error || 'no_route_found', 'No se encontró un trayecto esquiable entre estos puntos.'));
+            }
+        },
+        [routingEngine, routeSkillLevel, t]
+    );
+
+    const handleUseCurrentLocation = useCallback(async () => {
+        if (!routeDestination) return;
+        setIsLoadingGps(true);
+        try {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                setIsLoadingGps(false);
+                alert(t('gps_error', 'Permiso de ubicación denegado.'));
+                return;
+            }
+            const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+            setIsLoadingGps(false);
+            setShowOriginModal(false);
+            executeRouting(
+                [location.coords.longitude, location.coords.latitude],
+                t('origin_current_gps', 'Mi posición GPS'),
+                routeDestination.piste,
+                routeDestination.coord,
+                routeSkillLevel
+            );
+        } catch (err) {
+            console.warn('Location error:', err);
+            setIsLoadingGps(false);
+            alert(t('gps_error', 'No se pudo obtener la posición GPS actual.'));
+        }
+    }, [routeDestination, executeRouting, routeSkillLevel, t]);
+
+    const handleLevelChange = useCallback(
+        (newLevel: SkillLevel) => {
+            setRouteSkillLevel(newLevel);
+            if (routeOriginCoord && routeDestination) {
+                executeRouting(
+                    routeOriginCoord,
+                    activeRoute?.originName || t('origin_current_gps', 'Mi posición GPS'),
+                    routeDestination.piste,
+                    routeDestination.coord,
+                    newLevel
+                );
+            }
+        },
+        [routeOriginCoord, routeDestination, activeRoute, executeRouting, t]
+    );
+
+    const handleSelectRouteLeg = useCallback((leg: RouteLeg) => {
+        if (!leg.coordinates || leg.coordinates.length < 2) return;
+        let minLon = leg.coordinates[0][0], maxLon = leg.coordinates[0][0];
+        let minLat = leg.coordinates[0][1], maxLat = leg.coordinates[0][1];
+        leg.coordinates.forEach(([lon, lat]) => {
+            if (lon < minLon) minLon = lon;
+            if (lon > maxLon) maxLon = lon;
+            if (lat < minLat) minLat = lat;
+            if (lat > maxLat) maxLat = lat;
+        });
+        try {
+            cameraRef.current?.fitBounds(
+                [minLon, minLat, maxLon, maxLat],
+                { padding: { top: 80, right: 80, bottom: 80, left: 80 }, duration: 600 }
+            );
+        } catch {}
+    }, []);
+
+    const handleFitRoute = useCallback(() => {
+        if (!activeRoute || activeRoute.fullCoordinates.length < 2) return;
+        let minLon = activeRoute.fullCoordinates[0][0], maxLon = activeRoute.fullCoordinates[0][0];
+        let minLat = activeRoute.fullCoordinates[0][1], maxLat = activeRoute.fullCoordinates[0][1];
+        activeRoute.fullCoordinates.forEach(([lon, lat]) => {
+            if (lon < minLon) minLon = lon;
+            if (lon > maxLon) maxLon = lon;
+            if (lat < minLat) minLat = lat;
+            if (lat > maxLat) maxLat = lat;
+        });
+        try {
+            cameraRef.current?.fitBounds(
+                [minLon, minLat, maxLon, maxLat],
+                { padding: { top: 60, right: 60, bottom: 60, left: 60 }, duration: 800 }
+            );
+        } catch {}
+    }, [activeRoute]);
+
     const handleNativeFeaturePress = useCallback((e: any) => {
         const found = getFeatureFromEvent(e);
+        if (isSelectingRouteOriginRef.current && routeDestinationRef.current) {
+            const dest = routeDestinationRef.current;
+            const coords = (found?.GeometryGeoJSON?.coordinates as any)?.[0] || e?.geometry?.coordinates;
+            const clickCoord: [number, number] = (coords && Array.isArray(coords) && coords.length >= 2)
+                ? [coords[0], coords[1]]
+                : [0, 0];
+            const originPiste = found && !(found as any).LiftType ? (found as Piste) : undefined;
+            const originLift = found && (found as any).LiftType ? (found as Lift) : undefined;
+            isSelectingRouteOriginRef.current = false;
+            setIsSelectingRouteOrigin(false);
+            executeRouting(
+                clickCoord,
+                found?.Name || 'Pista',
+                dest.piste,
+                dest.coord,
+                routeSkillLevel,
+                originPiste,
+                originLift
+            );
+            return;
+        }
         if (found) {
             setChartHoverPoint(null);
             setSelectedFeature(found);
         }
-    }, [getFeatureFromEvent]);
+    }, [getFeatureFromEvent, executeRouting, routeSkillLevel]);
 
     const handleNativeMapPress = useCallback((e: any) => {
+        if (isSelectingRouteOriginRef.current && routeDestinationRef.current) {
+            const dest = routeDestinationRef.current;
+            const coords = e?.geometry?.coordinates;
+            const clickCoord: [number, number] = (coords && Array.isArray(coords) && coords.length >= 2)
+                ? [coords[0], coords[1]]
+                : [0, 0];
+            const found = getFeatureFromEvent(e);
+            const originName = found?.Name || t('selected_point', 'Punto seleccionado');
+            const originPiste = found && !(found as any).LiftType ? (found as Piste) : undefined;
+            const originLift = found && (found as any).LiftType ? (found as Lift) : undefined;
+            isSelectingRouteOriginRef.current = false;
+            setIsSelectingRouteOrigin(false);
+            executeRouting(
+                clickCoord,
+                originName,
+                dest.piste,
+                dest.coord,
+                routeSkillLevel,
+                originPiste,
+                originLift
+            );
+            return;
+        }
         const found = getFeatureFromEvent(e);
         if (found) {
             setChartHoverPoint(null);
@@ -1238,7 +1592,7 @@ export default function InteractiveSkiMapNative() {
         }
         setSelectedFeature(null);
         setChartHoverPoint(null);
-    }, [getFeatureFromEvent]);
+    }, [getFeatureFromEvent, executeRouting, routeSkillLevel, t]);
 
     const handleNativeRegionDidChange = useCallback((e: any) => {
         const ne = e?.nativeEvent || e;
@@ -1356,10 +1710,15 @@ export default function InteractiveSkiMapNative() {
                     maxZoom={16}
                     pitch={viewState.pitch}
                     bearing={viewState.bearing}
-                    initialViewState={{
-                        zoom: firstViewStateRef.current.zoom,
-                        center: [firstViewStateRef.current.longitude, firstViewStateRef.current.latitude],
-                    }}
+                    initialViewState={initialCameraState}
+                />
+
+                <NativeRasterDEMSource
+                    id="maplibre-dem"
+                    tiles={['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png']}
+                    encoding="terrarium"
+                    tileSize={256}
+                    maxzoom={14}
                 />
 
                 <NativeRasterSource
@@ -1444,6 +1803,73 @@ export default function InteractiveSkiMapNative() {
                         <NativeLayer {...chartHoverPointStyle} />
                     </NativeGeoJSONSource>
                 )}
+
+                {routeGeoJSON && (
+                    <NativeGeoJSONSource id="active-route-source" data={routeGeoJSON}>
+                        <NativeLayer
+                            id="active-route-casing"
+                            type="line"
+                            style={{
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                lineColor: '#ffffff',
+                                lineWidth: 10,
+                                lineOpacity: 0.85,
+                            }}
+                        />
+                        <NativeLayer
+                            id="active-route-line"
+                            type="line"
+                            style={{
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                lineColor: '#2563eb',
+                                lineWidth: 6,
+                                lineOpacity: 1,
+                            }}
+                        />
+                    </NativeGeoJSONSource>
+                )}
+
+                {activeRoute && activeRoute.fullCoordinates.length >= 2 && (
+                    <>
+                        <NativeMarker
+                            id="route-start-marker"
+                            lngLat={activeRoute.fullCoordinates[0]}
+                        >
+                            <View style={{
+                                width: 26,
+                                height: 26,
+                                borderRadius: 13,
+                                backgroundColor: '#16a34a',
+                                borderWidth: 3,
+                                borderColor: '#ffffff',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}>
+                                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold' }}>A</Text>
+                            </View>
+                        </NativeMarker>
+
+                        <NativeMarker
+                            id="route-dest-marker"
+                            lngLat={activeRoute.fullCoordinates[activeRoute.fullCoordinates.length - 1]}
+                        >
+                            <View style={{
+                                width: 26,
+                                height: 26,
+                                borderRadius: 13,
+                                backgroundColor: '#dc2626',
+                                borderWidth: 3,
+                                borderColor: '#ffffff',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}>
+                                <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold' }}>B</Text>
+                            </View>
+                        </NativeMarker>
+                    </>
+                )}
             </NativeMap>
 
             {!searchParams.sessionId && isSnowLayer && isLoadingResorts && (
@@ -1480,7 +1906,7 @@ export default function InteractiveSkiMapNative() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        onPress={toggle3DMode}
+                        onPress={() => toggle3DMode()}
                         style={[
                             styles.dim3dButton,
                             is3DMode && { backgroundColor: colors.primary, borderColor: colors.primary }
@@ -1501,6 +1927,8 @@ export default function InteractiveSkiMapNative() {
                 visible={showMapStyleModal}
                 onClose={() => setShowMapStyleModal(false)}
                 selectedStyle={mapStyleId}
+                is3DMode={is3DMode}
+                onToggle3D={(enabled) => toggle3DMode(enabled)}
                 onSelect={async (newStyle) => {
                     setMapStyleId(newStyle);
                     try {
@@ -1526,11 +1954,62 @@ export default function InteractiveSkiMapNative() {
                     data={selectedFeature} 
                     onClose={() => { setSelectedFeature(null); setChartHoverPoint(null); }}
                     onChartPointSelected={setChartHoverPoint}
+                    onCalculateRoute={handleInitiateRoute}
                 />
             )}
 
             {selectedResort && (
                 <ResortDetailPanel resort={selectedResort} onClose={() => setSelectedResort(null)} />
+            )}
+
+            <RouteOriginModal
+                visible={showOriginModal}
+                targetPiste={routeDestination?.piste || null}
+                onClose={() => setShowOriginModal(false)}
+                isLoadingLocation={isLoadingGps}
+                onSelectCurrentLocation={handleUseCurrentLocation}
+                onSelectPickOnMap={() => {
+                    setShowOriginModal(false);
+                    setIsSelectingRouteOrigin(true);
+                }}
+            />
+
+            {activeRoute && (
+                <RouteNavigationPanel
+                    route={activeRoute}
+                    resortName={routeDestination?.piste?.Name || selectedResort?.Name}
+                    currentLevel={routeSkillLevel}
+                    onClose={() => {
+                        setActiveRoute(null);
+                        setRouteDestination(null);
+                        setRouteOriginCoord(null);
+                    }}
+                    onFitBounds={handleFitRoute}
+                    onChangeOrigin={() => {
+                        setShowOriginModal(true);
+                    }}
+                    onLevelChange={handleLevelChange}
+                    onSelectLeg={handleSelectRouteLeg}
+                />
+            )}
+
+            {isSelectingRouteOrigin && (
+                <View style={styles.originSelectingBanner}>
+                    <View style={styles.originSelectingBannerContent}>
+                        <Crosshair size={18} color="#FFFFFF" />
+                        <Text style={styles.originSelectingBannerText}>
+                            {t('tap_map_for_origin_dest', 'Marcando origen para ir a {{destination}}. Toca una pista o remonte de salida.', { destination: routeDestination?.piste?.Name || 'Destino' })}
+                        </Text>
+                    </View>
+                    <TouchableOpacity
+                        onPress={() => setIsSelectingRouteOrigin(false)}
+                        style={styles.originSelectingCancelBtn}
+                    >
+                        <Text style={styles.originSelectingCancelBtnText}>
+                            {t('cancel', 'Cancelar')}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
             )}
 
             {searchParams.sessionId && trackPoints.length > 0 && (() => {
@@ -1746,6 +2225,44 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         fontSize: 12,
         fontWeight: '600',
         color: colors.textPrimary,
+    },
+    originSelectingBanner: {
+        position: 'absolute',
+        top: 16,
+        left: 16,
+        right: 16,
+        zIndex: 60,
+        backgroundColor: colors.primary,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: BORDER_RADIUS.round,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        ...SHADOWS.lg,
+    },
+    originSelectingBannerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flex: 1,
+    },
+    originSelectingBannerText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#FFFFFF',
+        flex: 1,
+    },
+    originSelectingCancelBtn: {
+        backgroundColor: 'rgba(255,255,255,0.25)',
+        borderRadius: 999,
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+    },
+    originSelectingCancelBtnText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#FFFFFF',
     },
     helpButton: {
         position: 'absolute',

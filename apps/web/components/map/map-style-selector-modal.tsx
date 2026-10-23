@@ -4,11 +4,12 @@ import {
     Platform,
     ScrollView,
     StyleSheet,
+    Switch,
     Text,
     TouchableOpacity,
     View,
 } from 'react-native';
-import { Check, Eye, Footprints, Globe, Layers, Map, MapPin, Moon, Mountain, Navigation, X } from 'lucide-react-native';
+import { Check, Globe, Layers, Map, Moon, Mountain, Navigation, X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { BORDER_RADIUS, SHADOWS, SPACING, useThemeColors } from 'constants/theme';
 import { MAP_STYLES, MapStyleId, MapStyleOption } from 'constants/map-styles';
@@ -18,6 +19,8 @@ interface MapStyleSelectorModalProps {
     onClose: () => void;
     selectedStyle: MapStyleId;
     onSelect: (styleId: MapStyleId) => void;
+    is3DMode?: boolean;
+    onToggle3D?: (enabled: boolean) => void;
 }
 
 export const MapStyleSelectorModal: React.FC<MapStyleSelectorModalProps> = ({
@@ -25,6 +28,8 @@ export const MapStyleSelectorModal: React.FC<MapStyleSelectorModalProps> = ({
     onClose,
     selectedStyle,
     onSelect,
+    is3DMode = false,
+    onToggle3D,
 }) => {
     const colors = useThemeColors();
     const { t } = useTranslation();
@@ -86,6 +91,31 @@ export const MapStyleSelectorModal: React.FC<MapStyleSelectorModalProps> = ({
                         contentContainerStyle={styles.scrollContent}
                         showsVerticalScrollIndicator={false}
                     >
+                        {/* 3D Elevation Toggle Card */}
+                        {onToggle3D && (
+                            <View style={styles.elevation3DCard}>
+                                <View style={styles.elevation3DIcon}>
+                                    <Mountain size={22} color={is3DMode ? colors.primary : colors.textSecondary} />
+                                </View>
+                                <View style={styles.elevation3DInfo}>
+                                    <Text style={styles.elevation3DTitle}>
+                                        {t('terrain_3d', 'Relieve y elevaciones 3D')}
+                                    </Text>
+                                    <Text style={styles.elevation3DDesc}>
+                                        {t('terrain_3d_desc', 'Visualiza el terreno y las montañas con elevación 3D realista')}
+                                    </Text>
+                                </View>
+                                <Switch
+                                    value={is3DMode}
+                                    onValueChange={onToggle3D}
+                                    trackColor={{ false: colors.border, true: colors.primary }}
+                                    thumbColor="#FFFFFF"
+                                />
+                            </View>
+                        )}
+
+                        <Text style={styles.sectionTitle}>{t('base_maps', 'Estilo de Mapa')}</Text>
+
                         {styleList.map((option: MapStyleOption) => {
                             const isSelected = option.id === selectedStyle;
 
@@ -181,26 +211,70 @@ const getStyles = (colors: any) =>
             lineHeight: 16,
         },
         closeButton: {
-            padding: SPACING.xs,
+            padding: 4,
             borderRadius: BORDER_RADIUS.round,
             backgroundColor: colors.surface,
         },
         scroll: {
-            maxHeight: 450,
+            flexGrow: 0,
         },
         scrollContent: {
-            gap: SPACING.xs + 2,
+            gap: SPACING.sm,
             paddingBottom: SPACING.xs,
+        },
+        sectionTitle: {
+            fontSize: 12,
+            fontWeight: '700',
+            color: colors.textSecondary,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            marginTop: 4,
+            marginBottom: 2,
+        },
+        elevation3DCard: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: BORDER_RADIUS.lg,
+            padding: SPACING.sm,
+            gap: SPACING.sm,
+            marginBottom: SPACING.xs,
+        },
+        elevation3DIcon: {
+            width: 40,
+            height: 40,
+            borderRadius: BORDER_RADIUS.md,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        elevation3DInfo: {
+            flex: 1,
+        },
+        elevation3DTitle: {
+            fontSize: 14,
+            fontWeight: '700',
+            color: colors.textPrimary,
+        },
+        elevation3DDesc: {
+            fontSize: 11,
+            color: colors.textSecondary,
+            marginTop: 1,
+            lineHeight: 14,
         },
         itemCard: {
             flexDirection: 'row',
             alignItems: 'center',
-            paddingVertical: SPACING.sm + 2,
-            paddingHorizontal: SPACING.md,
+            padding: SPACING.sm,
             borderRadius: BORDER_RADIUS.lg,
             borderWidth: 1.5,
             borderColor: colors.border,
             backgroundColor: colors.surface,
+            gap: SPACING.sm,
         },
         itemCardSelected: {
             borderColor: colors.primary,
@@ -211,9 +285,11 @@ const getStyles = (colors: any) =>
             height: 44,
             borderRadius: BORDER_RADIUS.md,
             backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
             justifyContent: 'center',
             alignItems: 'center',
-            marginRight: SPACING.md,
+            flexShrink: 0,
         },
         itemInfo: {
             flex: 1,
@@ -224,15 +300,9 @@ const getStyles = (colors: any) =>
             justifyContent: 'space-between',
         },
         itemLabel: {
-            fontSize: 15,
+            fontSize: 14,
             fontWeight: '600',
             color: colors.textPrimary,
-        },
-        itemDescription: {
-            fontSize: 12,
-            color: colors.textSecondary,
-            marginTop: 2,
-            lineHeight: 16,
         },
         checkCircle: {
             width: 20,
@@ -241,5 +311,11 @@ const getStyles = (colors: any) =>
             backgroundColor: colors.primary,
             justifyContent: 'center',
             alignItems: 'center',
+        },
+        itemDescription: {
+            fontSize: 11,
+            color: colors.textSecondary,
+            marginTop: 2,
+            lineHeight: 14,
         },
     });

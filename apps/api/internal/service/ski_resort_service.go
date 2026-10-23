@@ -499,7 +499,7 @@ func mergeContiguousPistes(pistes []models.SkiPiste) []models.SkiPiste {
 						continue
 					}
 
-					// Let's see if we can append or prepend seg
+					// Only merge strictly sequential segments in the same direction (never reverse parallel forks)
 					if pointsClose(chainEnd, seg.start) {
 						// Append segment to the end
 						chain = append(chain, seg.piste)
@@ -507,26 +507,10 @@ func mergeContiguousPistes(pistes []models.SkiPiste) []models.SkiPiste {
 						visited[j] = true
 						added = true
 						break
-					} else if pointsClose(chainEnd, seg.end) {
-						// Append segment to the end, but reverse its coordinates first
-						reversed := reverseCoordinates(seg.piste)
-						chain = append(chain, reversed)
-						chainEnd = seg.start
-						visited[j] = true
-						added = true
-						break
 					} else if pointsClose(chainStart, seg.end) {
 						// Prepend segment to the start
 						chain = append([]models.SkiPiste{seg.piste}, chain...)
 						chainStart = seg.start
-						visited[j] = true
-						added = true
-						break
-					} else if pointsClose(chainStart, seg.start) {
-						// Prepend segment to the start, but reverse its coordinates first
-						reversed := reverseCoordinates(seg.piste)
-						chain = append([]models.SkiPiste{reversed}, chain...)
-						chainStart = seg.end
 						visited[j] = true
 						added = true
 						break

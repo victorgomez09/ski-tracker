@@ -2,7 +2,7 @@ import { Lift, Piste } from 'models/ski-resort.model';
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform, processColor, StyleSheet, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, Maximize2 } from 'lucide-react-native';
+import { X, Maximize2, Navigation } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
@@ -16,6 +16,7 @@ interface MapDetailPanelProps {
     data: Piste | Lift;
     onClose: () => void;
     onChartPointSelected?: (coord: [number, number] | null) => void;
+    onCalculateRoute?: (targetPiste: Piste, targetCoord?: [number, number]) => void;
 }
 
 interface ChartDatum {
@@ -287,7 +288,14 @@ export const ElevationChart: React.FC<{
     onSelectedIndexChange?: (index: number | null) => void;
 }> = ({ data, height = 160, isFullscreen, exitFullscreen, onSelectedIndexChange }) => {
     const { t } = useTranslation();
-    const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+    const [selectedIndex, setSelectedIndex] = useState<number | null>(() => {
+        return !data || data.length === 0 ? null : Math.floor(data.length / 2);
+    });
+    const [prevData, setPrevData] = useState(data);
+    if (data !== prevData) {
+        setPrevData(data);
+        setSelectedIndex(!data || data.length === 0 ? null : Math.floor(data.length / 2));
+    }
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -296,14 +304,6 @@ export const ElevationChart: React.FC<{
             onSelectedIndexChange(selectedIndex);
         }
     }, [selectedIndex, onSelectedIndexChange]);
-
-    useEffect(() => {
-        if (!data || data.length === 0) {
-            setSelectedIndex(null);
-            return;
-        }
-        setSelectedIndex(prev => (prev === null || prev >= data.length ? Math.floor(data.length / 2) : prev));
-    }, [data]);
 
 
     // Detect screen rotation to portrait to exit fullscreen automatically
@@ -479,7 +479,7 @@ const getCoordinateAtDistance = (coords: number[][], targetDistM: number): [numb
     return [last[0], last[1]];
 };
 
-export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, onChartPointSelected }) => {
+export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, onChartPointSelected, onCalculateRoute }) => {
     const isWeb = Platform.OS === 'web';
     const { t } = useTranslation();
     const colors = useThemeColors();
@@ -629,6 +629,23 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, o
                             <Text style={styles.subtitleText}>
                                 {t('downhill_ski_run', { difficulty: t(diffMeta.labelKey) })}
                             </Text>
+
+                            {onCalculateRoute && (
+                                <TouchableOpacity
+                                    style={styles.calculateRouteButton}
+                                    activeOpacity={0.8}
+                                    onPress={() => {
+                                        const coords = data.GeometryGeoJSON?.coordinates as number[][];
+                                        const targetCoord = coords && coords.length > 0 ? [coords[0][0], coords[0][1]] as [number, number] : undefined;
+                                        onCalculateRoute(data as Piste, targetCoord);
+                                    }}
+                                >
+                                    <Navigation size={15} color="#FFFFFF" />
+                                    <Text style={styles.calculateRouteButtonText}>
+                                        {t('calculate_route', 'Calcular ruta hasta aquí')}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
 
                             <View style={styles.statsContainer}>
                                 <View style={styles.statBox}>
@@ -799,6 +816,23 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         color: colors.textSecondary,
         textTransform: 'capitalize',
         fontWeight: '500',
+    },
+    calculateRouteButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: colors.primary,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: BORDER_RADIUS.lg,
+        marginTop: 6,
+        ...SHADOWS.sm,
+    },
+    calculateRouteButtonText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '700',
     },
     statsContainer: {
         flexDirection: 'row',
