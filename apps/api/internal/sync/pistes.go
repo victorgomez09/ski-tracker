@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -168,21 +169,55 @@ func streamGeoJSONFeatures(r io.Reader, handleFeature func(f GeoJSONFeature) err
 
 const batchSize = 1000
 
-func syncResortsStream(ctx context.Context, db *bun.DB, url string, logger *slog.Logger) error {
-	resp, err := http.Get(url)
+func downloadToTempFile(ctx context.Context, url string, prefix string) (*os.File, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected HTTP status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected HTTP status: %d", resp.StatusCode)
 	}
+
+	tmpFile, err := os.CreateTemp("", prefix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+		return nil, fmt.Errorf("failed to download %s: %w", url, err)
+	}
+
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+		return nil, fmt.Errorf("failed to seek temp file: %w", err)
+	}
+
+	return tmpFile, nil
+}
+
+func syncResortsStream(ctx context.Context, db *bun.DB, url string, logger *slog.Logger) error {
+	tmpFile, err := downloadToTempFile(ctx, url, "resorts_*.geojson")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+	}()
 
 	batch := make([]models.SkiResort, 0, batchSize)
 	total := 0
 
-	err = streamGeoJSONFeatures(resp.Body, func(f GeoJSONFeature) error {
+	err = streamGeoJSONFeatures(tmpFile, func(f GeoJSONFeature) error {
 		resort, ok := parseResortFeature(f)
 		if !ok {
 			return nil
@@ -214,20 +249,19 @@ func syncResortsStream(ctx context.Context, db *bun.DB, url string, logger *slog
 }
 
 func syncPistesStream(ctx context.Context, db *bun.DB, url string, logger *slog.Logger) error {
-	resp, err := http.Get(url)
+	tmpFile, err := downloadToTempFile(ctx, url, "pistes_*.geojson")
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected HTTP status: %d", resp.StatusCode)
-	}
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+	}()
 
 	batch := make([]models.SkiPiste, 0, batchSize)
 	total := 0
 
-	err = streamGeoJSONFeatures(resp.Body, func(f GeoJSONFeature) error {
+	err = streamGeoJSONFeatures(tmpFile, func(f GeoJSONFeature) error {
 		piste, ok := parsePisteFeature(f)
 		if !ok {
 			return nil
@@ -262,20 +296,19 @@ func syncPistesStream(ctx context.Context, db *bun.DB, url string, logger *slog.
 }
 
 func syncLiftsStream(ctx context.Context, db *bun.DB, url string, logger *slog.Logger) error {
-	resp, err := http.Get(url)
+	tmpFile, err := downloadToTempFile(ctx, url, "lifts_*.geojson")
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected HTTP status: %d", resp.StatusCode)
-	}
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+	}()
 
 	batch := make([]models.SkiLift, 0, batchSize)
 	total := 0
 
-	err = streamGeoJSONFeatures(resp.Body, func(f GeoJSONFeature) error {
+	err = streamGeoJSONFeatures(tmpFile, func(f GeoJSONFeature) error {
 		lift, ok := parseLiftFeature(f)
 		if !ok {
 			return nil

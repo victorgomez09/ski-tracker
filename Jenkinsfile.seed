@@ -20,7 +20,7 @@ pipeline {
         string(
             name: 'DB_PORT',
             defaultValue: '5432',
-            description: 'Puerto de PostgreSQL (5432 dentro de Docker, o 5433 en host)'
+            description: 'Puerto de PostgreSQL (5432 dentro de Docker, o 5434 en host)'
         )
         string(
             name: 'DB_NAME',

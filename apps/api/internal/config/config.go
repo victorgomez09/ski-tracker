@@ -76,7 +76,7 @@ func Load() (*Config, error) {
 			Env:             envStr("APP_ENV", envStr("ENV", "development")),
 		},
 		Database: DatabaseConfig{
-			URL:             envStr("DATABASE_URL", "postgres://ski_tracker:ski_tracker@localhost:5433/ski_tracker?sslmode=disable"),
+			URL:             envStr("DATABASE_URL", "postgres://ski_tracker:ski_tracker@localhost:5434/ski_tracker?sslmode=disable"),
 			MaxOpenConns:    envInt("DATABASE_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    envInt("DATABASE_MAX_IDLE_CONNS", 5),
 			ConnMaxLifetime: envDuration("DATABASE_CONN_MAX_LIFETIME", 5*time.Minute),

@@ -4,7 +4,7 @@ services:
     container_name: ski_tracker-postgres
     restart: unless-stopped
     ports:
-      - "5433:5432"
+      - "5434:5432"
     environment:
       POSTGRES_DB: ski_tracker
       POSTGRES_USER: ski_tracker

@@ -18,7 +18,7 @@ DB_CONFIG = {
     "user": os.environ.get("DB_USER", "ski_tracker"),
     "password": os.environ.get("DB_PASSWORD", "ski_tracker"),
     "host": os.environ.get("DB_HOST", "localhost"),
-    "port": os.environ.get("DB_PORT", "5433"),
+    "port": os.environ.get("DB_PORT", "5434"),
 }
 RESORT_TARGET = os.environ.get("RESORT_TARGET", "Valdesquí")
 SEED_USER_EMAIL = os.environ.get("SEED_USER_EMAIL", "admin@admin.es")

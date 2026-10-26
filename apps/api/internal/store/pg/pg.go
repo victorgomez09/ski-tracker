@@ -25,7 +25,11 @@ type PoolConfig struct {
 
 // New creates a new PostgreSQL-backed Store with connection retry and pool config.
 func New(databaseURL string, pool ...PoolConfig) (*Store, error) {
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(databaseURL)))
+	sqldb := sql.OpenDB(pgdriver.NewConnector(
+		pgdriver.WithDSN(databaseURL),
+		pgdriver.WithReadTimeout(0),
+		pgdriver.WithWriteTimeout(0),
+	))
 
 	// Apply pool settings (enables automatic reconnect on broken connections)
 	if len(pool) > 0 {
