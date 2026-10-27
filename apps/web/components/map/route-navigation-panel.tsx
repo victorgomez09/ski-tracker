@@ -8,12 +8,16 @@ import {
     View,
 } from 'react-native';
 import {
+    Clock,
     Crosshair,
     Footprints,
     MapPin,
     Navigation,
     Route,
+    ShieldAlert,
+    Wind,
     X,
+    Zap,
 } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from '../../constants/theme';
@@ -28,6 +32,12 @@ interface RouteNavigationPanelProps {
     currentLevel?: SkillLevel;
     onLevelChange?: (level: SkillLevel) => void;
     onSelectLeg?: (leg: RouteLeg) => void;
+    fastLifts?: boolean;
+    onToggleFastLifts?: () => void;
+    badWeather?: boolean;
+    onToggleBadWeather?: () => void;
+    onReturnToBase?: () => void;
+    departureAlertStr?: string;
 }
 
 const getDifficultyMeta = (difficulty?: string) => {
@@ -68,6 +78,12 @@ export const RouteNavigationPanel: React.FC<RouteNavigationPanelProps> = ({
     currentLevel = 'all',
     onLevelChange,
     onSelectLeg,
+    fastLifts = false,
+    onToggleFastLifts,
+    badWeather = false,
+    onToggleBadWeather,
+    onReturnToBase,
+    departureAlertStr,
 }) => {
     const { t } = useTranslation();
     const colors = useThemeColors();
@@ -194,6 +210,54 @@ export const RouteNavigationPanel: React.FC<RouteNavigationPanelProps> = ({
                             </TouchableOpacity>
                         </View>
                     )}
+
+                    {/* Smart Ski Routing Preferences (1.2) */}
+                    <View style={styles.smartRoutingRow}>
+                        {onToggleFastLifts && (
+                            <TouchableOpacity
+                                style={[styles.smartChip, fastLifts && styles.smartChipActive]}
+                                onPress={onToggleFastLifts}
+                            >
+                                <Zap size={12} color={fastLifts ? '#FFFFFF' : colors.primary} />
+                                <Text style={[styles.smartChipText, fastLifts && styles.smartChipTextActive]}>
+                                    {t('smart_fast_lifts', 'Rápida')}
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {onToggleBadWeather && (
+                            <TouchableOpacity
+                                style={[styles.smartChip, badWeather && styles.smartChipActive]}
+                                onPress={onToggleBadWeather}
+                            >
+                                <Wind size={12} color={badWeather ? '#FFFFFF' : colors.primary} />
+                                <Text style={[styles.smartChipText, badWeather && styles.smartChipTextActive]}>
+                                    {t('smart_bad_weather', 'Mal tiempo')}
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {onReturnToBase && (
+                            <TouchableOpacity
+                                style={[styles.smartChip, styles.baseChip]}
+                                onPress={onReturnToBase}
+                            >
+                                <Clock size={12} color="#FFFFFF" />
+                                <Text style={[styles.smartChipText, { color: '#FFFFFF' }]}>
+                                    {t('return_to_base', 'Base antes cierre')}
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {departureAlertStr ? (
+                        <View style={styles.departureAlertBanner}>
+                            <ShieldAlert size={14} color="#b45309" />
+                            <Text style={styles.departureAlertText}>
+                                {t('departure_warning', 'Cierre de remontes: Inicia el regreso antes de las {{time}}.', { time: departureAlertStr })}
+                            </Text>
+                        </View>
+                    ) : null}
 
                     {/* Stats Container (Resembling resort-detail-panel) */}
                     <View style={styles.statsContainer}>
@@ -473,6 +537,55 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
         },
         levelChipTextActive: {
             color: '#FFFFFF',
+        },
+        smartRoutingRow: {
+            flexDirection: 'row',
+            gap: 6,
+            flexWrap: 'wrap',
+        },
+        smartChip: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            paddingVertical: 5,
+            paddingHorizontal: 9,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surface,
+        },
+        smartChipActive: {
+            backgroundColor: colors.primary,
+            borderColor: colors.primary,
+        },
+        smartChipText: {
+            fontSize: 11,
+            fontWeight: '600',
+            color: colors.textPrimary,
+        },
+        smartChipTextActive: {
+            color: '#FFFFFF',
+        },
+        baseChip: {
+            backgroundColor: '#ea580c',
+            borderColor: '#ea580c',
+        },
+        departureAlertBanner: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            backgroundColor: '#fef3c7',
+            paddingVertical: 6,
+            paddingHorizontal: 10,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: '#fde68a',
+        },
+        departureAlertText: {
+            fontSize: 11,
+            fontWeight: '600',
+            color: '#92400e',
+            flex: 1,
         },
         statsContainer: {
             flexDirection: 'row',

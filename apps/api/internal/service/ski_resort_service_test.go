@@ -185,3 +185,35 @@ func TestCalculateResortDownhillDistanceKM(t *testing.T) {
 		}
 	})
 }
+
+func TestOfflinePackBBox(t *testing.T) {
+	pack := OfflinePackDTO{
+		ResortDetailDTO: ResortDetailDTO{
+			SkiResort: models.SkiResort{
+				ID:        "sierra-nevada",
+				Name:      "Sierra Nevada",
+				Latitude:  37.09,
+				Longitude: -3.39,
+			},
+			Pistes: []models.SkiPiste{
+				{
+					Name: "El Rio",
+					GeometryGeoJSON: map[string]interface{}{
+						"coordinates": []interface{}{
+							[]interface{}{-3.40, 37.10},
+							[]interface{}{-3.38, 37.08},
+						},
+					},
+				},
+			},
+		},
+		BBox: [4]float64{-3.45, 37.05, -3.35, 37.15},
+	}
+
+	if pack.BBox[0] >= pack.BBox[2] {
+		t.Errorf("expected minLon < maxLon, got %v >= %v", pack.BBox[0], pack.BBox[2])
+	}
+	if pack.BBox[1] >= pack.BBox[3] {
+		t.Errorf("expected minLat < maxLat, got %v >= %v", pack.BBox[1], pack.BBox[3])
+	}
+}

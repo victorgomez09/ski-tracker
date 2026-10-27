@@ -5,6 +5,7 @@ import {
     GeoJSONSource as NativeGeoJSONSource,
     Layer as NativeLayer,
     Map as NativeMap,
+    RasterDEMSource as NativeRasterDEMSource,
     RasterSource as NativeRasterSource,
     UserLocation,
     type CameraRef,
@@ -17,7 +18,7 @@ import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useSQLiteContext } from 'expo-sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { AlertTriangle, ChevronDown, Compass, Layers, MapPin } from 'lucide-react-native';
+import { AlertTriangle, ChevronDown, Clock, Compass, Layers, MapPin, WifiOff } from 'lucide-react-native';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { MapStyleSelectorModal } from 'components/map/map-style-selector-modal';
@@ -32,6 +33,8 @@ import { Lift, Piste, ResortDetail } from 'models/ski-resort.model';
 import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 import { savePhotoToLocalDB } from 'tracking/database';
 import { getCurrentLocation } from 'tracking/task-manager';
+import { offlineResortService } from 'services/offline-resort.service';
+import { evaluateLiftClosureAlert } from 'utils/lift-closure.util';
 
 import { Camera } from './camera';
 import { ResortSearchModal } from './resort-search-modal';
@@ -144,7 +147,11 @@ export default function InteractiveSkiMapNative() {
                             setResort(res.data);
                         }
                     } catch (e) {
-                        console.warn('Could not fetch active resort details:', e);
+                        console.warn('Could not fetch active resort details, trying offline storage:', e);
+                        const offlineResort = await offlineResortService.getOfflineResort(activeResortId);
+                        if (offlineResort) {
+                            setResort(offlineResort);
+                        }
                     }
                 }
             } catch {}
@@ -351,18 +358,41 @@ export default function InteractiveSkiMapNative() {
         };
     }, [currentConfig.requiresResort, resort?.ID, isOffline]);
 
+    // --- Lift Closure Alert Status (1.3) ---
+    const liftClosureStatus = useMemo(() => {
+        if (!currentConfig.requiresResort || !resort?.lifts || resort.lifts.length === 0) {
+            return { alertActive: false, message: '', urgent: false, closingTimeStr: '', recommendedDepartureStr: '' };
+        }
+        return evaluateLiftClosureAlert(resort.lifts, resort);
+    }, [currentConfig.requiresResort, resort?.lifts, resort]);
+
     // --- Handlers ---
     const handleSelectResort = async (selected: ResortDetail) => {
         setSearchModalVisible(false);
         setIsCheckingLocation(true);
         try {
+            let fullResort = selected;
+            if (!selected.pistes || selected.pistes.length === 0) {
+                const offline = await offlineResortService.getOfflineResort(selected.ID);
+                if (offline) {
+                    fullResort = offline;
+                } else if (!isOffline) {
+                    try {
+                        const res = await api.get<ResortDetail>(`/resorts/by-id/${selected.ID}`);
+                        if (res.status === 200 && res.data) {
+                            fullResort = res.data;
+                        }
+                    } catch {}
+                }
+            }
+
             const loc = await getCurrentLocation();
-            if (loc && selected.Latitude && selected.Longitude) {
+            if (loc && fullResort.Latitude && fullResort.Longitude) {
                 const dist = getDistanceFromLatLonInKm(
                     loc.coords.latitude,
                     loc.coords.longitude,
-                    selected.Latitude,
-                    selected.Longitude
+                    fullResort.Latitude,
+                    fullResort.Longitude
                 );
                 // Informative notice without blocking geographic tracking
                 if (dist > 20) {
@@ -375,16 +405,20 @@ export default function InteractiveSkiMapNative() {
                 }
             }
 
-            setResort(selected);
-            if (selected.Latitude && selected.Longitude) {
+            setResort(fullResort);
+            await AsyncStorage.setItem('LAST_ACTIVE_RESORT_ID', fullResort.ID);
+
+            if (fullResort.Latitude && fullResort.Longitude) {
                 cameraRef.current?.easeTo({
-                    center: [selected.Longitude, selected.Latitude],
+                    center: [fullResort.Longitude, fullResort.Latitude],
                     zoom: 13,
                     duration: 400,
                 });
             }
 
-            const isDownloaded = packs.some((p) => p.name === selected.Name);
+            const isDownloaded =
+                (await offlineResortService.isResortOffline(fullResort.ID)) ||
+                packs.some((p) => p.name === fullResort.Name);
             if (!isDownloaded && !hasShownCoverageWarning) {
                 setShowCoverageWarningModal(true);
                 setHasShownCoverageWarning(true);
@@ -561,6 +595,29 @@ export default function InteractiveSkiMapNative() {
                 </View>
             )}
 
+            {/* Offline and Closure Status Banners */}
+            {!takePictureMode && (
+                <View style={styles.statusBannersContainer} pointerEvents="box-none">
+                    {isOffline && (
+                        <View style={styles.offlineBanner}>
+                            <WifiOff size={12} color="#b45309" />
+                            <Text style={styles.offlineBannerText}>
+                                {t('offline_slopes_ready', 'Modo 100% Offline activo')}
+                            </Text>
+                        </View>
+                    )}
+
+                    {liftClosureStatus.alertActive && (
+                        <View style={[styles.liftClosureBanner, liftClosureStatus.urgent && styles.liftClosureBannerUrgent]}>
+                            <Clock size={13} color={liftClosureStatus.urgent ? '#dc2626' : '#b45309'} />
+                            <Text style={[styles.liftClosureText, liftClosureStatus.urgent && styles.liftClosureTextUrgent]} numberOfLines={2}>
+                                {liftClosureStatus.message}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+            )}
+
             {/* Modals */}
             <ActivitySelectorModal
                 visible={activityModalVisible}
@@ -646,6 +703,14 @@ export default function InteractiveSkiMapNative() {
                     pitch={viewState.pitch}
                     bearing={viewState.bearing}
                     initialViewState={initialViewState}
+                />
+
+                <NativeRasterDEMSource
+                    id="maplibre-dem"
+                    tiles={['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png']}
+                    encoding="terrarium"
+                    tileSize={256}
+                    maxzoom={14}
                 />
 
                 <NativeRasterSource
@@ -756,6 +821,8 @@ export default function InteractiveSkiMapNative() {
                             onDownloadCurrentArea={handleDownloadCurrentView}
                             onDeletePack={deletePack}
                             currentResortName={resort?.Name}
+                            currentResortId={resort?.ID}
+                            mapStyleUrl={getMapStyleValue(mapStyleId) as string}
                         />
                     )}
                 </>
@@ -817,6 +884,57 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
+        },
+        statusBannersContainer: {
+            position: 'absolute',
+            top: SPACING.xl + 46,
+            left: SPACING.sm,
+            right: SPACING.sm,
+            zIndex: 9,
+            gap: 6,
+        },
+        offlineBanner: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            backgroundColor: '#fef3c7',
+            paddingVertical: 4,
+            paddingHorizontal: 9,
+            borderRadius: BORDER_RADIUS.md,
+            borderWidth: 1,
+            borderColor: '#fde68a',
+            ...SHADOWS.sm,
+            alignSelf: 'flex-start',
+        },
+        offlineBannerText: {
+            fontSize: 11,
+            fontWeight: '700',
+            color: '#b45309',
+        },
+        liftClosureBanner: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            backgroundColor: '#fffbeb',
+            paddingVertical: 6,
+            paddingHorizontal: 10,
+            borderRadius: BORDER_RADIUS.md,
+            borderWidth: 1,
+            borderColor: '#f59e0b',
+            ...SHADOWS.sm,
+        },
+        liftClosureBannerUrgent: {
+            backgroundColor: '#fef2f2',
+            borderColor: '#ef4444',
+        },
+        liftClosureText: {
+            fontSize: 11,
+            fontWeight: '600',
+            color: '#92400e',
+            flex: 1,
+        },
+        liftClosureTextUrgent: {
+            color: '#b91c1c',
         },
         topBarLeft: {
             flexDirection: 'row',

@@ -15,9 +15,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
-import { ArrowLeft, CircleHelp, Crosshair, Download, Layers, MapPin, X } from 'lucide-react-native';
+import { ArrowLeft, CircleHelp, Clock, Crosshair, Download, Layers, MapPin, WifiOff, X } from 'lucide-react-native';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { offlineResortService } from 'services/offline-resort.service';
+import { evaluateLiftClosureAlert } from 'utils/lift-closure.util';
+import { getCurrentLocation } from 'tracking/task-manager';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Platform, processColor, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -476,7 +479,17 @@ export default function InteractiveSkiMapNative() {
     const [showOriginModal, setShowOriginModal] = useState(false);
     const [isSelectingRouteOrigin, setIsSelectingRouteOrigin] = useState(false);
     const [routeSkillLevel, setRouteSkillLevel] = useState<SkillLevel>('all');
+    const [fastLifts, setFastLifts] = useState(false);
+    const [badWeather, setBadWeather] = useState(false);
     const [isLoadingGps, setIsLoadingGps] = useState(false);
+
+    const liftClosureStatus = useMemo(() => {
+        const lifts = selectedResort?.lifts || [];
+        if (lifts.length === 0) {
+            return { alertActive: false, message: '', urgent: false, closingTimeStr: '', recommendedDepartureStr: '' };
+        }
+        return evaluateLiftClosureAlert(lifts, selectedResort || undefined);
+    }, [selectedResort]);
 
     const isSelectingRouteOriginRef = useRef(isSelectingRouteOrigin);
     const routeDestinationRef = useRef(routeDestination);
@@ -651,22 +664,17 @@ export default function InteractiveSkiMapNative() {
         if (networkState?.isConnected === false) {
             setIsLoadingResorts(false);
             try {
+                // 1. Prioritize full offline resort packs with complete pistes, lifts, and POIs
+                const offlineFullResorts = await offlineResortService.getAllOfflineResorts();
+                if (offlineFullResorts.length > 0) {
+                    setResorts(offlineFullResorts);
+                    return;
+                }
+                // 2. Fallback to cached resorts
                 const existingCached = await AsyncStorage.getItem('cached_resorts');
                 if (existingCached) {
                     const parsed: ResortDetail[] = JSON.parse(existingCached);
-                    const offlineResorts = parsed.filter(resort => {
-                        return packs.some(pack => {
-                            if (!pack.bounds || pack.bounds.length < 2) return false;
-                            const [[west, south], [east, north]] = pack.bounds as any;
-                            return (
-                                resort.Longitude >= west &&
-                                resort.Longitude <= east &&
-                                resort.Latitude >= south &&
-                                resort.Latitude <= north
-                            );
-                        });
-                    });
-                    setResorts(offlineResorts);
+                    setResorts(parsed);
                 } else {
                     setResorts([]);
                 }
@@ -757,6 +765,13 @@ export default function InteractiveSkiMapNative() {
                 if (!axios.isCancel(error)) {
                     console.error("Error fetching resorts:", error);
                     setIsLoadingResorts(false);
+                    // Network failure fallback to offline packs
+                    try {
+                        const offlineFull = await offlineResortService.getAllOfflineResorts();
+                        if (offlineFull.length > 0) {
+                            setResorts(offlineFull);
+                        }
+                    } catch {}
                 } else if (!signal.aborted) {
                     setIsLoadingResorts(false);
                 }
@@ -824,6 +839,13 @@ export default function InteractiveSkiMapNative() {
                 if (!axios.isCancel(error)) {
                     console.error("Error fetching resorts:", error);
                     setIsLoadingResorts(false);
+                    // Network failure fallback to offline packs
+                    try {
+                        const offlineFull = await offlineResortService.getAllOfflineResorts();
+                        if (offlineFull.length > 0) {
+                            setResorts(offlineFull);
+                        }
+                    } catch {}
                 } else if (!signal.aborted) {
                     setIsLoadingResorts(false);
                 }
@@ -1445,7 +1467,7 @@ export default function InteractiveSkiMapNative() {
                 originCoord,
                 destPiste,
                 destCoord,
-                level,
+                { level, fastLifts, badWeather },
                 originPiste,
                 originLift
             );
@@ -1475,8 +1497,56 @@ export default function InteractiveSkiMapNative() {
                 alert(t(result.error || 'no_route_found', 'No se encontró un trayecto esquiable entre estos puntos.'));
             }
         },
-        [routingEngine, routeSkillLevel, t]
+        [routingEngine, routeSkillLevel, fastLifts, badWeather, t]
     );
+
+    const handleReturnToBase = useCallback(async () => {
+        if (!routingEngine) return;
+        try {
+            let startCoord: [number, number] | null = routeOriginCoord;
+            if (!startCoord) {
+                const loc = await getCurrentLocation();
+                if (loc) {
+                    startCoord = [loc.coords.longitude, loc.coords.latitude];
+                } else if (selectedResort) {
+                    startCoord = [selectedResort.Longitude, selectedResort.Latitude];
+                }
+            }
+            if (!startCoord) return;
+
+            const result = routingEngine.calculateReturnToBase(startCoord, {
+                level: routeSkillLevel,
+                fastLifts,
+                badWeather,
+            });
+            if (result.success) {
+                setActiveRoute(result);
+                setRouteOriginCoord(startCoord);
+                setTimeout(() => {
+                    if (result.fullCoordinates.length >= 2) {
+                        let minLon = result.fullCoordinates[0][0], maxLon = result.fullCoordinates[0][0];
+                        let minLat = result.fullCoordinates[0][1], maxLat = result.fullCoordinates[0][1];
+                        result.fullCoordinates.forEach(([lon, lat]) => {
+                            if (lon < minLon) minLon = lon;
+                            if (lon > maxLon) maxLon = lon;
+                            if (lat < minLat) minLat = lat;
+                            if (lat > maxLat) maxLat = lat;
+                        });
+                        try {
+                            cameraRef.current?.fitBounds(
+                                [minLon, minLat, maxLon, maxLat],
+                                { padding: { top: 60, right: 60, bottom: 60, left: 60 }, duration: 800 }
+                            );
+                        } catch {}
+                    }
+                }, 150);
+            } else {
+                alert(t(result.error || 'no_route_found', 'No se encontró un trayecto hacia la base.'));
+            }
+        } catch (e) {
+            console.error('Error calculating return to base:', e);
+        }
+    }, [routingEngine, routeOriginCoord, selectedResort, routeSkillLevel, fastLifts, badWeather, t]);
 
     const handleUseCurrentLocation = useCallback(async () => {
         if (!routeDestination) return;
@@ -1986,8 +2056,31 @@ export default function InteractiveSkiMapNative() {
                     onDownloadCurrentArea={handleDownloadCurrentView}
                     onDeletePack={deletePack}
                     currentResortName={selectedResort?.Name}
+                    currentResortId={selectedResort?.ID}
+                    mapStyleUrl={getMapStyleValue(mapStyleId) as string}
                 />
             )}
+
+            {/* Offline and Lift Closure Alert Banners */}
+            <View style={styles.topStatusBannersContainer} pointerEvents="box-none">
+                {networkState?.isConnected === false && (
+                    <View style={styles.offlineBanner}>
+                        <WifiOff size={12} color="#b45309" />
+                        <Text style={styles.offlineBannerText}>
+                            {t('offline_map_active', 'Modo 100% Offline · Estaciones descargadas disponibles')}
+                        </Text>
+                    </View>
+                )}
+
+                {liftClosureStatus.alertActive && (
+                    <View style={[styles.liftClosureBanner, liftClosureStatus.urgent && styles.liftClosureBannerUrgent]}>
+                        <Clock size={13} color={liftClosureStatus.urgent ? '#dc2626' : '#b45309'} />
+                        <Text style={[styles.liftClosureText, liftClosureStatus.urgent && styles.liftClosureTextUrgent]} numberOfLines={2}>
+                            {liftClosureStatus.message}
+                        </Text>
+                    </View>
+                )}
+            </View>
 
             {selectedFeature && (
                 <MapDetailPanel 
@@ -2030,6 +2123,36 @@ export default function InteractiveSkiMapNative() {
                     }}
                     onLevelChange={handleLevelChange}
                     onSelectLeg={handleSelectRouteLeg}
+                    fastLifts={fastLifts}
+                    onToggleFastLifts={() => {
+                        const next = !fastLifts;
+                        setFastLifts(next);
+                        if (routeOriginCoord && routeDestination?.piste) {
+                            executeRouting(
+                                routeOriginCoord,
+                                activeRoute.originName || '',
+                                routeDestination.piste,
+                                routeDestination.coord,
+                                routeSkillLevel
+                            );
+                        }
+                    }}
+                    badWeather={badWeather}
+                    onToggleBadWeather={() => {
+                        const next = !badWeather;
+                        setBadWeather(next);
+                        if (routeOriginCoord && routeDestination?.piste) {
+                            executeRouting(
+                                routeOriginCoord,
+                                activeRoute.originName || '',
+                                routeDestination.piste,
+                                routeDestination.coord,
+                                routeSkillLevel
+                            );
+                        }
+                    }}
+                    onReturnToBase={handleReturnToBase}
+                    departureAlertStr={liftClosureStatus.alertActive ? liftClosureStatus.recommendedDepartureStr : undefined}
                 />
             )}
 
@@ -2265,6 +2388,57 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         fontSize: 12,
         fontWeight: '600',
         color: colors.textPrimary,
+    },
+    topStatusBannersContainer: {
+        position: 'absolute',
+        top: 60,
+        left: 16,
+        right: 16,
+        zIndex: 55,
+        gap: 6,
+    },
+    offlineBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#fef3c7',
+        paddingVertical: 4,
+        paddingHorizontal: 9,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: '#fde68a',
+        ...SHADOWS.sm,
+        alignSelf: 'flex-start',
+    },
+    offlineBannerText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#b45309',
+    },
+    liftClosureBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#fffbeb',
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: '#f59e0b',
+        ...SHADOWS.sm,
+    },
+    liftClosureBannerUrgent: {
+        backgroundColor: '#fef2f2',
+        borderColor: '#ef4444',
+    },
+    liftClosureText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#92400e',
+        flex: 1,
+    },
+    liftClosureTextUrgent: {
+        color: '#b91c1c',
     },
     originSelectingBanner: {
         position: 'absolute',

@@ -37,6 +37,22 @@ func (h *SkiResortHandler) GetByID(c *gin.Context) {
 	httputil.RespondOK(c, resort)
 }
 
+func (h *SkiResortHandler) GetOfflinePack(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		httputil.RespondError(c, fmt.Errorf("missing required parameter: id"))
+		return
+	}
+
+	pack, err := h.svc.GetOfflinePack(c.Request.Context(), id)
+	if err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+
+	httputil.RespondOK(c, pack)
+}
+
 func (h *SkiResortHandler) ListByName(c *gin.Context) {
 	name := c.Query("name")
 	if name == "" {

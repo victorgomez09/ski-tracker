@@ -6,6 +6,7 @@ import { X, Maximize2, Navigation } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
+import { getLiftClosingTime } from 'utils/lift-closure.util';
 
 let LineChart: any = null;
 if (Platform.OS !== 'web') {
@@ -706,6 +707,12 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, o
                             <View style={styles.statBox}>
                                 <Text style={styles.statLabel}>{t('hourly_label')}</Text>
                                 <Text style={styles.statValue}>{(data as Lift).CapacityHourly ? t('persons_count', { count: (data as Lift).CapacityHourly }) : '-'}</Text>
+                            </View>
+                            <View style={styles.statBox}>
+                                <Text style={styles.statLabel}>{t('closing_time', 'Cierre est.')}</Text>
+                                <Text style={[styles.statValue, { color: '#ea580c' }]}>
+                                    {getLiftClosingTime(data as Lift).text}
+                                </Text>
                             </View>
                         </View>
                     )}

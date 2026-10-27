@@ -7,9 +7,11 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import BottomTabs from 'components/navigation/bottom-tabs';
 import { LIGHT_COLORS, SPACING, useThemeColors } from 'constants/theme';
 import { useAuth } from 'context/auth.context';
+import { useIsOffline } from 'hooks/use-network.hook';
 
 export default function RootLayout() {
   const { token, isLoading } = useAuth();
+  const isOffline = useIsOffline();
   const { t } = useTranslation();
   const colors = useThemeColors();
   const styles = useMemo(() => getStyles(colors), [colors]);
@@ -22,7 +24,7 @@ export default function RootLayout() {
     );
   }
 
-  if (!token) {
+  if (!token && !isOffline) {
     return <Redirect href="/login" />;
   }
 

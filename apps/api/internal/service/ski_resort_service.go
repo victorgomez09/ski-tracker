@@ -30,6 +30,13 @@ type ResortDetailDTO struct {
 	POIs        []models.SkiResortPOI `json:"pois"`
 }
 
+type OfflinePackDTO struct {
+	ResortDetailDTO
+	GeneratedAt time.Time  `json:"generated_at"`
+	Version     string     `json:"version"`
+	BBox        [4]float64 `json:"bbox"` // [minLon, minLat, maxLon, maxLat]
+}
+
 type SkiResortService struct {
 	store  store.Store
 	logger *slog.Logger
@@ -86,6 +93,82 @@ func (s *SkiResortService) GetByID(ctx context.Context, id string) (ResortDetail
 	result.POIs = pois
 
 	return result, nil
+}
+
+func (s *SkiResortService) GetOfflinePack(ctx context.Context, id string) (OfflinePackDTO, error) {
+	detail, err := s.GetByID(ctx, id)
+	if err != nil {
+		return OfflinePackDTO{}, err
+	}
+
+	minLon := detail.Longitude
+	maxLon := detail.Longitude
+	minLat := detail.Latitude
+	maxLat := detail.Latitude
+
+	updateBounds := func(lon, lat float64) {
+		if lon < minLon {
+			minLon = lon
+		}
+		if lon > maxLon {
+			maxLon = lon
+		}
+		if lat < minLat {
+			minLat = lat
+		}
+		if lat > maxLat {
+			maxLat = lat
+		}
+	}
+
+	for _, piste := range detail.Pistes {
+		if coords, ok := piste.GeometryGeoJSON["coordinates"].([]interface{}); ok {
+			for _, pt := range coords {
+				if coordArr, ok := pt.([]interface{}); ok && len(coordArr) >= 2 {
+					if lon, okLon := coordArr[0].(float64); okLon {
+						if lat, okLat := coordArr[1].(float64); okLat {
+							updateBounds(lon, lat)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for _, lift := range detail.Lifts {
+		if coords, ok := lift.GeometryGeoJSON["coordinates"].([]interface{}); ok {
+			for _, pt := range coords {
+				if coordArr, ok := pt.([]interface{}); ok && len(coordArr) >= 2 {
+					if lon, okLon := coordArr[0].(float64); okLon {
+						if lat, okLat := coordArr[1].(float64); okLat {
+							updateBounds(lon, lat)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for _, poi := range detail.POIs {
+		updateBounds(poi.Longitude, poi.Latitude)
+	}
+
+	paddingLon := math.Max((maxLon-minLon)*0.08, 0.015)
+	paddingLat := math.Max((maxLat-minLat)*0.08, 0.015)
+
+	bbox := [4]float64{
+		minLon - paddingLon,
+		minLat - paddingLat,
+		maxLon + paddingLon,
+		maxLat + paddingLat,
+	}
+
+	return OfflinePackDTO{
+		ResortDetailDTO: detail,
+		GeneratedAt:     time.Now().UTC(),
+		Version:         "1.0",
+		BBox:            bbox,
+	}, nil
 }
 
 func (s *SkiResortService) ListByName(ctx context.Context, name string) ([]ResortDetailDTO, error) {

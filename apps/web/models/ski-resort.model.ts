@@ -217,3 +217,15 @@ export interface PisteTextDecoratorProps {
     color: string;
     isLift?: boolean;
 }
+
+export interface OfflineResortPack {
+    resort: ResortDetail;
+    bbox: [number, number, number, number]; // [minLon, minLat, maxLon, maxLat]
+    downloadedAt: number;
+    tilePackName?: string;
+    version: string;
+    sizeBytes?: number;
+    totalPistes: number;
+    totalLifts: number;
+    totalPois: number;
+}

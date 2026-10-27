@@ -617,6 +617,8 @@ export default function InteractiveSkiMap() {
     const [showOriginModal, setShowOriginModal] = useState(false);
     const [isSelectingRouteOrigin, setIsSelectingRouteOrigin] = useState(false);
     const [routeSkillLevel, setRouteSkillLevel] = useState<SkillLevel>('all');
+    const [fastLifts, setFastLifts] = useState(false);
+    const [badWeather, setBadWeather] = useState(false);
     const [isLoadingGps, setIsLoadingGps] = useState(false);
 
     const isSelectingRouteOriginRef = useRef(isSelectingRouteOrigin);
@@ -1488,7 +1490,7 @@ export default function InteractiveSkiMap() {
                 originCoord,
                 destPiste,
                 destCoord,
-                level,
+                { level, fastLifts, badWeather },
                 originPiste,
                 originLift,
                 getElev
@@ -1517,8 +1519,38 @@ export default function InteractiveSkiMap() {
                 alert(t(result.error || 'no_route_found', 'No se encontró un trayecto esquiable entre estos puntos.'));
             }
         },
-        [routingEngine, routeSkillLevel, t]
+        [routingEngine, routeSkillLevel, fastLifts, badWeather, t]
     );
+
+    const handleReturnToBase = useCallback(() => {
+        if (!routingEngine) return;
+        const coord: [number, number] = routeOriginCoord || [selectedResort?.Longitude || 0, selectedResort?.Latitude || 0];
+        const result = routingEngine.calculateReturnToBase(coord, {
+            level: routeSkillLevel,
+            fastLifts,
+            badWeather,
+        });
+        if (result.success) {
+            setActiveRoute(result);
+            setRouteOriginCoord(coord);
+            if (result.fullCoordinates.length >= 2) {
+                let minLon = result.fullCoordinates[0][0], maxLon = result.fullCoordinates[0][0];
+                let minLat = result.fullCoordinates[0][1], maxLat = result.fullCoordinates[0][1];
+                result.fullCoordinates.forEach(([lon, lat]) => {
+                    if (lon < minLon) minLon = lon;
+                    if (lon > maxLon) maxLon = lon;
+                    if (lat < minLat) minLat = lat;
+                    if (lat > maxLat) maxLat = lat;
+                });
+                mapRef.current?.fitBounds(
+                    [[minLon, minLat], [maxLon, maxLat]],
+                    { padding: { top: 70, bottom: 70, left: 420, right: 70 }, duration: 800 }
+                );
+            }
+        } else {
+            alert(t(result.error || 'no_route_found', 'No se encontró un trayecto hacia la base.'));
+        }
+    }, [routingEngine, routeOriginCoord, selectedResort, routeSkillLevel, fastLifts, badWeather, t]);
 
     const handleUseCurrentLocation = useCallback(() => {
         if (!routeDestination) return;
@@ -1921,6 +1953,35 @@ export default function InteractiveSkiMap() {
                     }}
                     onLevelChange={handleLevelChange}
                     onSelectLeg={handleSelectRouteLeg}
+                    fastLifts={fastLifts}
+                    onToggleFastLifts={() => {
+                        const next = !fastLifts;
+                        setFastLifts(next);
+                        if (routeOriginCoord && routeDestination?.piste) {
+                            executeRouting(
+                                routeOriginCoord,
+                                activeRoute.originName || '',
+                                routeDestination.piste,
+                                routeDestination.coord,
+                                routeSkillLevel
+                            );
+                        }
+                    }}
+                    badWeather={badWeather}
+                    onToggleBadWeather={() => {
+                        const next = !badWeather;
+                        setBadWeather(next);
+                        if (routeOriginCoord && routeDestination?.piste) {
+                            executeRouting(
+                                routeOriginCoord,
+                                activeRoute.originName || '',
+                                routeDestination.piste,
+                                routeDestination.coord,
+                                routeSkillLevel
+                            );
+                        }
+                    }}
+                    onReturnToBase={handleReturnToBase}
                 />
             )}
 

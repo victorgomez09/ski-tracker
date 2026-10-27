@@ -36,7 +36,7 @@ export default function BottomTabs({ state, descriptors, navigation }: BottomTab
                     const descriptor = descriptors[route.key];
 
                     if (route.name === 'tracking' && isWeb) return null;
-                    if (isOffline && (route.name === 'community' || route.name === 'resorts')) return null;
+                    if (isOffline && (route.name === 'community' || route.name === 'resorts' || route.name === 'profile')) return null;
 
                     const onPress = () => {
                         const event = navigation.emit({

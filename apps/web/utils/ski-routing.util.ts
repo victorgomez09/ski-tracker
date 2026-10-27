@@ -2,6 +2,12 @@ import { Lift, Piste } from '../models/ski-resort.model';
 
 export type SkillLevel = 'all' | 'noblack' | 'easy';
 
+export interface RoutingOptions {
+    level?: SkillLevel;
+    fastLifts?: boolean;
+    badWeather?: boolean;
+}
+
 export interface RouteLeg {
     kind: 'run' | 'lift' | 'walk';
     name: string;
@@ -33,6 +39,7 @@ export interface RouteResult {
         intermediate: number;
         advanced: number;
     };
+    levelRelaxed?: boolean;
     error?: string;
 }
 
@@ -65,15 +72,20 @@ const LIFT_SPEED: Record<string, number> = {
 };
 
 const LIFT_WAIT = 60;       // seconds wait at base station
-const WALK_SPEED = 1.1;     // m/s on flat snow with skis
+const WALK_SPEED = 1.1;     // m/s on snow with equipment
 
-// Realistic connection distances in meters (no cross-country trekking)
-const MAX_PISTE_TO_LIFT_M = 95;    // Piste bottom to lift base
-const MAX_LIFT_TO_PISTE_M = 110;   // Lift top to piste head
-const MAX_LIFT_TO_LIFT_M = 85;     // Lift top to next lift base (hub/station transfer)
-const MAX_PISTE_TO_PISTE_M = 70;   // Piste bottom to next piste head
-const MAX_PISTE_JUNCTION_M = 22;   // Direct intersection/fork between two pistes
-const MAX_SNAP_DIST_M = 140;       // Maximum distance to snap GPS/tap to a piste/lift
+// Robust connection distances in meters (calibrated to real-world OSM ski resorts)
+const MAX_PISTE_TO_LIFT_M = 350;     // Piste bottom to lift base station across snow front / resort base
+const MAX_PISTE_MID_TO_LIFT_M = 150; // Mid-piste node to lift base station
+const MAX_LIFT_TO_PISTE_M = 280;     // Lift top station to piste head
+const MAX_LIFT_TO_PISTE_MID_M = 180; // Lift top station to any downstream piste node
+const MAX_LIFT_TO_LIFT_M = 350;      // Lift top to next lift base (hub/station transfer)
+const MAX_BASE_TO_BASE_M = 400;      // Lift base to another lift base (transferring at resort base / valley)
+const MAX_RIDGE_TRANSFER_M = 150;    // Lift top to lift top walking transfer
+const MAX_PISTE_TO_PISTE_M = 180;    // Piste bottom to next piste head
+const MAX_PISTE_MERGE_M = 120;       // Piste bottom merging into any node of another piste
+const MAX_PISTE_JUNCTION_M = 50;     // Direct intersection/fork between two pistes
+const MAX_SNAP_DIST_M = 250;        // Initial radius to snap GPS/tap to a piste/lift
 
 const EASY_LEVEL: Record<string, boolean> = { novice: true, easy: true, other: true };
 const NO_BLACK_LEVEL: Record<string, boolean> = { novice: true, easy: true, intermediate: true, other: true };
@@ -87,7 +99,7 @@ interface GraphNode {
 interface GraphEdge {
     to: number;
     weight: number; // seconds
-    featureIndex: number; // -1 for connection
+    featureIndex: number; // -1 for walking / transfer connection
     distance: number;
     intermediateCoords?: [number, number][];
 }
@@ -141,57 +153,29 @@ export class SkiRoutingEngine {
         liftBases?: [number, number][],
         liftSummits?: [number, number][]
     ): { startElev: number | null; endElev: number | null } {
-        // 1. Check elevationProfile heights in tags
-        const hs = piste.Tags?.elevationProfile?.heights;
-        if (Array.isArray(hs) && hs.length >= 2) {
-            const first = Number(hs[0]);
-            const last = Number(hs[hs.length - 1]);
-            if (!isNaN(first) && !isNaN(last) && Math.abs(first - last) > 1) {
-                return { startElev: first, endElev: last };
-            }
-        }
-        // 2. Check 3D coordinates (with cumulative ascent vs descent)
+        // 1. Check 3D coordinates directly on the current geometry (most authoritative)
         const coords3D = piste.GeometryGeoJSON?.coordinates;
         if (coords3D && coords3D.length >= 2) {
-            let totalAscent = 0;
-            let totalDescent = 0;
-            let valid = false;
-            for (let i = 0; i < coords3D.length - 1; i++) {
-                const e0 = Number(coords3D[i]?.[2]);
-                const e1 = Number(coords3D[i + 1]?.[2]);
-                if (!isNaN(e0) && !isNaN(e1) && e0 > 0 && e1 > 0) {
-                    valid = true;
-                    if (e1 > e0) totalAscent += (e1 - e0);
-                    else totalDescent += (e0 - e1);
-                }
-            }
-            if (valid && (totalAscent > 0 || totalDescent > 0)) {
-                const cFirst = coords3D[0];
-                const cLast = coords3D[coords3D.length - 1];
-                const e1 = Number(cFirst?.[2]);
-                const e2 = Number(cLast?.[2]);
-                if (totalAscent > totalDescent + 2) {
-                    return { startElev: e1 || 1000, endElev: (e1 || 1000) + totalAscent };
-                } else if (totalDescent > totalAscent + 2) {
-                    return { startElev: (e2 || 1000) + totalDescent, endElev: e2 || 1000 };
-                }
-                if (!isNaN(e1) && !isNaN(e2) && Math.abs(e1 - e2) > 1) {
-                    return { startElev: e1, endElev: e2 };
-                }
-            }
-        }
-        // 3. Check elevation provider
-        if (elevProvider && coords.length >= 2) {
-            const e1 = elevProvider(coords[0]);
-            const e2 = elevProvider(coords[coords.length - 1]);
-            if (e1 !== null && e2 !== null && !isNaN(e1) && !isNaN(e2) && Math.abs(e1 - e2) > 1) {
+            const cFirst = coords3D[0];
+            const cLast = coords3D[coords3D.length - 1];
+            const e1 = Number(cFirst?.[2]);
+            const e2 = Number(cLast?.[2]);
+            if (!isNaN(e1) && !isNaN(e2) && e1 > 0 && e2 > 0 && Math.abs(e1 - e2) > 1.5) {
                 return { startElev: e1, endElev: e2 };
             }
         }
-        // 4. Topological lift proximity inference:
-        // Lifts always go Base -> Summit.
-        // If coords[0] is closer to lift bases and coords[last] is closer to lift summits,
-        // then coords[0] is base and coords[last] is summit (piste was drawn uphill!).
+
+        // 2. Check elevation provider (DEM)
+        if (elevProvider && coords.length >= 2) {
+            const e1 = elevProvider(coords[0]);
+            const e2 = elevProvider(coords[coords.length - 1]);
+            if (e1 !== null && e2 !== null && !isNaN(e1) && !isNaN(e2) && Math.abs(e1 - e2) > 1.5) {
+                return { startElev: e1, endElev: e2 };
+            }
+        }
+
+        // 3. Topological lift proximity inference:
+        // Lifts always transport uphill (Base -> Summit).
         if (liftBases && liftSummits && coords.length >= 2 && liftBases.length > 0 && liftSummits.length > 0) {
             const c0 = coords[0];
             const c1 = coords[coords.length - 1];
@@ -203,13 +187,23 @@ export class SkiRoutingEngine {
 
             // If c0 is near a lift base and c1 is near a lift summit:
             // c0 is base (low), c1 is summit (high) => uphill!
-            if (minBaseDist0 < 120 && minSummitDist1 < 140 && minSummitDist0 > minBaseDist0) {
+            if (minBaseDist0 < 140 && minSummitDist1 < 160 && minSummitDist0 > minBaseDist0) {
                 return { startElev: 1000, endElev: 2000 };
             }
             // If c0 is near a lift summit and c1 is near a lift base:
             // c0 is summit (high), c1 is base (low) => downhill!
-            if (minSummitDist0 < 140 && minBaseDist1 < 120 && minBaseDist0 > minSummitDist0) {
+            if (minSummitDist0 < 160 && minBaseDist1 < 140 && minBaseDist0 > minSummitDist0) {
                 return { startElev: 2000, endElev: 1000 };
+            }
+        }
+
+        // 4. Check elevationProfile heights in tags
+        const hs = piste.Tags?.elevationProfile?.heights;
+        if (Array.isArray(hs) && hs.length >= 2) {
+            const first = Number(hs[0]);
+            const last = Number(hs[hs.length - 1]);
+            if (!isNaN(first) && !isNaN(last) && Math.abs(first - last) > 1.5) {
+                return { startElev: first, endElev: last };
             }
         }
 
@@ -226,14 +220,14 @@ export class SkiRoutingEngine {
         if (cFirst && cLast && cFirst.length >= 3 && cLast.length >= 3) {
             const e1 = Number(cFirst[2]);
             const e2 = Number(cLast[2]);
-            if (!isNaN(e1) && !isNaN(e2) && e1 > 0 && e2 > 0 && Math.abs(e1 - e2) > 1) {
+            if (!isNaN(e1) && !isNaN(e2) && e1 > 0 && e2 > 0 && Math.abs(e1 - e2) > 1.5) {
                 return { startElev: e1, endElev: e2 };
             }
         }
         if (elevProvider && coords.length >= 2) {
             const e1 = elevProvider(coords[0]);
             const e2 = elevProvider(coords[coords.length - 1]);
-            if (e1 !== null && e2 !== null && !isNaN(e1) && !isNaN(e2) && Math.abs(e1 - e2) > 1) {
+            if (e1 !== null && e2 !== null && !isNaN(e1) && !isNaN(e2) && Math.abs(e1 - e2) > 1.5) {
                 return { startElev: e1, endElev: e2 };
             }
         }
@@ -275,7 +269,7 @@ export class SkiRoutingEngine {
             if (raw && raw.length >= 2) {
                 const flat = raw.map((c) => [c[0], c[1]] as [number, number]);
                 const { startElev, endElev } = this.getLiftElevation(lift, flat, elevationProvider);
-                if (startElev !== null && endElev !== null && startElev > endElev + 2) {
+                if (startElev !== null && endElev !== null && startElev > endElev + 1.5) {
                     liftBases.push(flat[flat.length - 1]);
                     liftSummits.push(flat[0]);
                 } else {
@@ -285,7 +279,7 @@ export class SkiRoutingEngine {
             }
         });
 
-        // 1. Process Pistes (Strictly Downhill)
+        // 1. Process Pistes (Strictly Downhill Flow)
         pistes.forEach((piste) => {
             const rawCoords = piste.GeometryGeoJSON?.coordinates;
             if (!rawCoords || rawCoords.length < 2) return;
@@ -301,8 +295,8 @@ export class SkiRoutingEngine {
 
             let pts = rawCoords.map((c) => [c[0], c[1], c[2] ?? 0] as [number, number, number]);
 
-            // If start elevation is lower than end elevation, it was drawn uphill.
-            // Reverse so index 0 is at the summit (top) and last index is at base (bottom).
+            // If start elevation is lower than end elevation, it was drawn uphill in OSM.
+            // Reverse so index 0 is at summit and last index is at base.
             if (startElev !== null && endElev !== null && endElev > startElev + 1.5) {
                 pts = [...pts].reverse();
             }
@@ -321,19 +315,21 @@ export class SkiRoutingEngine {
                 if (idx === 0) firstNode = n;
                 if (prevNode !== null) {
                     const dist = calculateDistanceM(nodes[prevNode].p, pt);
-                    const weight = Math.max(1, dist / speed);
-                    // Defensive guard: never allow a run edge to climb > 2.5m elevation
+                    const baseWeight = Math.max(1, dist / speed);
+
+                    // Check elevation gain on this segment (e.g. slight flat or DEM artifact)
                     const elevGain =
                         pt[2] > 0 && nodes[prevNode].p[2] > 0
                             ? pt[2] - nodes[prevNode].p[2]
                             : 0;
-                    if (elevGain <= 2.5) {
-                        // Directed downhill edge ONLY: prevNode -> n
-                        addEdge(prevNode, n, weight, featIdx, dist, [
-                            [nodes[prevNode].p[0], nodes[prevNode].p[1]],
-                            [pt[0], pt[1]],
-                        ]);
-                    }
+
+                    // CRITICAL: NEVER drop an edge between consecutive nodes of a designated piste.
+                    // If there is an uphill hump (> 2.5m), add walking/skating penalty, but keep the trail intact!
+                    const uphillPenalty = elevGain > 2.5 ? (elevGain * 4) + (dist / WALK_SPEED) : 0;
+                    addEdge(prevNode, n, baseWeight + uphillPenalty, featIdx, dist, [
+                        [nodes[prevNode].p[0], nodes[prevNode].p[1]],
+                        [pt[0], pt[1]],
+                    ]);
                 }
                 prevNode = n;
             });
@@ -352,7 +348,7 @@ export class SkiRoutingEngine {
             });
         });
 
-        // 2. Process Lifts (Strictly Uphill)
+        // 2. Process Lifts (Uphill by default, plus bi-directional downhill for enclosed cabins)
         lifts.forEach((lift) => {
             const rawCoords = lift.GeometryGeoJSON?.coordinates;
             if (!rawCoords || rawCoords.length < 2) return;
@@ -382,8 +378,21 @@ export class SkiRoutingEngine {
             const top = addNode(pts[pts.length - 1], featIdx, pts.length - 1);
             const fullLiftCoords = pts.map((p) => [p[0], p[1]] as [number, number]);
 
-            // Uphill edge ONLY: bottom -> top
+            // Uphill edge: bottom -> top
             addEdge(bottom, top, rideTime + LIFT_WAIT, featIdx, totalLiftDist, fullLiftCoords);
+
+            // Bi-directional transport: gondolas, cable cars, funiculars also carry passengers downhill
+            const isEnclosed =
+                liftType === 'gondola' ||
+                liftType === 'cable_car' ||
+                liftType === 'funicular' ||
+                liftType === 'railway' ||
+                liftType === 'mixed_lift';
+
+            if (isEnclosed) {
+                const reversedLiftCoords = [...fullLiftCoords].reverse();
+                addEdge(top, bottom, rideTime + LIFT_WAIT + 15, featIdx, totalLiftDist, reversedLiftCoords);
+            }
 
             features.push({
                 kind: 'lift',
@@ -400,18 +409,19 @@ export class SkiRoutingEngine {
             });
         });
 
-        // 3. Connect Stations & Pistes (Strictly Realistic Interchanges Only)
+        // 3. Connect Stations & Pistes (Dense, highly connected network topology)
         const pisteFeatures = features.filter((f) => f.kind === 'run');
         const liftFeatures = features.filter((f) => f.kind === 'lift');
 
-        // Rule 3A: Piste bottom -> Lift base station (Skiing into lift line)
+        // Rule 3A: Piste bottom -> Lift base station (Skiing into lift queue / snow front)
         pisteFeatures.forEach((pf) => {
             const pBottom = nodes[pf.bottomNode];
             liftFeatures.forEach((lf) => {
                 const lBottom = nodes[lf.bottomNode];
                 const d = calculateDistanceM(pBottom.p, lBottom.p);
                 if (d <= MAX_PISTE_TO_LIFT_M) {
-                    const walkTime = Math.max(5, d / WALK_SPEED + 10);
+                    const isNear = d <= 80;
+                    const walkTime = isNear ? Math.max(4, d / 3.0 + 5) : Math.max(10, d / WALK_SPEED + 15);
                     addEdge(pf.bottomNode, lf.bottomNode, walkTime, -1, d, [
                         [pBottom.p[0], pBottom.p[1]],
                         [lBottom.p[0], lBottom.p[1]],
@@ -420,23 +430,41 @@ export class SkiRoutingEngine {
             });
         });
 
-        // Rule 3B: Lift top station -> Piste head (Sliding off lift to run start)
+        // Rule 3B: Lift top station -> Piste head AND any intermediate node along piste
+        // (Ensures skiers can enter a piste that originates near the top or passes by the summit station)
         liftFeatures.forEach((lf) => {
             const lTop = nodes[lf.topNode];
             pisteFeatures.forEach((pf) => {
+                // Connect to piste head (topNode)
                 const pTop = nodes[pf.topNode];
-                const d = calculateDistanceM(lTop.p, pTop.p);
-                if (d <= MAX_LIFT_TO_PISTE_M) {
-                    const slideTime = Math.max(4, d / 3.0 + 8);
-                    addEdge(lf.topNode, pf.topNode, slideTime, -1, d, [
+                const dHead = calculateDistanceM(lTop.p, pTop.p);
+                if (dHead <= MAX_LIFT_TO_PISTE_M) {
+                    const slideTime = Math.max(4, dHead / 3.0 + 8);
+                    addEdge(lf.topNode, pf.topNode, slideTime, -1, dHead, [
                         [lTop.p[0], lTop.p[1]],
                         [pTop.p[0], pTop.p[1]],
                     ]);
                 }
+
+                // Also connect to any intermediate node within MAX_LIFT_TO_PISTE_MID_M
+                pf.nodeIndices.forEach((nIdx) => {
+                    if (nIdx === pf.topNode) return;
+                    const pNode = nodes[nIdx];
+                    const dMid = calculateDistanceM(lTop.p, pNode.p);
+                    if (dMid <= MAX_LIFT_TO_PISTE_MID_M) {
+                        // Avoid climbing uphill by more than 3m
+                        if (lTop.p[2] > 0 && pNode.p[2] > 0 && pNode.p[2] > lTop.p[2] + 3) return;
+                        const slideTime = Math.max(4, dMid / 3.0 + 10);
+                        addEdge(lf.topNode, nIdx, slideTime, -1, dMid, [
+                            [lTop.p[0], lTop.p[1]],
+                            [pNode.p[0], pNode.p[1]],
+                        ]);
+                    }
+                });
             });
         });
 
-        // Rule 3C: Lift top station -> Another lift base station (Lift interchange hub)
+        // Rule 3C: Lift top station -> Another lift base station (Mid-station hubs / transfers)
         liftFeatures.forEach((lf1) => {
             const l1Top = nodes[lf1.topNode];
             liftFeatures.forEach((lf2) => {
@@ -453,29 +481,86 @@ export class SkiRoutingEngine {
             });
         });
 
-        // Rule 3D: Piste bottom -> Next Piste start (End of one piste continuing into another)
+        // Rule 3D: Lift base station <-> Another lift base station (Resort Base / Valley Floor Hubs)
+        // CRITICAL: Allows skiing to base of sector 1 and transferring to lift of sector 2
+        liftFeatures.forEach((lf1, i) => {
+            const l1Bottom = nodes[lf1.bottomNode];
+            for (let j = i + 1; j < liftFeatures.length; j++) {
+                const lf2 = liftFeatures[j];
+                const l2Bottom = nodes[lf2.bottomNode];
+                const d = calculateDistanceM(l1Bottom.p, l2Bottom.p);
+                if (d <= MAX_BASE_TO_BASE_M) {
+                    const walkTime = Math.max(10, d / WALK_SPEED + 20);
+                    addEdge(lf1.bottomNode, lf2.bottomNode, walkTime, -1, d, [
+                        [l1Bottom.p[0], l1Bottom.p[1]],
+                        [l2Bottom.p[0], l2Bottom.p[1]],
+                    ]);
+                    addEdge(lf2.bottomNode, lf1.bottomNode, walkTime, -1, d, [
+                        [l2Bottom.p[0], l2Bottom.p[1]],
+                        [l1Bottom.p[0], l1Bottom.p[1]],
+                    ]);
+                }
+            }
+        });
+
+        // Rule 3E: Lift top station <-> Another lift top station (Ridge / Summit plateau transfers)
+        liftFeatures.forEach((lf1, i) => {
+            const l1Top = nodes[lf1.topNode];
+            for (let j = i + 1; j < liftFeatures.length; j++) {
+                const lf2 = liftFeatures[j];
+                const l2Top = nodes[lf2.topNode];
+                const d = calculateDistanceM(l1Top.p, l2Top.p);
+                if (d <= MAX_RIDGE_TRANSFER_M) {
+                    const walkTime = Math.max(12, d / WALK_SPEED + 20);
+                    addEdge(lf1.topNode, lf2.topNode, walkTime, -1, d, [
+                        [l1Top.p[0], l1Top.p[1]],
+                        [l2Top.p[0], l2Top.p[1]],
+                    ]);
+                    addEdge(lf2.topNode, lf1.topNode, walkTime, -1, d, [
+                        [l2Top.p[0], l2Top.p[1]],
+                        [l1Top.p[0], l1Top.p[1]],
+                    ]);
+                }
+            }
+        });
+
+        // Rule 3F: Piste bottom -> Next Piste start AND Piste bottom -> Mid-piste merge
         pisteFeatures.forEach((pf1) => {
             const p1Bottom = nodes[pf1.bottomNode];
             pisteFeatures.forEach((pf2) => {
                 if (pf1 === pf2) return;
+                // Piste 1 end to Piste 2 head
                 const p2Top = nodes[pf2.topNode];
-                // Do not allow climbing uphill to the start of another piste without a lift
-                if (p1Bottom.p[2] > 0 && p2Top.p[2] > 0 && p2Top.p[2] > p1Bottom.p[2] + 2) {
-                    return;
+                const dHead = calculateDistanceM(p1Bottom.p, p2Top.p);
+                if (dHead <= MAX_PISTE_TO_PISTE_M) {
+                    if (!(p1Bottom.p[2] > 0 && p2Top.p[2] > 0 && p2Top.p[2] > p1Bottom.p[2] + 3)) {
+                        const glideTime = Math.max(3, dHead / 4.0);
+                        addEdge(pf1.bottomNode, pf2.topNode, glideTime, -1, dHead, [
+                            [p1Bottom.p[0], p1Bottom.p[1]],
+                            [p2Top.p[0], p2Top.p[1]],
+                        ]);
+                    }
                 }
-                const d = calculateDistanceM(p1Bottom.p, p2Top.p);
-                if (d <= MAX_PISTE_TO_PISTE_M) {
-                    const glideTime = Math.max(3, d / 4.0);
-                    addEdge(pf1.bottomNode, pf2.topNode, glideTime, -1, d, [
-                        [p1Bottom.p[0], p1Bottom.p[1]],
-                        [p2Top.p[0], p2Top.p[1]],
-                    ]);
-                }
+                // Piste 1 end merging into any node of Piste 2
+                pf2.nodeIndices.forEach((nIdx) => {
+                    if (nIdx === pf2.topNode) return;
+                    const p2Node = nodes[nIdx];
+                    const dMerge = calculateDistanceM(p1Bottom.p, p2Node.p);
+                    if (dMerge <= MAX_PISTE_MERGE_M) {
+                        if (!(p1Bottom.p[2] > 0 && p2Node.p[2] > 0 && p2Node.p[2] > p1Bottom.p[2] + 3)) {
+                            const glideTime = Math.max(3, dMerge / 4.0 + 5);
+                            addEdge(pf1.bottomNode, nIdx, glideTime, -1, dMerge, [
+                                [p1Bottom.p[0], p1Bottom.p[1]],
+                                [p2Node.p[0], p2Node.p[1]],
+                            ]);
+                        }
+                    }
+                });
             });
         });
 
-        // Rule 3E: Mid-piste intersections / forks (pistes that cross or merge within 22m)
-        const G = 600;
+        // Rule 3G: Mid-piste intersections / forks (spatial hash grid)
+        const G = 300;
         const grid: Record<string, number[]> = {};
         pisteFeatures.forEach((pf) => {
             pf.nodeIndices.forEach((nIdx) => {
@@ -502,11 +587,10 @@ export class SkiRoutingEngine {
 
                             const d = calculateDistanceM(n1.p, n2.p);
                             if (d <= MAX_PISTE_JUNCTION_M) {
-                                // Do not allow mid-piste transitions that climb uphill by more than 2 meters
-                                if (n1.p[2] > 0 && n2.p[2] > 0 && n2.p[2] > n1.p[2] + 2) {
+                                if (n1.p[2] > 0 && n2.p[2] > 0 && n2.p[2] > n1.p[2] + 2.5) {
                                     return;
                                 }
-                                addEdge(n1Idx, n2Idx, Math.max(2, d / 5.0), -1, d, [
+                                addEdge(n1Idx, n2Idx, Math.max(2, d / 4.5), -1, d, [
                                     [n1.p[0], n1.p[1]],
                                     [n2.p[0], n2.p[1]],
                                 ]);
@@ -517,17 +601,17 @@ export class SkiRoutingEngine {
             });
         });
 
-        // Rule 3F: Piste points along lower section passing close to a lift base station
+        // Rule 3H: Mid-piste points passing near a lift base station
         pisteFeatures.forEach((pf) => {
             const count = pf.nodeIndices.length;
-            const checkStartIndex = Math.floor(count * 0.35);
+            const checkStartIndex = Math.floor(count * 0.2);
             for (let idx = checkStartIndex; idx < count; idx++) {
                 const nIdx = pf.nodeIndices[idx];
                 const pNode = nodes[nIdx];
                 liftFeatures.forEach((lf) => {
                     const lBottom = nodes[lf.bottomNode];
                     const d = calculateDistanceM(pNode.p, lBottom.p);
-                    if (d <= 50) {
+                    if (d <= MAX_PISTE_MID_TO_LIFT_M) {
                         const walkTime = Math.max(5, d / WALK_SPEED + 10);
                         addEdge(nIdx, lf.bottomNode, walkTime, -1, d, [
                             [pNode.p[0], pNode.p[1]],
@@ -562,9 +646,14 @@ export class SkiRoutingEngine {
         return bestNode;
     }
 
-    public findNearestNodeOnLift(liftId: string, _coord?: [number, number]): number | null {
+    public findNearestNodeOnLift(liftId: string, coord?: [number, number]): number | null {
         const feat = this.network.features.find((f) => f.kind === 'lift' && f.lift?.ID === liftId);
         if (!feat) return null;
+        if (coord) {
+            const dBottom = calculateDistanceM(coord, this.network.nodes[feat.bottomNode].p);
+            const dTop = calculateDistanceM(coord, this.network.nodes[feat.topNode].p);
+            return dTop < dBottom ? feat.topNode : feat.bottomNode;
+        }
         return feat.bottomNode;
     }
 
@@ -572,12 +661,18 @@ export class SkiRoutingEngine {
         originCoord: [number, number],
         destPiste: Piste,
         destCoord?: [number, number],
-        level: SkillLevel = 'all',
+        levelOrOptions: SkillLevel | RoutingOptions = 'all',
         originPiste?: Piste,
         originLift?: Lift,
         elevationProvider?: ElevationProvider
     ): RouteResult {
-        // If elevationProvider is supplied and wasn't available at initialization, rebuild network with DEM elevations
+        const options: RoutingOptions =
+            typeof levelOrOptions === 'string'
+                ? { level: levelOrOptions }
+                : (levelOrOptions || { level: 'all' });
+        const level: SkillLevel = options.level || 'all';
+
+        // Rebuild network if elevationProvider is supplied and not used previously
         if (elevationProvider && this.rawPistes.length > 0) {
             this.network = this.buildNetwork(this.rawPistes, this.rawLifts, elevationProvider);
         }
@@ -602,210 +697,423 @@ export class SkiRoutingEngine {
             return emptyResult('no_network_available');
         }
 
+        // Safe origin coordinate check
+        let safeOriginCoord: [number, number] = originCoord;
+        if (!safeOriginCoord || isNaN(safeOriginCoord[0]) || isNaN(safeOriginCoord[1]) || (Math.abs(safeOriginCoord[0]) < 0.001 && Math.abs(safeOriginCoord[1]) < 0.001)) {
+            if (originPiste?.GeometryGeoJSON?.coordinates?.[0]) {
+                const c = originPiste.GeometryGeoJSON.coordinates[0];
+                safeOriginCoord = [c[0], c[1]];
+            } else if (originLift?.GeometryGeoJSON?.coordinates?.[0]) {
+                const c = originLift.GeometryGeoJSON.coordinates[0];
+                safeOriginCoord = [c[0], c[1]];
+            } else if (this.network.nodes.length > 0) {
+                safeOriginCoord = [this.network.nodes[0].p[0], this.network.nodes[0].p[1]];
+            }
+        }
+
         // 1. Identify Start Candidate Nodes
         const startCandidates: { node: number; cost: number; distance: number }[] = [];
+        const seenStartNodes = new Set<number>();
+
+        const addStartCandidate = (nodeIdx: number, distM: number, bonusCost: number = 0) => {
+            if (seenStartNodes.has(nodeIdx)) return;
+            seenStartNodes.add(nodeIdx);
+            startCandidates.push({
+                node: nodeIdx,
+                distance: distM,
+                cost: distM / WALK_SPEED + bonusCost,
+            });
+        };
 
         if (originPiste) {
-            const n = this.findNearestNodeOnPiste(originPiste.ID, originCoord);
+            const n = this.findNearestNodeOnPiste(originPiste.ID, safeOriginCoord);
             if (n !== null) {
-                startCandidates.push({ node: n, cost: 0, distance: 0 });
+                addStartCandidate(n, 0, 0);
             }
-        } else if (originLift) {
-            const n = this.findNearestNodeOnLift(originLift.ID, originCoord);
-            if (n !== null) {
-                startCandidates.push({ node: n, cost: 0, distance: 0 });
+        }
+
+        if (originLift) {
+            const feat = this.network.features.find((f) => f.kind === 'lift' && f.lift?.ID === originLift.ID);
+            if (feat) {
+                const dBottom = calculateDistanceM(safeOriginCoord, this.network.nodes[feat.bottomNode].p);
+                const dTop = calculateDistanceM(safeOriginCoord, this.network.nodes[feat.topNode].p);
+                if (dTop < dBottom) {
+                    addStartCandidate(feat.topNode, dTop, 0);
+                } else {
+                    addStartCandidate(feat.bottomNode, dBottom, 0);
+                }
             }
-        } else {
-            // Find accessible nodes (both nearby pistes and lift bases)
+        }
+
+        // Search nearby accessible nodes around safeOriginCoord to guarantee robust entry points
+        const snapRadii = [MAX_SNAP_DIST_M, 500, 1000];
+        for (const radius of snapRadii) {
+            if (startCandidates.length > 0) break;
             this.network.nodes.forEach((n, idx) => {
-                if (this.network.adj[idx].length === 0) return;
-                const d = calculateDistanceM(originCoord, n.p);
-                if (d <= MAX_SNAP_DIST_M) {
+                const d = calculateDistanceM(safeOriginCoord, n.p);
+                if (d <= radius) {
                     const isLiftBase = this.network.features[n.featureIndex]?.kind === 'lift' && n.nodeLocalIndex === 0;
-                    startCandidates.push({
-                        node: idx,
-                        distance: d,
-                        cost: d / WALK_SPEED + (isLiftBase ? 0 : 5),
-                    });
+                    addStartCandidate(idx, d, isLiftBase ? 0 : 5);
                 }
             });
-            startCandidates.sort((a, b) => a.distance - b.distance);
+        }
+
+        // If coordinates are far outside, find closest 5 nodes in the whole resort
+        if (startCandidates.length === 0) {
+            const allSorted = this.network.nodes
+                .map((n, idx) => ({ idx, d: calculateDistanceM(safeOriginCoord, n.p) }))
+                .sort((a, b) => a.d - b.d);
+            allSorted.slice(0, 5).forEach((item) => {
+                addStartCandidate(item.idx, item.d, 10);
+            });
         }
 
         if (startCandidates.length === 0) {
             return emptyResult('no_start_point_nearby');
         }
 
-        // 2. Identify Target Node(s) on Destination Piste
+        // 2. Identify Target Feature(s) on Destination Piste
         const destFeats = this.network.features.filter((f) => f.kind === 'run' && f.piste?.ID === destPiste.ID);
-        if (destFeats.length === 0) {
+        const validDestFeats = destFeats.length > 0
+            ? destFeats
+            : this.network.features.filter((f) => f.kind === 'run' && f.name.toLowerCase() === (destPiste.Name || '').toLowerCase());
+        const finalDestFeats = validDestFeats.length > 0
+            ? validDestFeats
+            : this.network.features.filter((f) => f.kind === 'run');
+
+        if (finalDestFeats.length === 0) {
             return emptyResult('no_dest_point_nearby');
         }
 
-        const targetNodeSet = new Set<number>();
+        const primaryTargets = new Set<number>();
+        let targetSpecificNode: number | null = null;
+        let targetPisteFeat: FeatureMeta = finalDestFeats[0];
 
         if (destCoord) {
-            const specificDestNode = this.findNearestNodeOnPiste(destPiste.ID, destCoord);
-            if (specificDestNode !== null) {
-                targetNodeSet.add(specificDestNode);
-            }
-        }
-
-        // If no destCoord or specificDestNode was found, target the head (topNode) of the destination piste
-        // so the skier reaches the run to ski it down!
-        if (targetNodeSet.size === 0) {
-            destFeats.forEach((f) => {
-                targetNodeSet.add(f.topNode);
+            let minD = Infinity;
+            finalDestFeats.forEach((f) => {
+                f.nodeIndices.forEach((nIdx) => {
+                    const d = calculateDistanceM(destCoord, this.network.nodes[nIdx].p);
+                    if (d < minD) {
+                        minD = d;
+                        targetSpecificNode = nIdx;
+                        targetPisteFeat = f;
+                    }
+                });
             });
-        }
-
-        if (targetNodeSet.size === 0) {
-            return emptyResult('no_dest_point_nearby');
-        }
-
-        // 3. Special Case: Same Piste and Start is strictly upstream of Target
-        if (originPiste && originPiste.ID === destPiste.ID && startCandidates.length > 0) {
-            const startNode = startCandidates[0].node;
-            const originFeat = destFeats[0];
-            const startLocalIdx = this.network.nodes[startNode].nodeLocalIndex;
-            const targetNode = Array.from(targetNodeSet)[0];
-            const targetLocalIdx = this.network.nodes[targetNode].nodeLocalIndex;
-
-            if (startLocalIdx < targetLocalIdx) {
-                // Skier simply descends this piste from start to target!
-                const sliceCoords = originFeat.coordinates
-                    .slice(startLocalIdx, targetLocalIdx + 1)
-                    .map((c) => [c[0], c[1]] as [number, number]);
-
-                let dist = 0;
-                for (let i = 1; i < sliceCoords.length; i++) {
-                    dist += calculateDistanceM(sliceCoords[i - 1], sliceCoords[i]);
-                }
-                const speed = RUN_SPEED[originFeat.diff] || RUN_SPEED.other;
-                const duration = Math.max(20, Math.round(dist / speed));
-                const descent = Math.max(0, Math.round(originFeat.coordinates[startLocalIdx][2] - originFeat.coordinates[targetLocalIdx][2]));
-
-                const leg: RouteLeg = {
-                    kind: 'run',
-                    name: originFeat.name,
-                    difficulty: originFeat.diff,
-                    distanceMeters: Math.round(dist),
-                    durationSeconds: duration,
-                    ascentMeters: 0,
-                    descentMeters: descent,
-                    instruction: `Descenso por pista ${originFeat.name}`,
-                    coordinates: sliceCoords,
-                };
-
-                return {
-                    success: true,
-                    originName: originPiste.Name || 'Pista de inicio',
-                    destinationName: destPiste.Name || 'Destino',
-                    totalDistanceMeters: Math.round(dist),
-                    totalDurationSeconds: duration,
-                    totalAscentMeters: 0,
-                    totalDescentMeters: descent,
-                    pistesCount: 1,
-                    liftsCount: 0,
-                    legs: [leg],
-                    fullCoordinates: sliceCoords,
-                    difficultyBreakdown: {
-                        novice: originFeat.diff === 'novice' ? 100 : 0,
-                        easy: originFeat.diff === 'easy' ? 100 : 0,
-                        intermediate: originFeat.diff === 'intermediate' ? 100 : 0,
-                        advanced: ['advanced', 'expert'].includes(originFeat.diff) ? 100 : 0,
-                    },
-                };
+            if (targetSpecificNode !== null) {
+                primaryTargets.add(targetSpecificNode);
             }
         }
 
-        // 4. Dijkstra Algorithm with Priority Queue
-        const numNodes = this.network.nodes.length;
-        const best = new Float64Array(numNodes).fill(Infinity);
-        const from = new Int32Array(numNodes).fill(-1);
-        const viaEdge = new Array<GraphEdge | null>(numNodes).fill(null);
+        // If no destCoord, target the head (topNode) of the destination piste
+        if (primaryTargets.size === 0) {
+            finalDestFeats.forEach((f) => primaryTargets.add(f.topNode));
+        }
 
-        // Min-heap: elements are [cost, nodeIndex]
-        const heap: [number, number][] = [];
-        const push = (cost: number, node: number) => {
-            heap.push([cost, node]);
-            let k = heap.length - 1;
-            while (k > 0) {
-                const p = (k - 1) >> 1;
-                if (heap[p][0] <= heap[k][0]) break;
-                const tmp = heap[p];
-                heap[p] = heap[k];
-                heap[k] = tmp;
-                k = p;
-            }
-        };
-
-        const pop = (): [number, number] | undefined => {
-            const top = heap[0];
-            const last = heap.pop();
-            if (heap.length && last) {
-                heap[0] = last;
-                let k = 0;
-                while (true) {
-                    const l = 2 * k + 1;
-                    const r = l + 1;
-                    let m = k;
-                    if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
-                    if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
-                    if (m === k) break;
-                    const tmp = heap[m];
-                    heap[m] = heap[k];
-                    heap[k] = tmp;
-                    k = m;
-                }
-            }
-            return top;
-        };
-
-        // Initialize all start candidates
-        startCandidates.forEach((sc) => {
-            if (sc.cost < best[sc.node]) {
-                best[sc.node] = sc.cost;
-                push(sc.cost, sc.node);
-            }
+        // Secondary / broad target set (all nodes of destination piste)
+        const allDestPisteNodes = new Set<number>();
+        finalDestFeats.forEach((f) => {
+            f.nodeIndices.forEach((nIdx) => allDestPisteNodes.add(nIdx));
         });
 
-        let endNode = -1;
+        // 3. Special Case: Same Piste and Start is strictly upstream of Target
+        if (originPiste && (originPiste.ID === destPiste.ID || (targetSpecificNode !== null && this.network.nodes[startCandidates[0].node].featureIndex === this.network.nodes[targetSpecificNode].featureIndex))) {
+            const startNode = startCandidates[0].node;
+            const startFeatIdx = this.network.nodes[startNode].featureIndex;
+            const feat = this.network.features[startFeatIdx];
+            if (feat && feat.kind === 'run') {
+                const startLocalIdx = this.network.nodes[startNode].nodeLocalIndex;
+                const targetNode = targetSpecificNode !== null ? targetSpecificNode : feat.bottomNode;
+                const targetLocalIdx = this.network.nodes[targetNode].nodeLocalIndex;
 
-        while (heap.length > 0) {
-            const current = pop();
-            if (!current) break;
-            const [c, u] = current;
+                if (startLocalIdx < targetLocalIdx) {
+                    // Straightforward downhill run on this piste
+                    const sliceCoords = feat.coordinates
+                        .slice(startLocalIdx, targetLocalIdx + 1)
+                        .map((c) => [c[0], c[1]] as [number, number]);
 
-            if (c > best[u]) continue;
-
-            if (targetNodeSet.has(u)) {
-                endNode = u;
-                break;
-            }
-
-            const edges = this.network.adj[u] || [];
-            for (let i = 0; i < edges.length; i++) {
-                const e = edges[i];
-
-                // Check skill level filter on downhill runs
-                if (e.featureIndex >= 0) {
-                    const feat = this.network.features[e.featureIndex];
-                    if (feat && feat.kind === 'run') {
-                        if (level === 'easy' && !EASY_LEVEL[feat.diff]) continue;
-                        if (level === 'noblack' && !NO_BLACK_LEVEL[feat.diff]) continue;
+                    let dist = 0;
+                    for (let i = 1; i < sliceCoords.length; i++) {
+                        dist += calculateDistanceM(sliceCoords[i - 1], sliceCoords[i]);
                     }
-                }
+                    const speed = RUN_SPEED[feat.diff] || RUN_SPEED.other;
+                    const duration = Math.max(20, Math.round(dist / speed));
+                    const descent = Math.max(0, Math.round(feat.coordinates[startLocalIdx][2] - feat.coordinates[targetLocalIdx][2]));
 
-                const nextCost = c + e.weight;
-                if (nextCost < best[e.to]) {
-                    best[e.to] = nextCost;
-                    from[e.to] = u;
-                    viaEdge[e.to] = e;
-                    push(nextCost, e.to);
+                    const leg: RouteLeg = {
+                        kind: 'run',
+                        name: feat.name,
+                        difficulty: feat.diff,
+                        distanceMeters: Math.round(dist),
+                        durationSeconds: duration,
+                        ascentMeters: 0,
+                        descentMeters: descent,
+                        instruction: `Descenso por pista ${feat.name}`,
+                        coordinates: sliceCoords,
+                    };
+
+                    return {
+                        success: true,
+                        originName: originPiste.Name || 'Pista de inicio',
+                        destinationName: destPiste.Name || 'Destino',
+                        totalDistanceMeters: Math.round(dist),
+                        totalDurationSeconds: duration,
+                        totalAscentMeters: 0,
+                        totalDescentMeters: descent,
+                        pistesCount: 1,
+                        liftsCount: 0,
+                        legs: [leg],
+                        fullCoordinates: sliceCoords,
+                        difficultyBreakdown: {
+                            novice: feat.diff === 'novice' ? 100 : 0,
+                            easy: feat.diff === 'easy' ? 100 : 0,
+                            intermediate: feat.diff === 'intermediate' ? 100 : 0,
+                            advanced: ['advanced', 'expert'].includes(feat.diff) ? 100 : 0,
+                        },
+                    };
                 }
             }
         }
+
+        // 4. Multi-Tier Dijkstra Search Engine
+        const solveDijkstra = (
+            targets: Set<number>,
+            skillFilter: SkillLevel,
+            relaxSkillLevel: boolean,
+            opts: RoutingOptions,
+            extraEdges?: Map<number, GraphEdge[]>
+        ): { endNode: number; best: Float64Array; from: Int32Array; viaEdge: Array<GraphEdge | null> } => {
+            const numNodes = this.network.nodes.length;
+            const best = new Float64Array(numNodes).fill(Infinity);
+            const from = new Int32Array(numNodes).fill(-1);
+            const viaEdge = new Array<GraphEdge | null>(numNodes).fill(null);
+
+            const heap: [number, number][] = [];
+            const push = (cost: number, node: number) => {
+                heap.push([cost, node]);
+                let k = heap.length - 1;
+                while (k > 0) {
+                    const p = (k - 1) >> 1;
+                    if (heap[p][0] <= heap[k][0]) break;
+                    const tmp = heap[p];
+                    heap[p] = heap[k];
+                    heap[k] = tmp;
+                    k = p;
+                }
+            };
+
+            const pop = (): [number, number] | undefined => {
+                const top = heap[0];
+                const last = heap.pop();
+                if (heap.length && last) {
+                    heap[0] = last;
+                    let k = 0;
+                    while (true) {
+                        const l = 2 * k + 1;
+                        const r = l + 1;
+                        let m = k;
+                        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+                        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+                        if (m === k) break;
+                        const tmp = heap[m];
+                        heap[m] = heap[k];
+                        heap[k] = tmp;
+                        k = m;
+                    }
+                }
+                return top;
+            };
+
+            startCandidates.forEach((sc) => {
+                if (sc.cost < best[sc.node]) {
+                    best[sc.node] = sc.cost;
+                    push(sc.cost, sc.node);
+                }
+            });
+
+            let reachedEndNode = -1;
+
+            while (heap.length > 0) {
+                const current = pop();
+                if (!current) break;
+                const [c, u] = current;
+                if (c > best[u]) continue;
+
+                if (targets.has(u)) {
+                    reachedEndNode = u;
+                    break;
+                }
+
+                const edges = this.network.adj[u] || [];
+                const allEdges = extraEdges && extraEdges.has(u)
+                    ? [...edges, ...extraEdges.get(u)!]
+                    : edges;
+
+                for (let i = 0; i < allEdges.length; i++) {
+                    const e = allEdges[i];
+                    let edgeWeight = e.weight;
+
+                    if (e.featureIndex >= 0) {
+                        const feat = this.network.features[e.featureIndex];
+                        if (feat) {
+                            if (feat.kind === 'run') {
+                                if (!relaxSkillLevel) {
+                                    if (skillFilter === 'easy' && !EASY_LEVEL[feat.diff]) continue;
+                                    if (skillFilter === 'noblack' && !NO_BLACK_LEVEL[feat.diff]) continue;
+                                } else {
+                                    // Soft penalty so easier paths are strongly prioritized over harder ones
+                                    if (skillFilter === 'easy') {
+                                        if (feat.diff === 'intermediate') edgeWeight += 500;
+                                        else if (feat.diff === 'advanced' || feat.diff === 'expert') edgeWeight += 2000;
+                                    } else if (skillFilter === 'noblack') {
+                                        if (feat.diff === 'advanced' || feat.diff === 'expert') edgeWeight += 1200;
+                                    }
+                                }
+
+                                if (opts.fastLifts && (feat.diff === 'novice' || feat.diff === 'easy')) {
+                                    edgeWeight *= 1.15;
+                                }
+                            } else if (feat.kind === 'lift') {
+                                const lType = feat.liftType || 'chair_lift';
+                                if (opts.fastLifts) {
+                                    if (lType === 'gondola' || lType === 'cable_car' || lType === 'funicular') {
+                                        edgeWeight *= 0.6;
+                                    } else if (lType.includes('drag') || lType.includes('t-bar') || lType.includes('platter')) {
+                                        edgeWeight *= 2.5;
+                                    } else if (lType === 'magic_carpet') {
+                                        edgeWeight *= 4.0;
+                                    }
+                                }
+                                if (opts.badWeather) {
+                                    if (lType === 'chair_lift') {
+                                        edgeWeight *= 2.2;
+                                    } else if (lType.includes('drag') || lType.includes('t-bar')) {
+                                        edgeWeight *= 2.0;
+                                    } else if (lType === 'gondola' || lType === 'cable_car' || lType === 'funicular') {
+                                        edgeWeight *= 0.5;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    const nextCost = c + edgeWeight;
+                    if (nextCost < best[e.to]) {
+                        best[e.to] = nextCost;
+                        from[e.to] = u;
+                        viaEdge[e.to] = e;
+                        push(nextCost, e.to);
+                    }
+                }
+            }
+
+            return { endNode: reachedEndNode, best, from, viaEdge };
+        };
+
+        // Execution of Multi-Tier Search:
+        let levelRelaxed = false;
+
+        // Tier 1: User preferences + primary target
+        let solution = solveDijkstra(primaryTargets, level, false, options);
+
+
+        // Tier 2: User preferences + any node on destination piste
+        if (solution.endNode < 0 && allDestPisteNodes.size > 0) {
+            solution = solveDijkstra(allDestPisteNodes, level, false, options);
+        }
+
+        // Tier 3: Relax skill level filter (bridges across harder slopes with penalties)
+        if (solution.endNode < 0 && level !== 'all') {
+            levelRelaxed = true;
+            solution = solveDijkstra(primaryTargets, level, true, options);
+            if (solution.endNode < 0 && allDestPisteNodes.size > 0) {
+                solution = solveDijkstra(allDestPisteNodes, level, true, options);
+            }
+        }
+
+        // Tier 4: Extended Valley Base Bridge
+        // Connect all lowest sector nodes / piste bottoms to valley lifts within 800m
+        if (solution.endNode < 0) {
+            levelRelaxed = true;
+            const extraEdges = new Map<number, GraphEdge[]>();
+            const baseNodes: number[] = [];
+            this.network.features.forEach((f) => {
+                baseNodes.push(f.bottomNode);
+            });
+
+            for (let i = 0; i < baseNodes.length; i++) {
+                const u = baseNodes[i];
+                const pU = this.network.nodes[u].p;
+                for (let j = i + 1; j < baseNodes.length; j++) {
+                    const v = baseNodes[j];
+                    const pV = this.network.nodes[v].p;
+                    const d = calculateDistanceM(pU, pV);
+                    if (d <= 850) {
+                        const walkTime = Math.max(20, d / WALK_SPEED + 35);
+                        const edgeUV: GraphEdge = { to: v, weight: walkTime, featureIndex: -1, distance: d, intermediateCoords: [[pU[0], pU[1]], [pV[0], pV[1]]] };
+                        const edgeVU: GraphEdge = { to: u, weight: walkTime, featureIndex: -1, distance: d, intermediateCoords: [[pV[0], pV[1]], [pU[0], pU[1]]] };
+                        if (!extraEdges.has(u)) extraEdges.set(u, []);
+                        if (!extraEdges.has(v)) extraEdges.set(v, []);
+                        extraEdges.get(u)!.push(edgeUV);
+                        extraEdges.get(v)!.push(edgeVU);
+                    }
+                }
+            }
+
+            solution = solveDijkstra(allDestPisteNodes, 'all', true, options, extraEdges);
+        }
+
+        // Tier 5: Absolute Fail-Safe Bridge
+        // In case two sectors in OSM data have zero mapped physical connections,
+        // find the reached node closest to any node on destination piste and bridge it with a liaison
+        if (solution.endNode < 0) {
+            levelRelaxed = true;
+            const reach = solveDijkstra(new Set(), 'all', true, options);
+            let bestBridgeFrom = -1;
+            let bestBridgeTo = -1;
+            let minBridgeDist = Infinity;
+
+            const destNodeList = Array.from(allDestPisteNodes);
+            for (let u = 0; u < reach.best.length; u++) {
+                if (reach.best[u] < Infinity) {
+                    const pU = this.network.nodes[u].p;
+                    for (const v of destNodeList) {
+                        const pV = this.network.nodes[v].p;
+                        const d = calculateDistanceM(pU, pV);
+                        if (d < minBridgeDist) {
+                            minBridgeDist = d;
+                            bestBridgeFrom = u;
+                            bestBridgeTo = v;
+                        }
+                    }
+                }
+            }
+
+            if (bestBridgeFrom >= 0 && bestBridgeTo >= 0) {
+                const pU = this.network.nodes[bestBridgeFrom].p;
+                const pV = this.network.nodes[bestBridgeTo].p;
+                const bridgeEdge: GraphEdge = {
+                    to: bestBridgeTo,
+                    weight: Math.max(30, minBridgeDist / WALK_SPEED + 40),
+                    featureIndex: -1,
+                    distance: minBridgeDist,
+                    intermediateCoords: [[pU[0], pU[1]], [pV[0], pV[1]]],
+                };
+                solution = {
+                    endNode: bestBridgeTo,
+                    best: reach.best,
+                    from: reach.from,
+                    viaEdge: reach.viaEdge,
+                };
+                solution.from[bestBridgeTo] = bestBridgeFrom;
+                solution.viaEdge[bestBridgeTo] = bridgeEdge;
+            }
+        }
+
+        const endNode = solution.endNode;
+        const from = solution.from;
+        const viaEdge = solution.viaEdge;
 
         if (endNode < 0) {
             return emptyResult('no_route_found');
@@ -823,7 +1131,7 @@ export class SkiRoutingEngine {
         }
         traversedEdges.reverse();
 
-        // 6. Build High-Fidelity Legs with Exact Piste and Lift Coordinates
+        // 6. Build High-Fidelity Route Legs
         const legs: RouteLeg[] = [];
         let totalDistance = 0;
         let totalAscent = 0;
@@ -858,21 +1166,19 @@ export class SkiRoutingEngine {
 
             if (canMergeWithLast) {
                 lastLeg.distanceMeters += Math.round(edge.distance);
-                // Append coordinates avoiding duplicate joint point
                 for (let i = 1; i < coords.length; i++) {
                     lastLeg.coordinates.push(coords[i]);
                 }
                 if (elevDiff > 0) lastLeg.ascentMeters += Math.round(elevDiff);
                 else lastLeg.descentMeters += Math.round(Math.abs(elevDiff));
             } else {
-                // If it's a tiny walk under 12m between consecutive legs, omit as standalone step
-                if (kind === 'walk' && edge.distance < 12 && legs.length > 0) {
+                if (kind === 'walk' && edge.distance < 10 && legs.length > 0) {
                     return;
                 }
 
                 const legName = feat
                     ? feat.name
-                    : (edge.distance > 25 ? 'Transición a pie' : 'Enlace en nieve');
+                    : (edge.distance > 80 ? 'Enlace a pie entre sectores' : (edge.distance > 25 ? 'Transición a pie' : 'Enlace en nieve'));
 
                 const newLeg: RouteLeg = {
                     kind,
@@ -890,7 +1196,50 @@ export class SkiRoutingEngine {
             }
         });
 
-        // Calculate durations and instructions
+        // If route ended at an intermediate node of destPiste and destCoord is further downstream on it,
+        // seamlessly append the downstream ski descent to the destination point!
+        const reachedFeatIdx = this.network.nodes[endNode].featureIndex;
+        const reachedLocalIdx = this.network.nodes[endNode].nodeLocalIndex;
+        if (targetSpecificNode !== null) {
+            const targetFeatIdx = this.network.nodes[targetSpecificNode].featureIndex;
+            const targetLocalIdx = this.network.nodes[targetSpecificNode].nodeLocalIndex;
+
+            if (reachedFeatIdx === targetFeatIdx && reachedLocalIdx < targetLocalIdx) {
+                const targetFeat = this.network.features[reachedFeatIdx];
+                const extensionCoords = targetFeat.coordinates
+                    .slice(reachedLocalIdx, targetLocalIdx + 1)
+                    .map((c) => [c[0], c[1]] as [number, number]);
+
+                let extensionDist = 0;
+                for (let i = 1; i < extensionCoords.length; i++) {
+                    extensionDist += calculateDistanceM(extensionCoords[i - 1], extensionCoords[i]);
+                }
+                const elevDiff = targetFeat.coordinates[targetLocalIdx][2] - targetFeat.coordinates[reachedLocalIdx][2];
+
+                const lastLeg = legs[legs.length - 1];
+                if (lastLeg && lastLeg.kind === 'run' && lastLeg.name === targetFeat.name) {
+                    lastLeg.distanceMeters += Math.round(extensionDist);
+                    for (let i = 1; i < extensionCoords.length; i++) {
+                        lastLeg.coordinates.push(extensionCoords[i]);
+                    }
+                    if (elevDiff < 0) lastLeg.descentMeters += Math.round(Math.abs(elevDiff));
+                } else {
+                    legs.push({
+                        kind: 'run',
+                        name: targetFeat.name,
+                        difficulty: targetFeat.diff,
+                        distanceMeters: Math.round(extensionDist),
+                        durationSeconds: 0,
+                        ascentMeters: 0,
+                        descentMeters: elevDiff < 0 ? Math.round(Math.abs(elevDiff)) : 0,
+                        instruction: `Descenso por pista ${targetFeat.name}`,
+                        coordinates: extensionCoords,
+                    });
+                }
+            }
+        }
+
+        // Calculate final durations and human-friendly instructions
         legs.forEach((leg) => {
             totalDistance += leg.distanceMeters;
             totalAscent += leg.ascentMeters;
@@ -955,6 +1304,86 @@ export class SkiRoutingEngine {
             legs,
             fullCoordinates: fullCoords,
             difficultyBreakdown,
+            levelRelaxed,
+        };
+    }
+
+    /**
+     * Calculates the best return route towards the ski resort base (parking / valley / village).
+     * Automatically identifies the base piste/station that reaches the lowest elevation.
+     */
+    public calculateReturnToBase(
+        originCoord: [number, number],
+        options: RoutingOptions = {},
+        originPiste?: Piste,
+        originLift?: Lift,
+        closingHour: number = 16,
+        closingMinute: number = 30
+    ): RouteResult & { estimatedReturnTimeMinutes: number; recommendedDepartureStr: string } {
+        let lowestPiste: Piste | null = null;
+        let lowestElev = Infinity;
+
+        this.rawPistes.forEach((piste) => {
+            const rawCoords = piste.GeometryGeoJSON?.coordinates;
+            if (!rawCoords || rawCoords.length === 0) return;
+            const lastCoord = rawCoords[rawCoords.length - 1];
+            const elev = lastCoord[2] ?? 0;
+            if (elev > 0 && elev < lowestElev) {
+                lowestElev = elev;
+                lowestPiste = piste;
+            }
+        });
+
+        if (!lowestPiste) {
+            const basePiste = this.rawPistes.find((p) => {
+                const n = (p.Name || '').toLowerCase();
+                return n.includes('base') || n.includes('retorn') || n.includes('debutant') || n.includes('estacion');
+            });
+            lowestPiste = basePiste || this.rawPistes[0];
+        }
+
+        const targetPiste = lowestPiste;
+        if (!targetPiste) {
+            return {
+                success: false,
+                originName: originPiste?.Name || 'Mi posición',
+                destinationName: 'Base de la estación',
+                totalDistanceMeters: 0,
+                totalDurationSeconds: 0,
+                totalAscentMeters: 0,
+                totalDescentMeters: 0,
+                pistesCount: 0,
+                liftsCount: 0,
+                legs: [],
+                fullCoordinates: [],
+                difficultyBreakdown: { novice: 0, easy: 0, intermediate: 0, advanced: 0 },
+                error: 'no_base_piste_found',
+                estimatedReturnTimeMinutes: 0,
+                recommendedDepartureStr: '',
+            };
+        }
+
+        const routeResult = this.calculateRoute(
+            originCoord,
+            targetPiste,
+            undefined,
+            options,
+            originPiste,
+            originLift
+        );
+
+        const returnMins = Math.max(10, Math.round(routeResult.totalDurationSeconds / 60) + 15);
+        const closingTotalMins = closingHour * 60 + closingMinute;
+        const depTotalMins = Math.max(0, closingTotalMins - returnMins);
+        const depH = Math.floor(depTotalMins / 60);
+        const depM = depTotalMins % 60;
+        const recommendedDepartureStr = `${String(depH).padStart(2, '0')}:${String(depM).padStart(2, '0')}`;
+
+        return {
+            ...routeResult,
+            destinationName: `Base de la estación (${targetPiste.Name || 'Pista de regreso'})`,
+            estimatedReturnTimeMinutes: returnMins,
+            recommendedDepartureStr,
         };
     }
 }
