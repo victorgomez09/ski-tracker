@@ -91,10 +91,10 @@ const orientLineDownhill = (
     }
 
     if (validElevations >= 1 && (totalAscent > 0 || totalDescent > 0)) {
-        if (totalAscent > totalDescent + 2) {
+        if (totalAscent > totalDescent + 1.2) {
             return [...coords].reverse();
         }
-        if (totalDescent > totalAscent + 2) {
+        if (totalDescent > totalAscent + 1.2) {
             return coords;
         }
     }
@@ -163,14 +163,14 @@ const orientLineDownhill = (
             const minBaseDist1 = Math.min(...liftBases.map((b) => calculateDistanceM(c1, b)));
             const minSummitDist1 = Math.min(...liftSummits.map((s) => calculateDistanceM(c1, s)));
 
-            // If c0 is near a lift base and c1 is near a lift summit:
+            // If c0 is closer to lift base and c1 is closer to lift summit:
             // c0 is base, c1 is summit => UPHILL! Must reverse so it flows summit -> base!
-            if (minBaseDist0 < 140 && minSummitDist1 < 160 && minSummitDist0 > minBaseDist0) {
+            if (minBaseDist0 < 350 && minSummitDist1 < 350 && minBaseDist0 < minSummitDist0 && minSummitDist1 < minBaseDist1) {
                 return [...coords].reverse();
             }
-            // If c0 is near a lift summit and c1 is near a lift base:
+            // If c0 is closer to lift summit and c1 is closer to lift base:
             // c0 is summit, c1 is base => DOWNHILL! Keep as-is.
-            if (minSummitDist0 < 160 && minBaseDist1 < 140 && minBaseDist0 > minSummitDist0) {
+            if (minSummitDist0 < 350 && minBaseDist1 < 350 && minSummitDist0 < minBaseDist0 && minBaseDist1 < minSummitDist1) {
                 return coords;
             }
         }
@@ -476,6 +476,12 @@ export default function InteractiveSkiMapNative() {
     const [activeRoute, setActiveRoute] = useState<RouteResult | null>(null);
     const [routeDestination, setRouteDestination] = useState<{ piste: Piste; coord?: [number, number] } | null>(null);
     const [routeOriginCoord, setRouteOriginCoord] = useState<[number, number] | null>(null);
+    const [routeOrigin, setRouteOrigin] = useState<{
+        coord: [number, number];
+        name: string;
+        piste?: Piste;
+        lift?: Lift;
+    } | null>(null);
     const [showOriginModal, setShowOriginModal] = useState(false);
     const [isSelectingRouteOrigin, setIsSelectingRouteOrigin] = useState(false);
     const [routeSkillLevel, setRouteSkillLevel] = useState<SkillLevel>('all');
@@ -493,12 +499,16 @@ export default function InteractiveSkiMapNative() {
 
     const isSelectingRouteOriginRef = useRef(isSelectingRouteOrigin);
     const routeDestinationRef = useRef(routeDestination);
+    const routeOriginRef = useRef(routeOrigin);
     useEffect(() => {
         isSelectingRouteOriginRef.current = isSelectingRouteOrigin;
     }, [isSelectingRouteOrigin]);
     useEffect(() => {
         routeDestinationRef.current = routeDestination;
     }, [routeDestination]);
+    useEffect(() => {
+        routeOriginRef.current = routeOrigin;
+    }, [routeOrigin]);
 
     const [viewState, setViewState] = useState({
         longitude: parseFloat((searchParams.lon as string) || (searchParams.lng as string) || '0'),
@@ -1442,13 +1452,6 @@ export default function InteractiveSkiMapNative() {
         return new SkiRoutingEngine(allPistes, allLifts);
     }, [resorts]);
 
-    const handleInitiateRoute = useCallback((targetPiste: Piste, targetCoord?: [number, number]) => {
-        setRouteDestination({ piste: targetPiste, coord: targetCoord });
-        routeDestinationRef.current = { piste: targetPiste, coord: targetCoord };
-        setSelectedFeature(null);
-        setShowOriginModal(true);
-    }, []);
-
     const executeRouting = useCallback(
         (
             originCoord: [number, number],
@@ -1475,6 +1478,14 @@ export default function InteractiveSkiMapNative() {
                 result.originName = originName;
                 setActiveRoute(result);
                 setRouteOriginCoord(originCoord);
+                const origObj = {
+                    coord: originCoord,
+                    name: originName,
+                    piste: originPiste,
+                    lift: originLift,
+                };
+                setRouteOrigin(origObj);
+                routeOriginRef.current = origObj;
                 setTimeout(() => {
                     if (result.fullCoordinates.length >= 2) {
                         let minLon = result.fullCoordinates[0][0], maxLon = result.fullCoordinates[0][0];
@@ -1548,8 +1559,9 @@ export default function InteractiveSkiMapNative() {
         }
     }, [routingEngine, routeOriginCoord, selectedResort, routeSkillLevel, fastLifts, badWeather, t]);
 
-    const handleUseCurrentLocation = useCallback(async () => {
-        if (!routeDestination) return;
+    const handleUseCurrentLocation = useCallback(async (destPiste?: Piste, destCoord?: [number, number]) => {
+        const dest = destPiste ? { piste: destPiste, coord: destCoord } : (routeDestinationRef.current || routeDestination);
+        if (!dest) return;
         setIsLoadingGps(true);
         try {
             const { status } = await Location.requestForegroundPermissionsAsync();
@@ -1564,8 +1576,8 @@ export default function InteractiveSkiMapNative() {
             executeRouting(
                 [location.coords.longitude, location.coords.latitude],
                 t('origin_current_gps', 'Mi posición GPS'),
-                routeDestination.piste,
-                routeDestination.coord,
+                dest.piste,
+                dest.coord,
                 routeSkillLevel
             );
         } catch (err) {
@@ -1575,20 +1587,38 @@ export default function InteractiveSkiMapNative() {
         }
     }, [routeDestination, executeRouting, routeSkillLevel, t]);
 
+    const handleInitiateRoute = useCallback((targetPiste: Piste, targetCoord?: [number, number], originMode?: 'gps' | 'map') => {
+        setRouteDestination({ piste: targetPiste, coord: targetCoord });
+        routeDestinationRef.current = { piste: targetPiste, coord: targetCoord };
+        setSelectedFeature(null);
+        if (originMode === 'gps') {
+            handleUseCurrentLocation(targetPiste, targetCoord);
+        } else if (originMode === 'map') {
+            setShowOriginModal(false);
+            setIsSelectingRouteOrigin(true);
+        } else {
+            setShowOriginModal(true);
+        }
+    }, [handleUseCurrentLocation]);
+
     const handleLevelChange = useCallback(
         (newLevel: SkillLevel) => {
             setRouteSkillLevel(newLevel);
-            if (routeOriginCoord && routeDestination) {
+            const orig = routeOriginRef.current;
+            const dest = routeDestinationRef.current;
+            if (orig && dest) {
                 executeRouting(
-                    routeOriginCoord,
-                    activeRoute?.originName || t('origin_current_gps', 'Mi posición GPS'),
-                    routeDestination.piste,
-                    routeDestination.coord,
-                    newLevel
+                    orig.coord,
+                    orig.name,
+                    dest.piste,
+                    dest.coord,
+                    newLevel,
+                    orig.piste,
+                    orig.lift
                 );
             }
         },
-        [routeOriginCoord, routeDestination, activeRoute, executeRouting, t]
+        [executeRouting]
     );
 
     const handleSelectRouteLeg = useCallback((leg: RouteLeg) => {
@@ -1913,16 +1943,31 @@ export default function InteractiveSkiMapNative() {
                                 lineOpacity: 0.88,
                             }}
                         />
+                        {/* Downhill pistes */}
                         <NativeLayer
                             id="active-route-run"
                             type="line"
-                            filter={['!=', ['get', 'kind'], 'lift']}
+                            filter={['==', ['get', 'kind'], 'run']}
                             style={{
                                 lineCap: 'round',
                                 lineJoin: 'round',
                                 lineColor: '#2563eb',
                                 lineWidth: 6,
                                 lineOpacity: 1,
+                            }}
+                        />
+                        {/* Walking transitions / snow links */}
+                        <NativeLayer
+                            id="active-route-walk"
+                            type="line"
+                            filter={['==', ['get', 'kind'], 'walk']}
+                            style={{
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                lineColor: '#f59e0b',
+                                lineWidth: 4,
+                                lineDasharray: [2, 2],
+                                lineOpacity: 0.95,
                             }}
                         />
                         <NativeLayer
@@ -2116,6 +2161,8 @@ export default function InteractiveSkiMapNative() {
                         setActiveRoute(null);
                         setRouteDestination(null);
                         setRouteOriginCoord(null);
+                        setRouteOrigin(null);
+                        routeOriginRef.current = null;
                     }}
                     onFitBounds={handleFitRoute}
                     onChangeOrigin={() => {
@@ -2127,13 +2174,17 @@ export default function InteractiveSkiMapNative() {
                     onToggleFastLifts={() => {
                         const next = !fastLifts;
                         setFastLifts(next);
-                        if (routeOriginCoord && routeDestination?.piste) {
+                        const orig = routeOriginRef.current;
+                        const dest = routeDestinationRef.current;
+                        if (orig && dest) {
                             executeRouting(
-                                routeOriginCoord,
-                                activeRoute.originName || '',
-                                routeDestination.piste,
-                                routeDestination.coord,
-                                routeSkillLevel
+                                orig.coord,
+                                orig.name,
+                                dest.piste,
+                                dest.coord,
+                                routeSkillLevel,
+                                orig.piste,
+                                orig.lift
                             );
                         }
                     }}
@@ -2141,13 +2192,17 @@ export default function InteractiveSkiMapNative() {
                     onToggleBadWeather={() => {
                         const next = !badWeather;
                         setBadWeather(next);
-                        if (routeOriginCoord && routeDestination?.piste) {
+                        const orig = routeOriginRef.current;
+                        const dest = routeDestinationRef.current;
+                        if (orig && dest) {
                             executeRouting(
-                                routeOriginCoord,
-                                activeRoute.originName || '',
-                                routeDestination.piste,
-                                routeDestination.coord,
-                                routeSkillLevel
+                                orig.coord,
+                                orig.name,
+                                dest.piste,
+                                dest.coord,
+                                routeSkillLevel,
+                                orig.piste,
+                                orig.lift
                             );
                         }
                     }}

@@ -904,6 +904,11 @@ func classifyPOICategory(tags map[string]string) (string, string) {
 	aerialway := tags["aerialway"]
 	name := tags["name"]
 
+	// Ignore individual parking space nodes to prevent map clutter/noise
+	if amenity == "parking_space" {
+		return "", ""
+	}
+
 	var category string
 	var defaultName string
 

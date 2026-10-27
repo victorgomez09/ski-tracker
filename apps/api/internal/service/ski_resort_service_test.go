@@ -63,6 +63,12 @@ func TestClassifyPOICategory(t *testing.T) {
 			wantName:     "Aparcamiento",
 		},
 		{
+			name:         "Ignore parking_space",
+			tags:         map[string]string{"amenity": "parking_space", "name": "Plaza 42"},
+			wantCategory: "",
+			wantName:     "",
+		},
+		{
 			name:         "Shelter",
 			tags:         map[string]string{"amenity": "shelter", "name": "Refugio Cotos"},
 			wantCategory: "hotel",

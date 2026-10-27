@@ -1,8 +1,8 @@
 import { Lift, Piste } from 'models/ski-resort.model';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform, processColor, StyleSheet, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, Maximize2, Navigation } from 'lucide-react-native';
+import { X, Maximize2, Navigation, Compass, Crosshair } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
@@ -17,7 +17,7 @@ interface MapDetailPanelProps {
     data: Piste | Lift;
     onClose: () => void;
     onChartPointSelected?: (coord: [number, number] | null) => void;
-    onCalculateRoute?: (targetPiste: Piste, targetCoord?: [number, number]) => void;
+    onCalculateRoute?: (targetPiste: Piste, targetCoord?: [number, number], originMode?: 'gps' | 'map') => void;
 }
 
 interface ChartDatum {
@@ -485,6 +485,7 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, o
     const { t } = useTranslation();
     const colors = useThemeColors();
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [originMode, setOriginMode] = useState<'gps' | 'map'>('gps');
     const styles = useMemo(() => getStyles(colors), [colors]);
 
     useEffect(() => {
@@ -585,17 +586,27 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, o
         }
     };
 
-    const handleIndexChange = (index: number | null) => {
+    const lastChartPointRef = useRef<[number, number] | null>(null);
+    const handleIndexChange = useCallback((index: number | null) => {
         if (!onChartPointSelected) return;
         const coords = data.GeometryGeoJSON?.coordinates as number[][];
         if (index === null || !coords || coords.length === 0) {
-            onChartPointSelected(null);
+            if (lastChartPointRef.current !== null) {
+                lastChartPointRef.current = null;
+                onChartPointSelected(null);
+            }
             return;
         }
         const targetDist = index * resolution;
         const point = getCoordinateAtDistance(coords, targetDist);
-        onChartPointSelected(point);
-    };
+        if (point) {
+            const last = lastChartPointRef.current;
+            if (!last || Math.abs(last[0] - point[0]) > 1e-6 || Math.abs(last[1] - point[1]) > 1e-6) {
+                lastChartPointRef.current = point;
+                onChartPointSelected(point);
+            }
+        }
+    }, [data, onChartPointSelected, resolution]);
 
     if (!data) return null;
 
@@ -632,20 +643,47 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, o
                             </Text>
 
                             {onCalculateRoute && (
-                                <TouchableOpacity
-                                    style={styles.calculateRouteButton}
-                                    activeOpacity={0.8}
-                                    onPress={() => {
-                                        const coords = data.GeometryGeoJSON?.coordinates as number[][];
-                                        const targetCoord = coords && coords.length > 0 ? [coords[0][0], coords[0][1]] as [number, number] : undefined;
-                                        onCalculateRoute(data as Piste, targetCoord);
-                                    }}
-                                >
-                                    <Navigation size={15} color="#FFFFFF" />
-                                    <Text style={styles.calculateRouteButtonText}>
-                                        {t('calculate_route', 'Calcular ruta hasta aquí')}
-                                    </Text>
-                                </TouchableOpacity>
+                                <View style={styles.routeActionSection}>
+                                    <View style={styles.originTabsContainer}>
+                                        <TouchableOpacity
+                                            style={[styles.originTab, originMode === 'gps' && styles.originTabActive]}
+                                            activeOpacity={0.7}
+                                            onPress={() => setOriginMode('gps')}
+                                        >
+                                            <Compass size={14} color={originMode === 'gps' ? colors.primary : colors.textSecondary} />
+                                            <Text style={[styles.originTabText, originMode === 'gps' && styles.originTabTextActive]}>
+                                                {t('origin_gps_tab', 'Mi GPS actual')}
+                                            </Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={[styles.originTab, originMode === 'map' && styles.originTabActive]}
+                                            activeOpacity={0.7}
+                                            onPress={() => setOriginMode('map')}
+                                        >
+                                            <Crosshair size={14} color={originMode === 'map' ? colors.primary : colors.textSecondary} />
+                                            <Text style={[styles.originTabText, originMode === 'map' && styles.originTabTextActive]}>
+                                                {t('origin_map_tab', 'Elegir en mapa')}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <TouchableOpacity
+                                        style={styles.calculateRouteButton}
+                                        activeOpacity={0.8}
+                                        onPress={() => {
+                                            const coords = data.GeometryGeoJSON?.coordinates as number[][];
+                                            const targetCoord = coords && coords.length > 0 ? [coords[0][0], coords[0][1]] as [number, number] : undefined;
+                                            onCalculateRoute(data as Piste, targetCoord, originMode);
+                                        }}
+                                    >
+                                        <Navigation size={15} color="#FFFFFF" />
+                                        <Text style={styles.calculateRouteButtonText}>
+                                            {originMode === 'gps'
+                                                ? t('calculate_route_gps', 'Calcular ruta desde mi GPS')
+                                                : t('calculate_route_pick_map', 'Elegir origen en el mapa')}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
                             )}
 
                             <View style={styles.statsContainer}>
@@ -824,6 +862,43 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         textTransform: 'capitalize',
         fontWeight: '500',
     },
+    routeActionSection: {
+        marginTop: 6,
+        gap: 6,
+    },
+    originTabsContainer: {
+        flexDirection: 'row',
+        backgroundColor: colors.surface,
+        borderRadius: BORDER_RADIUS.md,
+        padding: 3,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    originTab: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 6,
+        paddingHorizontal: 8,
+        borderRadius: BORDER_RADIUS.sm,
+    },
+    originTabActive: {
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        ...SHADOWS.sm,
+    },
+    originTabText: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: colors.textSecondary,
+    },
+    originTabTextActive: {
+        fontWeight: '700',
+        color: colors.primary,
+    },
     calculateRouteButton: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -833,7 +908,6 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         paddingVertical: 10,
         paddingHorizontal: 16,
         borderRadius: BORDER_RADIUS.lg,
-        marginTop: 6,
         ...SHADOWS.sm,
     },
     calculateRouteButtonText: {

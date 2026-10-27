@@ -246,54 +246,8 @@ Basado en la arquitectura definida en [`PRO_PLAN.md`](file:///home/development/p
 
 ---
 
-## 🎯 Plan de Acción Recomendado (Siguientes Pasos)
-
-Para maximizar el impacto con el menor tiempo de desarrollo, se recomienda abordar las tareas en el siguiente orden:
-
-```
-┌────────────────────────────────────────────────────────┐
-│ PASO 1: Quick Wins y Calidad de Vida (1-2 semanas)     │
-│  ├─ Exportación GPX de sesiones                        │
-│  ├─ Botón SOS Inteligente (Coordenadas y llamada 112) │
-│  └─ Reacciones (Kudos) en el Feed Comunitario          │
-└────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ PASO 2: Mapas Offline & Meteorología (3-4 semanas)     │
-│  ├─ Descarga de paquetes offline por estación          │
-│  ├─ Partes de nieve y webcams en directo               │
-│  └─ Filtros de nivel en el calculador de rutas         │
-└────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│ PASO 3: Gamificación y Modelo de Negocio (4-6 semanas) │
-│  ├─ Segmentos cronometrados / Leaderboards             │
-│  ├─ Integración de RevenueCat (Plan PRO)               │
-│  └─ Replay 3D de la jornada                            │
-└────────────────────────────────────────────────────────┘
-```
-
-### Checklist de Ejecución Rápida
-- [ ] **Paso 1: Quick Wins y Calidad de Vida (1-2 semanas)**
-  - [ ] Exportación GPX de sesiones
-  - [ ] Botón SOS Inteligente (Coordenadas y llamada 112)
-  - [ ] Reacciones (Kudos) en el Feed Comunitario
-- [ ] **Paso 2: Mapas Offline & Meteorología (3-4 semanas)**
-  - [x] Descarga de paquetes offline por estación
-  - [ ] Partes de nieve y webcams en directo
-  - [x] Filtros de nivel en el calculador de rutas
-- [ ] **Paso 3: Gamificación y Modelo de Negocio (4-6 semanas)**
-  - [ ] Segmentos cronometrados / Leaderboards
-  - [ ] Integración de RevenueCat (Plan PRO)
-  - [ ] Replay 3D de la jornada
-
----
-
 > [!TIP]
 > Puedes consultar la documentación técnica detallada en la carpeta [`docs/`](file:///home/development/projects/ski-tracker/docs/):
-> - [`ROADMAP_V2.md`](file:///home/development/projects/ski-tracker/docs/ROADMAP_V2.md) (Arquitectura multi-actividad y seguimiento outdoor).
 > - [`FRIENDS_SYSTEM.md`](file:///home/development/projects/ski-tracker/docs/FRIENDS_SYSTEM.md) (Sistema social y amigos).
 > - [`TRACKING.md`](file:///home/development/projects/ski-tracker/docs/TRACKING.md) (Pipeline heurístico y GIS de detección de bajadas).
 > - [`PRO_PLAN.md`](file:///home/development/projects/ski-tracker/docs/PRO_PLAN.md) (Diseño de licencias y pasarela de pago).

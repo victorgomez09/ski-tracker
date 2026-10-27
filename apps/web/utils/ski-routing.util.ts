@@ -75,16 +75,16 @@ const LIFT_WAIT = 60;       // seconds wait at base station
 const WALK_SPEED = 1.1;     // m/s on snow with equipment
 
 // Robust connection distances in meters (calibrated to real-world OSM ski resorts)
-const MAX_PISTE_TO_LIFT_M = 350;     // Piste bottom to lift base station across snow front / resort base
-const MAX_PISTE_MID_TO_LIFT_M = 150; // Mid-piste node to lift base station
-const MAX_LIFT_TO_PISTE_M = 280;     // Lift top station to piste head
-const MAX_LIFT_TO_PISTE_MID_M = 180; // Lift top station to any downstream piste node
-const MAX_LIFT_TO_LIFT_M = 350;      // Lift top to next lift base (hub/station transfer)
-const MAX_BASE_TO_BASE_M = 400;      // Lift base to another lift base (transferring at resort base / valley)
-const MAX_RIDGE_TRANSFER_M = 150;    // Lift top to lift top walking transfer
-const MAX_PISTE_TO_PISTE_M = 180;    // Piste bottom to next piste head
-const MAX_PISTE_MERGE_M = 120;       // Piste bottom merging into any node of another piste
-const MAX_PISTE_JUNCTION_M = 50;     // Direct intersection/fork between two pistes
+const MAX_PISTE_TO_LIFT_M = 320;     // Piste bottom to lift base station across snow front / resort base
+const MAX_PISTE_MID_TO_LIFT_M = 100; // Mid-piste node to lift base station
+const MAX_LIFT_TO_PISTE_M = 220;     // Lift top station to piste head
+const MAX_LIFT_TO_PISTE_MID_M = 120; // Lift top station to any downstream piste node
+const MAX_LIFT_TO_LIFT_M = 320;      // Lift top to next lift base (hub/station transfer)
+const MAX_BASE_TO_BASE_M = 380;      // Lift base to another lift base (transferring at resort base / valley)
+const MAX_RIDGE_TRANSFER_M = 120;    // Lift top to lift top walking transfer
+const MAX_PISTE_TO_PISTE_M = 120;    // Piste bottom to next piste head
+const MAX_PISTE_MERGE_M = 30;        // Piste bottom merging into any node of another piste
+const MAX_PISTE_JUNCTION_M = 15;     // Direct intersection/fork between two pistes (tighter to avoid cutting across hairpins)
 const MAX_SNAP_DIST_M = 250;        // Initial radius to snap GPS/tap to a piste/lift
 
 const EASY_LEVEL: Record<string, boolean> = { novice: true, easy: true, other: true };
@@ -153,24 +153,50 @@ export class SkiRoutingEngine {
         liftBases?: [number, number][],
         liftSummits?: [number, number][]
     ): { startElev: number | null; endElev: number | null } {
-        // 1. Check 3D coordinates directly on the current geometry (most authoritative)
+        // 1. Check cumulative 3D coordinate elevation along line (most authoritative)
         const coords3D = piste.GeometryGeoJSON?.coordinates;
-        if (coords3D && coords3D.length >= 2) {
-            const cFirst = coords3D[0];
-            const cLast = coords3D[coords3D.length - 1];
-            const e1 = Number(cFirst?.[2]);
-            const e2 = Number(cLast?.[2]);
-            if (!isNaN(e1) && !isNaN(e2) && e1 > 0 && e2 > 0 && Math.abs(e1 - e2) > 1.5) {
-                return { startElev: e1, endElev: e2 };
+        if (Array.isArray(coords3D) && coords3D.length >= 2) {
+            let totalAsc = 0;
+            let totalDesc = 0;
+            let validPoints = 0;
+            for (let i = 0; i < coords3D.length - 1; i++) {
+                const c0 = coords3D[i];
+                const c1 = coords3D[i + 1];
+                if (Array.isArray(c0) && Array.isArray(c1) && c0.length >= 3 && c1.length >= 3) {
+                    const e0 = Number(c0[2]);
+                    const e1 = Number(c1[2]);
+                    if (!isNaN(e0) && !isNaN(e1) && e0 > 0 && e1 > 0) {
+                        validPoints++;
+                        if (e1 > e0) totalAsc += (e1 - e0);
+                        else totalDesc += (e0 - e1);
+                    }
+                }
+            }
+            if (validPoints >= 1 && (totalAsc > 0 || totalDesc > 0)) {
+                if (totalAsc > totalDesc + 1.2) {
+                    return { startElev: 1000, endElev: 2000 }; // Uphill, needs reversal
+                }
+                if (totalDesc > totalAsc + 1.2) {
+                    return { startElev: 2000, endElev: 1000 }; // Downhill, correct
+                }
             }
         }
 
-        // 2. Check elevation provider (DEM)
-        if (elevProvider && coords.length >= 2) {
-            const e1 = elevProvider(coords[0]);
-            const e2 = elevProvider(coords[coords.length - 1]);
-            if (e1 !== null && e2 !== null && !isNaN(e1) && !isNaN(e2) && Math.abs(e1 - e2) > 1.5) {
-                return { startElev: e1, endElev: e2 };
+        // 2. Check elevationProfile heights in tags
+        const hs = piste.Tags?.elevationProfile?.heights;
+        if (Array.isArray(hs) && hs.length >= 2) {
+            let hAsc = 0;
+            let hDesc = 0;
+            for (let i = 0; i < hs.length - 1; i++) {
+                const diff = Number(hs[i + 1]) - Number(hs[i]);
+                if (diff > 0) hAsc += diff;
+                else hDesc += Math.abs(diff);
+            }
+            if (hAsc > hDesc + 1.2) {
+                return { startElev: 1000, endElev: 2000 };
+            }
+            if (hDesc > hAsc + 1.2) {
+                return { startElev: 2000, endElev: 1000 };
             }
         }
 
@@ -185,25 +211,22 @@ export class SkiRoutingEngine {
             const minBaseDist1 = Math.min(...liftBases.map((b) => calculateDistanceM(c1, b)));
             const minSummitDist1 = Math.min(...liftSummits.map((s) => calculateDistanceM(c1, s)));
 
-            // If c0 is near a lift base and c1 is near a lift summit:
-            // c0 is base (low), c1 is summit (high) => uphill!
-            if (minBaseDist0 < 140 && minSummitDist1 < 160 && minSummitDist0 > minBaseDist0) {
+            // If c0 is closer to lift base and c1 is closer to lift summit: uphill!
+            if (minBaseDist0 < 350 && minSummitDist1 < 350 && minBaseDist0 < minSummitDist0 && minSummitDist1 < minBaseDist1) {
                 return { startElev: 1000, endElev: 2000 };
             }
-            // If c0 is near a lift summit and c1 is near a lift base:
-            // c0 is summit (high), c1 is base (low) => downhill!
-            if (minSummitDist0 < 160 && minBaseDist1 < 140 && minBaseDist0 > minSummitDist0) {
+            // If c0 is closer to lift summit and c1 is closer to lift base: downhill!
+            if (minSummitDist0 < 350 && minBaseDist1 < 350 && minSummitDist0 < minBaseDist0 && minBaseDist1 < minSummitDist1) {
                 return { startElev: 2000, endElev: 1000 };
             }
         }
 
-        // 4. Check elevationProfile heights in tags
-        const hs = piste.Tags?.elevationProfile?.heights;
-        if (Array.isArray(hs) && hs.length >= 2) {
-            const first = Number(hs[0]);
-            const last = Number(hs[hs.length - 1]);
-            if (!isNaN(first) && !isNaN(last) && Math.abs(first - last) > 1.5) {
-                return { startElev: first, endElev: last };
+        // 4. Check elevation provider (DEM)
+        if (elevProvider && coords.length >= 2) {
+            const e1 = elevProvider(coords[0]);
+            const e2 = elevProvider(coords[coords.length - 1]);
+            if (e1 !== null && e2 !== null && !isNaN(e1) && !isNaN(e2) && Math.abs(e1 - e2) > 1.5) {
+                return { startElev: e1, endElev: e2 };
             }
         }
 
@@ -215,19 +238,32 @@ export class SkiRoutingEngine {
         coords: [number, number][],
         elevProvider?: ElevationProvider
     ): { startElev: number | null; endElev: number | null } {
-        const cFirst = lift.GeometryGeoJSON?.coordinates?.[0];
-        const cLast = lift.GeometryGeoJSON?.coordinates?.[lift.GeometryGeoJSON.coordinates.length - 1];
-        if (cFirst && cLast && cFirst.length >= 3 && cLast.length >= 3) {
-            const e1 = Number(cFirst[2]);
-            const e2 = Number(cLast[2]);
-            if (!isNaN(e1) && !isNaN(e2) && e1 > 0 && e2 > 0 && Math.abs(e1 - e2) > 1.5) {
+        const raw = lift.GeometryGeoJSON?.coordinates;
+        if (raw && raw.length >= 2) {
+            let e1: number | null = null;
+            let e2: number | null = null;
+            for (let i = 0; i < raw.length; i++) {
+                const val = Number(raw[i]?.[2]);
+                if (!isNaN(val) && val > 0) {
+                    e1 = val;
+                    break;
+                }
+            }
+            for (let i = raw.length - 1; i >= 0; i--) {
+                const val = Number(raw[i]?.[2]);
+                if (!isNaN(val) && val > 0) {
+                    e2 = val;
+                    break;
+                }
+            }
+            if (e1 !== null && e2 !== null && Math.abs(e1 - e2) > 0.5) {
                 return { startElev: e1, endElev: e2 };
             }
         }
         if (elevProvider && coords.length >= 2) {
             const e1 = elevProvider(coords[0]);
             const e2 = elevProvider(coords[coords.length - 1]);
-            if (e1 !== null && e2 !== null && !isNaN(e1) && !isNaN(e2) && Math.abs(e1 - e2) > 1.5) {
+            if (e1 !== null && e2 !== null && !isNaN(e1) && !isNaN(e2) && Math.abs(e1 - e2) > 0.5) {
                 return { startElev: e1, endElev: e2 };
             }
         }
@@ -269,7 +305,7 @@ export class SkiRoutingEngine {
             if (raw && raw.length >= 2) {
                 const flat = raw.map((c) => [c[0], c[1]] as [number, number]);
                 const { startElev, endElev } = this.getLiftElevation(lift, flat, elevationProvider);
-                if (startElev !== null && endElev !== null && startElev > endElev + 1.5) {
+                if (startElev !== null && endElev !== null && startElev > endElev + 0.5) {
                     liftBases.push(flat[flat.length - 1]);
                     liftSummits.push(flat[0]);
                 } else {
@@ -284,6 +320,15 @@ export class SkiRoutingEngine {
             const rawCoords = piste.GeometryGeoJSON?.coordinates;
             if (!rawCoords || rawCoords.length < 2) return;
 
+            const geomType = piste.GeometryGeoJSON?.type;
+            if (geomType === 'Polygon' || geomType === 'MultiPolygon') return;
+
+            // Exclude ski touring (uphill climbing tracks), hiking paths, sled tracks, nordic flat tracks
+            const pType = (piste.PisteType || '').toLowerCase();
+            if (pType === 'skitour' || pType === 'hike' || pType === 'sled' || pType === 'fatbike' || pType === 'ice_skate' || pType === 'nordic') {
+                return;
+            }
+
             const flatCoords = rawCoords.map((c) => [c[0], c[1]] as [number, number]);
             const { startElev, endElev } = this.getPisteElevation(
                 piste,
@@ -297,7 +342,7 @@ export class SkiRoutingEngine {
 
             // If start elevation is lower than end elevation, it was drawn uphill in OSM.
             // Reverse so index 0 is at summit and last index is at base.
-            if (startElev !== null && endElev !== null && endElev > startElev + 1.5) {
+            if (startElev !== null && endElev !== null && endElev > startElev + 1.2) {
                 pts = [...pts].reverse();
             }
 
@@ -317,16 +362,7 @@ export class SkiRoutingEngine {
                     const dist = calculateDistanceM(nodes[prevNode].p, pt);
                     const baseWeight = Math.max(1, dist / speed);
 
-                    // Check elevation gain on this segment (e.g. slight flat or DEM artifact)
-                    const elevGain =
-                        pt[2] > 0 && nodes[prevNode].p[2] > 0
-                            ? pt[2] - nodes[prevNode].p[2]
-                            : 0;
-
-                    // CRITICAL: NEVER drop an edge between consecutive nodes of a designated piste.
-                    // If there is an uphill hump (> 2.5m), add walking/skating penalty, but keep the trail intact!
-                    const uphillPenalty = elevGain > 2.5 ? (elevGain * 4) + (dist / WALK_SPEED) : 0;
-                    addEdge(prevNode, n, baseWeight + uphillPenalty, featIdx, dist, [
+                    addEdge(prevNode, n, baseWeight, featIdx, dist, [
                         [nodes[prevNode].p[0], nodes[prevNode].p[1]],
                         [pt[0], pt[1]],
                     ]);
@@ -348,7 +384,7 @@ export class SkiRoutingEngine {
             });
         });
 
-        // 2. Process Lifts (Uphill by default, plus bi-directional downhill for enclosed cabins)
+        // 2. Process Lifts (Strictly Uphill: Base -> Summit)
         lifts.forEach((lift) => {
             const rawCoords = lift.GeometryGeoJSON?.coordinates;
             if (!rawCoords || rawCoords.length < 2) return;
@@ -358,9 +394,16 @@ export class SkiRoutingEngine {
 
             let pts = rawCoords.map((c) => [c[0], c[1], c[2] ?? 0] as [number, number, number]);
 
-            // Lifts MUST transport passengers UPHILL (base to summit).
-            // If start elevation is higher than end elevation, reverse so pts[0] is bottom station.
-            if (startElev !== null && endElev !== null && startElev > endElev + 1.5) {
+            // Lifts MUST transport passengers strictly UPHILL (base to summit).
+            // If start elevation is higher than end elevation, reverse so pts[0] is guaranteed to be the lower station.
+            let liftStartElev = startElev;
+            let liftEndElev = endElev;
+            if (liftStartElev !== null && liftEndElev !== null && liftStartElev > liftEndElev + 0.5) {
+                pts = [...pts].reverse();
+                const temp = liftStartElev;
+                liftStartElev = liftEndElev;
+                liftEndElev = temp;
+            } else if (pts.length >= 2 && pts[0][2] > 0 && pts[pts.length - 1][2] > 0 && pts[0][2] > pts[pts.length - 1][2] + 0.5) {
                 pts = [...pts].reverse();
             }
 
@@ -378,21 +421,9 @@ export class SkiRoutingEngine {
             const top = addNode(pts[pts.length - 1], featIdx, pts.length - 1);
             const fullLiftCoords = pts.map((p) => [p[0], p[1]] as [number, number]);
 
-            // Uphill edge: bottom -> top
+            // Strict Uphill edge only: bottom -> top.
+            // Lifts NEVER transport skiers downhill in alpine navigation.
             addEdge(bottom, top, rideTime + LIFT_WAIT, featIdx, totalLiftDist, fullLiftCoords);
-
-            // Bi-directional transport: gondolas, cable cars, funiculars also carry passengers downhill
-            const isEnclosed =
-                liftType === 'gondola' ||
-                liftType === 'cable_car' ||
-                liftType === 'funicular' ||
-                liftType === 'railway' ||
-                liftType === 'mixed_lift';
-
-            if (isEnclosed) {
-                const reversedLiftCoords = [...fullLiftCoords].reverse();
-                addEdge(top, bottom, rideTime + LIFT_WAIT + 15, featIdx, totalLiftDist, reversedLiftCoords);
-            }
 
             features.push({
                 kind: 'lift',
@@ -404,8 +435,8 @@ export class SkiRoutingEngine {
                 topNode: top,
                 nodeIndices: [bottom, top],
                 coordinates: pts,
-                startElev: startElev ?? undefined,
-                endElev: endElev ?? undefined,
+                startElev: pts[0][2] || (liftStartElev ?? undefined),
+                endElev: pts[pts.length - 1][2] || (liftEndElev ?? undefined),
             });
         });
 
@@ -420,6 +451,7 @@ export class SkiRoutingEngine {
                 const lBottom = nodes[lf.bottomNode];
                 const d = calculateDistanceM(pBottom.p, lBottom.p);
                 if (d <= MAX_PISTE_TO_LIFT_M) {
+                    if (pBottom.p[2] > 0 && lBottom.p[2] > 0 && lBottom.p[2] > pBottom.p[2] + 2.5) return;
                     const isNear = d <= 80;
                     const walkTime = isNear ? Math.max(4, d / 3.0 + 5) : Math.max(10, d / WALK_SPEED + 15);
                     addEdge(pf.bottomNode, lf.bottomNode, walkTime, -1, d, [
@@ -439,6 +471,7 @@ export class SkiRoutingEngine {
                 const pTop = nodes[pf.topNode];
                 const dHead = calculateDistanceM(lTop.p, pTop.p);
                 if (dHead <= MAX_LIFT_TO_PISTE_M) {
+                    if (lTop.p[2] > 0 && pTop.p[2] > 0 && pTop.p[2] > lTop.p[2] + 1.0) return;
                     const slideTime = Math.max(4, dHead / 3.0 + 8);
                     addEdge(lf.topNode, pf.topNode, slideTime, -1, dHead, [
                         [lTop.p[0], lTop.p[1]],
@@ -452,8 +485,8 @@ export class SkiRoutingEngine {
                     const pNode = nodes[nIdx];
                     const dMid = calculateDistanceM(lTop.p, pNode.p);
                     if (dMid <= MAX_LIFT_TO_PISTE_MID_M) {
-                        // Avoid climbing uphill by more than 3m
-                        if (lTop.p[2] > 0 && pNode.p[2] > 0 && pNode.p[2] > lTop.p[2] + 3) return;
+                        // Strictly no uphill: skier glides downhill from lift summit
+                        if (lTop.p[2] > 0 && pNode.p[2] > 0 && pNode.p[2] > lTop.p[2] + 1.0) return;
                         const slideTime = Math.max(4, dMid / 3.0 + 10);
                         addEdge(lf.topNode, nIdx, slideTime, -1, dMid, [
                             [lTop.p[0], lTop.p[1]],
@@ -490,6 +523,7 @@ export class SkiRoutingEngine {
                 const l2Bottom = nodes[lf2.bottomNode];
                 const d = calculateDistanceM(l1Bottom.p, l2Bottom.p);
                 if (d <= MAX_BASE_TO_BASE_M) {
+                    if (l1Bottom.p[2] > 0 && l2Bottom.p[2] > 0 && Math.abs(l1Bottom.p[2] - l2Bottom.p[2]) > 12.0) continue;
                     const walkTime = Math.max(10, d / WALK_SPEED + 20);
                     addEdge(lf1.bottomNode, lf2.bottomNode, walkTime, -1, d, [
                         [l1Bottom.p[0], l1Bottom.p[1]],
@@ -529,11 +563,11 @@ export class SkiRoutingEngine {
             const p1Bottom = nodes[pf1.bottomNode];
             pisteFeatures.forEach((pf2) => {
                 if (pf1 === pf2) return;
-                // Piste 1 end to Piste 2 head
+                // Piste 1 end to Piste 2 head (strictly downhill or level)
                 const p2Top = nodes[pf2.topNode];
                 const dHead = calculateDistanceM(p1Bottom.p, p2Top.p);
                 if (dHead <= MAX_PISTE_TO_PISTE_M) {
-                    if (!(p1Bottom.p[2] > 0 && p2Top.p[2] > 0 && p2Top.p[2] > p1Bottom.p[2] + 3)) {
+                    if (!(p1Bottom.p[2] > 0 && p2Top.p[2] > 0 && p2Top.p[2] > p1Bottom.p[2] + 0.3)) {
                         const glideTime = Math.max(3, dHead / 4.0);
                         addEdge(pf1.bottomNode, pf2.topNode, glideTime, -1, dHead, [
                             [p1Bottom.p[0], p1Bottom.p[1]],
@@ -547,7 +581,7 @@ export class SkiRoutingEngine {
                     const p2Node = nodes[nIdx];
                     const dMerge = calculateDistanceM(p1Bottom.p, p2Node.p);
                     if (dMerge <= MAX_PISTE_MERGE_M) {
-                        if (!(p1Bottom.p[2] > 0 && p2Node.p[2] > 0 && p2Node.p[2] > p1Bottom.p[2] + 3)) {
+                        if (!(p1Bottom.p[2] > 0 && p2Node.p[2] > 0 && p2Node.p[2] > p1Bottom.p[2] + 0.3)) {
                             const glideTime = Math.max(3, dMerge / 4.0 + 5);
                             addEdge(pf1.bottomNode, nIdx, glideTime, -1, dMerge, [
                                 [p1Bottom.p[0], p1Bottom.p[1]],
@@ -559,8 +593,8 @@ export class SkiRoutingEngine {
             });
         });
 
-        // Rule 3G: Mid-piste intersections / forks (spatial hash grid)
-        const G = 300;
+        // Rule 3G: Direct piste intersections / forks (spatial hash grid, tight 15m to avoid hairpin shortcuts)
+        const G = 1000;
         const grid: Record<string, number[]> = {};
         pisteFeatures.forEach((pf) => {
             pf.nodeIndices.forEach((nIdx) => {
@@ -587,10 +621,11 @@ export class SkiRoutingEngine {
 
                             const d = calculateDistanceM(n1.p, n2.p);
                             if (d <= MAX_PISTE_JUNCTION_M) {
-                                if (n1.p[2] > 0 && n2.p[2] > 0 && n2.p[2] > n1.p[2] + 2.5) {
+                                // Strictly downhill: cannot ski uphill onto another piste
+                                if (n1.p[2] > 0 && n2.p[2] > 0 && n2.p[2] > n1.p[2] + 0.2) {
                                     return;
                                 }
-                                addEdge(n1Idx, n2Idx, Math.max(2, d / 4.5), -1, d, [
+                                addEdge(n1Idx, n2Idx, Math.max(3, d / 4.5 + 15), -1, d, [
                                     [n1.p[0], n1.p[1]],
                                     [n2.p[0], n2.p[1]],
                                 ]);
@@ -612,6 +647,7 @@ export class SkiRoutingEngine {
                     const lBottom = nodes[lf.bottomNode];
                     const d = calculateDistanceM(pNode.p, lBottom.p);
                     if (d <= MAX_PISTE_MID_TO_LIFT_M) {
+                        if (pNode.p[2] > 0 && lBottom.p[2] > 0 && lBottom.p[2] > pNode.p[2] + 2.5) return;
                         const walkTime = Math.max(5, d / WALK_SPEED + 10);
                         addEdge(nIdx, lf.bottomNode, walkTime, -1, d, [
                             [pNode.p[0], pNode.p[1]],
@@ -876,22 +912,24 @@ export class SkiRoutingEngine {
             }
         }
 
-        // 4. Multi-Tier Dijkstra Search Engine
+        // 4. Multi-Tier 2-State Dijkstra Search Engine
+        // State encoding: state = node * 2 + hasReachedEasyOrLift (0 = initial descent on starting run, 1 = reached easy run or lift)
         const solveDijkstra = (
             targets: Set<number>,
             skillFilter: SkillLevel,
             relaxSkillLevel: boolean,
             opts: RoutingOptions,
             extraEdges?: Map<number, GraphEdge[]>
-        ): { endNode: number; best: Float64Array; from: Int32Array; viaEdge: Array<GraphEdge | null> } => {
+        ): { reachedState: number; endNode: number; best: Float64Array; from: Int32Array; viaEdge: Array<GraphEdge | null> } => {
             const numNodes = this.network.nodes.length;
-            const best = new Float64Array(numNodes).fill(Infinity);
-            const from = new Int32Array(numNodes).fill(-1);
-            const viaEdge = new Array<GraphEdge | null>(numNodes).fill(null);
+            const numStates = numNodes * 2;
+            const best = new Float64Array(numStates).fill(Infinity);
+            const from = new Int32Array(numStates).fill(-1);
+            const viaEdge = new Array<GraphEdge | null>(numStates).fill(null);
 
             const heap: [number, number][] = [];
-            const push = (cost: number, node: number) => {
-                heap.push([cost, node]);
+            const push = (cost: number, state: number) => {
+                heap.push([cost, state]);
                 let k = heap.length - 1;
                 while (k > 0) {
                     const p = (k - 1) >> 1;
@@ -926,21 +964,29 @@ export class SkiRoutingEngine {
             };
 
             startCandidates.forEach((sc) => {
-                if (sc.cost < best[sc.node]) {
-                    best[sc.node] = sc.cost;
-                    push(sc.cost, sc.node);
+                const feat = this.network.features[this.network.nodes[sc.node].featureIndex];
+                const isEasyOrLift = feat ? (feat.kind === 'lift' || EASY_LEVEL[feat.diff]) : false;
+                const state = sc.node * 2 + (isEasyOrLift ? 1 : 0);
+                if (sc.cost < best[state]) {
+                    best[state] = sc.cost;
+                    push(sc.cost, state);
                 }
             });
 
+            let reachedState = -1;
             let reachedEndNode = -1;
 
             while (heap.length > 0) {
                 const current = pop();
                 if (!current) break;
-                const [c, u] = current;
-                if (c > best[u]) continue;
+                const [c, state] = current;
+                if (c > best[state]) continue;
+
+                const u = state >> 1;
+                const hasReachedEasyOrLift = (state & 1) === 1;
 
                 if (targets.has(u)) {
+                    reachedState = state;
                     reachedEndNode = u;
                     break;
                 }
@@ -950,24 +996,57 @@ export class SkiRoutingEngine {
                     ? [...edges, ...extraEdges.get(u)!]
                     : edges;
 
+                const fromP = this.network.nodes[u].p;
+
                 for (let i = 0; i < allEdges.length; i++) {
                     const e = allEdges[i];
                     let edgeWeight = e.weight;
+                    let nextHasReached = hasReachedEasyOrLift ? 1 : 0;
+
+                    const toP = this.network.nodes[e.to].p;
 
                     if (e.featureIndex >= 0) {
                         const feat = this.network.features[e.featureIndex];
                         if (feat) {
                             if (feat.kind === 'run') {
-                                if (!relaxSkillLevel) {
-                                    if (skillFilter === 'easy' && !EASY_LEVEL[feat.diff]) continue;
-                                    if (skillFilter === 'noblack' && !NO_BLACK_LEVEL[feat.diff]) continue;
-                                } else {
-                                    // Soft penalty so easier paths are strongly prioritized over harder ones
-                                    if (skillFilter === 'easy') {
-                                        if (feat.diff === 'intermediate') edgeWeight += 500;
-                                        else if (feat.diff === 'advanced' || feat.diff === 'expert') edgeWeight += 2000;
-                                    } else if (skillFilter === 'noblack') {
-                                        if (feat.diff === 'advanced' || feat.diff === 'expert') edgeWeight += 1200;
+                                // CRITICAL RULE 1: DOWNHILL ONLY!
+                                // Alpine ski pistes can NEVER be climbed uphill! Skis only glide down!
+                                if (fromP[2] > 0 && toP[2] > 0 && toP[2] > fromP[2] + 4.5) {
+                                    continue;
+                                }
+
+                                if (skillFilter === 'easy') {
+                                    if (EASY_LEVEL[feat.diff]) {
+                                        nextHasReached = 1;
+                                    } else {
+                                        // Intermediate or advanced / expert run
+                                        if (hasReachedEasyOrLift && !relaxSkillLevel) {
+                                            // Once an easy run or lift has been reached, all harder runs are strictly forbidden!
+                                            continue;
+                                        }
+                                        if (!hasReachedEasyOrLift) {
+                                            if ((feat.diff === 'advanced' || feat.diff === 'expert') && feat.piste?.ID !== originPiste?.ID) {
+                                                continue;
+                                            }
+                                            nextHasReached = 0;
+                                            edgeWeight += feat.diff === 'intermediate' ? 50 : 200;
+                                        } else if (relaxSkillLevel) {
+                                            edgeWeight += feat.diff === 'intermediate' ? 5000 : 15000;
+                                        }
+                                    }
+                                } else if (skillFilter === 'noblack') {
+                                    if (NO_BLACK_LEVEL[feat.diff]) {
+                                        nextHasReached = 1;
+                                    } else {
+                                        if (hasReachedEasyOrLift && !relaxSkillLevel) {
+                                            continue;
+                                        }
+                                        if (!hasReachedEasyOrLift) {
+                                            nextHasReached = 0;
+                                            edgeWeight += 25;
+                                        } else if (relaxSkillLevel) {
+                                            edgeWeight += 10000;
+                                        }
                                     }
                                 }
 
@@ -975,6 +1054,14 @@ export class SkiRoutingEngine {
                                     edgeWeight *= 1.15;
                                 }
                             } else if (feat.kind === 'lift') {
+                                // CRITICAL RULE 2: UPHILL ONLY!
+                                // Lifts strictly transport skiers uphill to summits / higher stations.
+                                // Under NO circumstance can a lift descend down the mountain!
+                                if (fromP[2] > 0 && toP[2] > 0 && toP[2] < fromP[2] - 0.5) {
+                                    continue;
+                                }
+
+                                nextHasReached = 1; // Taking a lift brings the skier to a summit/station
                                 const lType = feat.liftType || 'chair_lift';
                                 if (opts.fastLifts) {
                                     if (lType === 'gondola' || lType === 'cable_car' || lType === 'funicular') {
@@ -998,17 +1085,18 @@ export class SkiRoutingEngine {
                         }
                     }
 
+                    const nextState = e.to * 2 + nextHasReached;
                     const nextCost = c + edgeWeight;
-                    if (nextCost < best[e.to]) {
-                        best[e.to] = nextCost;
-                        from[e.to] = u;
-                        viaEdge[e.to] = e;
-                        push(nextCost, e.to);
+                    if (nextCost < best[nextState]) {
+                        best[nextState] = nextCost;
+                        from[nextState] = state;
+                        viaEdge[nextState] = e;
+                        push(nextCost, nextState);
                     }
                 }
             }
 
-            return { endNode: reachedEndNode, best, from, viaEdge };
+            return { reachedState, endNode: reachedEndNode, best, from, viaEdge };
         };
 
         // Execution of Multi-Tier Search:
@@ -1016,7 +1104,6 @@ export class SkiRoutingEngine {
 
         // Tier 1: User preferences + primary target
         let solution = solveDijkstra(primaryTargets, level, false, options);
-
 
         // Tier 2: User preferences + any node on destination piste
         if (solution.endNode < 0 && allDestPisteNodes.size > 0) {
@@ -1077,7 +1164,8 @@ export class SkiRoutingEngine {
             const destNodeList = Array.from(allDestPisteNodes);
             for (let u = 0; u < reach.best.length; u++) {
                 if (reach.best[u] < Infinity) {
-                    const pU = this.network.nodes[u].p;
+                    const nodeIdx = u >> 1;
+                    const pU = this.network.nodes[nodeIdx].p;
                     for (const v of destNodeList) {
                         const pV = this.network.nodes[v].p;
                         const d = calculateDistanceM(pU, pV);
@@ -1091,7 +1179,8 @@ export class SkiRoutingEngine {
             }
 
             if (bestBridgeFrom >= 0 && bestBridgeTo >= 0) {
-                const pU = this.network.nodes[bestBridgeFrom].p;
+                const nodeFrom = bestBridgeFrom >> 1;
+                const pU = this.network.nodes[nodeFrom].p;
                 const pV = this.network.nodes[bestBridgeTo].p;
                 const bridgeEdge: GraphEdge = {
                     to: bestBridgeTo,
@@ -1101,32 +1190,36 @@ export class SkiRoutingEngine {
                     intermediateCoords: [[pU[0], pU[1]], [pV[0], pV[1]]],
                 };
                 solution = {
+                    reachedState: bestBridgeTo * 2 + 1,
                     endNode: bestBridgeTo,
                     best: reach.best,
                     from: reach.from,
                     viaEdge: reach.viaEdge,
                 };
-                solution.from[bestBridgeTo] = bestBridgeFrom;
-                solution.viaEdge[bestBridgeTo] = bridgeEdge;
+                solution.from[bestBridgeTo * 2 + 1] = bestBridgeFrom;
+                solution.viaEdge[bestBridgeTo * 2 + 1] = bridgeEdge;
             }
         }
 
+        const reachedState = solution.reachedState;
         const endNode = solution.endNode;
         const from = solution.from;
         const viaEdge = solution.viaEdge;
 
-        if (endNode < 0) {
+        if (endNode < 0 || reachedState < 0) {
             return emptyResult('no_route_found');
         }
 
         // 5. Reconstruct Traversed Edges
         const traversedEdges: { edge: GraphEdge; fromNode: number; toNode: number }[] = [];
-        let curr = endNode;
+        let curr = reachedState;
         while (from[curr] >= 0) {
             const prev = from[curr];
             const edge = viaEdge[curr];
             if (!edge) break;
-            traversedEdges.push({ edge, fromNode: prev, toNode: curr });
+            const fromNode = prev >> 1;
+            const toNode = curr >> 1;
+            traversedEdges.push({ edge, fromNode, toNode });
             curr = prev;
         }
         traversedEdges.reverse();
@@ -1169,10 +1262,18 @@ export class SkiRoutingEngine {
                 for (let i = 1; i < coords.length; i++) {
                     lastLeg.coordinates.push(coords[i]);
                 }
-                if (elevDiff > 0) lastLeg.ascentMeters += Math.round(elevDiff);
-                else lastLeg.descentMeters += Math.round(Math.abs(elevDiff));
+                if (kind === 'run') {
+                    lastLeg.ascentMeters = 0;
+                    lastLeg.descentMeters += Math.round(Math.abs(elevDiff));
+                } else if (kind === 'lift') {
+                    lastLeg.ascentMeters += Math.max(0, Math.round(elevDiff));
+                    lastLeg.descentMeters = 0;
+                } else {
+                    if (elevDiff > 0) lastLeg.ascentMeters += Math.round(elevDiff);
+                    else lastLeg.descentMeters += Math.round(Math.abs(elevDiff));
+                }
             } else {
-                if (kind === 'walk' && edge.distance < 10 && legs.length > 0) {
+                if (kind === 'walk' && edge.distance < 5 && legs.length > 0) {
                     return;
                 }
 
@@ -1187,8 +1288,8 @@ export class SkiRoutingEngine {
                     liftType: feat?.liftType,
                     distanceMeters: Math.round(edge.distance),
                     durationSeconds: 0,
-                    ascentMeters: elevDiff > 0 ? Math.round(elevDiff) : 0,
-                    descentMeters: elevDiff < 0 ? Math.round(Math.abs(elevDiff)) : 0,
+                    ascentMeters: kind === 'run' ? 0 : (elevDiff > 0 ? Math.round(elevDiff) : 0),
+                    descentMeters: kind === 'run' ? Math.round(Math.abs(elevDiff)) : (kind === 'lift' ? 0 : (elevDiff < 0 ? Math.round(Math.abs(elevDiff)) : 0)),
                     instruction: '',
                     coordinates: [...coords],
                 };
@@ -1263,6 +1364,24 @@ export class SkiRoutingEngine {
                 leg.instruction = `${leg.name} (${leg.distanceMeters} m)`;
             }
         });
+
+        // Snap origin and destination smoothly so the drawn route connects 100% with the map markers
+        if (safeOriginCoord && legs.length > 0 && legs[0].coordinates.length > 0) {
+            const dStart = calculateDistanceM(safeOriginCoord, legs[0].coordinates[0]);
+            if (dStart > 1.5 && dStart < 60) {
+                legs[0].coordinates.unshift(safeOriginCoord);
+            }
+        }
+        if (destCoord && legs.length > 0) {
+            const lastLeg = legs[legs.length - 1];
+            if (lastLeg && lastLeg.coordinates.length > 0) {
+                const lastPt = lastLeg.coordinates[lastLeg.coordinates.length - 1];
+                const dEnd = calculateDistanceM(destCoord, lastPt);
+                if (dEnd > 1.5 && dEnd < 60) {
+                    lastLeg.coordinates.push(destCoord);
+                }
+            }
+        }
 
         // 7. Full Geometry for Map Highlighting
         const fullCoords: [number, number][] = [];

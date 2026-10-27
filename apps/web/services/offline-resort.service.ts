@@ -237,7 +237,9 @@ class OfflineResortManager {
             Tags: data.Tags || data.tags,
             pistes: data.pistes || data.Pistes || [],
             lifts: data.lifts || data.Lifts || [],
-            pois: data.pois || data.POIs || [],
+            pois: (data.pois || data.POIs || []).filter(
+                (p: any) => p?.category?.toLowerCase() !== 'parking_space'
+            ),
             areas: data.areas || data.Areas || [],
             statistics: data.statistics || {
                 maxElevation: data.max_elevation || 0,

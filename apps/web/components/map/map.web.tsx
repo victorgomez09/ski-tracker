@@ -82,10 +82,10 @@ const orientLineDownhill = (
     }
 
     if (validElevations >= 1 && (totalAscent > 0 || totalDescent > 0)) {
-        if (totalAscent > totalDescent + 2) {
+        if (totalAscent > totalDescent + 1.2) {
             return [...coords].reverse();
         }
-        if (totalDescent > totalAscent + 2) {
+        if (totalDescent > totalAscent + 1.2) {
             return coords;
         }
     }
@@ -154,14 +154,14 @@ const orientLineDownhill = (
             const minBaseDist1 = Math.min(...liftBases.map((b) => calculateDistanceM(c1, b)));
             const minSummitDist1 = Math.min(...liftSummits.map((s) => calculateDistanceM(c1, s)));
 
-            // If c0 is near a lift base and c1 is near a lift summit:
+            // If c0 is closer to lift base and c1 is closer to lift summit:
             // c0 is base, c1 is summit => UPHILL! Must reverse so it flows summit -> base!
-            if (minBaseDist0 < 140 && minSummitDist1 < 160 && minSummitDist0 > minBaseDist0) {
+            if (minBaseDist0 < 350 && minSummitDist1 < 350 && minBaseDist0 < minSummitDist0 && minSummitDist1 < minBaseDist1) {
                 return [...coords].reverse();
             }
-            // If c0 is near a lift summit and c1 is near a lift base:
+            // If c0 is closer to lift summit and c1 is closer to lift base:
             // c0 is summit, c1 is base => DOWNHILL! Keep as-is.
-            if (minSummitDist0 < 160 && minBaseDist1 < 140 && minBaseDist0 > minSummitDist0) {
+            if (minSummitDist0 < 350 && minBaseDist1 < 350 && minSummitDist0 < minBaseDist0 && minBaseDist1 < minSummitDist1) {
                 return coords;
             }
         }
@@ -614,6 +614,12 @@ export default function InteractiveSkiMap() {
     const [activeRoute, setActiveRoute] = useState<RouteResult | null>(null);
     const [routeDestination, setRouteDestination] = useState<{ piste: Piste; coord?: [number, number] } | null>(null);
     const [routeOriginCoord, setRouteOriginCoord] = useState<[number, number] | null>(null);
+    const [routeOrigin, setRouteOrigin] = useState<{
+        coord: [number, number];
+        name: string;
+        piste?: Piste;
+        lift?: Lift;
+    } | null>(null);
     const [showOriginModal, setShowOriginModal] = useState(false);
     const [isSelectingRouteOrigin, setIsSelectingRouteOrigin] = useState(false);
     const [routeSkillLevel, setRouteSkillLevel] = useState<SkillLevel>('all');
@@ -623,12 +629,16 @@ export default function InteractiveSkiMap() {
 
     const isSelectingRouteOriginRef = useRef(isSelectingRouteOrigin);
     const routeDestinationRef = useRef(routeDestination);
+    const routeOriginRef = useRef(routeOrigin);
     useEffect(() => {
         isSelectingRouteOriginRef.current = isSelectingRouteOrigin;
     }, [isSelectingRouteOrigin]);
     useEffect(() => {
         routeDestinationRef.current = routeDestination;
     }, [routeDestination]);
+    useEffect(() => {
+        routeOriginRef.current = routeOrigin;
+    }, [routeOrigin]);
 
     const [viewState, setViewState] = useState({
         longitude: parseFloat((searchParams.lon as string) || (searchParams.lng as string) || '0'),
@@ -1309,15 +1319,16 @@ export default function InteractiveSkiMap() {
 
     const allVisiblePois: ResortPOI[] = useMemo(() => {
         const poiMap: Record<string, ResortPOI> = {};
+        const isIgnored = (p: ResortPOI) => p.category?.toLowerCase() === 'parking_space';
         resorts?.forEach((r) => {
             r.pois?.forEach((p) => {
-                if (p && p.id) {
+                if (p && p.id && !isIgnored(p)) {
                     poiMap[p.id] = p;
                 }
             });
         });
         selectedResort?.pois?.forEach((p) => {
-            if (p && p.id) {
+            if (p && p.id && !isIgnored(p)) {
                 poiMap[p.id] = p;
             }
         });
@@ -1451,13 +1462,6 @@ export default function InteractiveSkiMap() {
         return new SkiRoutingEngine(allPistes, allLifts);
     }, [resorts]);
 
-    const handleInitiateRoute = useCallback((targetPiste: Piste, targetCoord?: [number, number]) => {
-        setRouteDestination({ piste: targetPiste, coord: targetCoord });
-        routeDestinationRef.current = { piste: targetPiste, coord: targetCoord };
-        setSelectedFeature(null);
-        setShowOriginModal(true);
-    }, []);
-
     const executeRouting = useCallback(
         (
             originCoord: [number, number],
@@ -1499,6 +1503,14 @@ export default function InteractiveSkiMap() {
                 result.originName = originName;
                 setActiveRoute(result);
                 setRouteOriginCoord(originCoord);
+                const origObj = {
+                    coord: originCoord,
+                    name: originName,
+                    piste: originPiste,
+                    lift: originLift,
+                };
+                setRouteOrigin(origObj);
+                routeOriginRef.current = origObj;
                 setTimeout(() => {
                     if (result.fullCoordinates.length >= 2) {
                         let minLon = result.fullCoordinates[0][0], maxLon = result.fullCoordinates[0][0];
@@ -1552,8 +1564,9 @@ export default function InteractiveSkiMap() {
         }
     }, [routingEngine, routeOriginCoord, selectedResort, routeSkillLevel, fastLifts, badWeather, t]);
 
-    const handleUseCurrentLocation = useCallback(() => {
-        if (!routeDestination) return;
+    const handleUseCurrentLocation = useCallback((destPiste?: Piste, destCoord?: [number, number]) => {
+        const dest = destPiste ? { piste: destPiste, coord: destCoord } : (routeDestinationRef.current || routeDestination);
+        if (!dest) return;
         setIsLoadingGps(true);
 
         const onCoords = (lat: number, lon: number) => {
@@ -1562,8 +1575,8 @@ export default function InteractiveSkiMap() {
             executeRouting(
                 [lon, lat],
                 t('origin_current_gps', 'Mi posición GPS'),
-                routeDestination.piste,
-                routeDestination.coord,
+                dest.piste,
+                dest.coord,
                 routeSkillLevel
             );
         };
@@ -1586,20 +1599,38 @@ export default function InteractiveSkiMap() {
         }
     }, [routeDestination, executeRouting, routeSkillLevel, t]);
 
+    const handleInitiateRoute = useCallback((targetPiste: Piste, targetCoord?: [number, number], originMode?: 'gps' | 'map') => {
+        setRouteDestination({ piste: targetPiste, coord: targetCoord });
+        routeDestinationRef.current = { piste: targetPiste, coord: targetCoord };
+        setSelectedFeature(null);
+        if (originMode === 'gps') {
+            handleUseCurrentLocation(targetPiste, targetCoord);
+        } else if (originMode === 'map') {
+            setShowOriginModal(false);
+            setIsSelectingRouteOrigin(true);
+        } else {
+            setShowOriginModal(true);
+        }
+    }, [handleUseCurrentLocation]);
+
     const handleLevelChange = useCallback(
         (newLevel: SkillLevel) => {
             setRouteSkillLevel(newLevel);
-            if (routeOriginCoord && routeDestination) {
+            const orig = routeOriginRef.current;
+            const dest = routeDestinationRef.current;
+            if (orig && dest) {
                 executeRouting(
-                    routeOriginCoord,
-                    activeRoute?.originName || t('origin_current_gps', 'Mi posición GPS'),
-                    routeDestination.piste,
-                    routeDestination.coord,
-                    newLevel
+                    orig.coord,
+                    orig.name,
+                    dest.piste,
+                    dest.coord,
+                    newLevel,
+                    orig.piste,
+                    orig.lift
                 );
             }
         },
-        [routeOriginCoord, routeDestination, activeRoute, executeRouting, t]
+        [executeRouting]
     );
 
     const handleSelectRouteLeg = useCallback((leg: RouteLeg) => {
@@ -1733,10 +1764,11 @@ export default function InteractiveSkiMap() {
 
             if (features.length > 0) {
                 map.getCanvas().style.cursor = 'pointer';
-                setHoveredFeatureId(features[0].properties.id);
+                const nextId = features[0].properties?.id || null;
+                setHoveredFeatureId((prev) => (prev === nextId ? prev : nextId));
             } else {
                 map.getCanvas().style.cursor = '';
-                setHoveredFeatureId(null);
+                setHoveredFeatureId((prev) => (prev === null ? prev : null));
             }
         } catch (error) {
             // Ignore
@@ -1745,7 +1777,7 @@ export default function InteractiveSkiMap() {
 
     const handleMouseLeave = (event: any) => {
         event.target.getCanvas().style.cursor = '';
-        setHoveredFeatureId(null);
+        setHoveredFeatureId((prev) => (prev === null ? prev : null));
     };
 
     const handleMapClick = (event: any) => {
@@ -1946,6 +1978,8 @@ export default function InteractiveSkiMap() {
                         setActiveRoute(null);
                         setRouteDestination(null);
                         setRouteOriginCoord(null);
+                        setRouteOrigin(null);
+                        routeOriginRef.current = null;
                     }}
                     onFitBounds={handleFitRoute}
                     onChangeOrigin={() => {
@@ -1957,13 +1991,17 @@ export default function InteractiveSkiMap() {
                     onToggleFastLifts={() => {
                         const next = !fastLifts;
                         setFastLifts(next);
-                        if (routeOriginCoord && routeDestination?.piste) {
+                        const orig = routeOriginRef.current;
+                        const dest = routeDestinationRef.current;
+                        if (orig && dest) {
                             executeRouting(
-                                routeOriginCoord,
-                                activeRoute.originName || '',
-                                routeDestination.piste,
-                                routeDestination.coord,
-                                routeSkillLevel
+                                orig.coord,
+                                orig.name,
+                                dest.piste,
+                                dest.coord,
+                                routeSkillLevel,
+                                orig.piste,
+                                orig.lift
                             );
                         }
                     }}
@@ -1971,13 +2009,17 @@ export default function InteractiveSkiMap() {
                     onToggleBadWeather={() => {
                         const next = !badWeather;
                         setBadWeather(next);
-                        if (routeOriginCoord && routeDestination?.piste) {
+                        const orig = routeOriginRef.current;
+                        const dest = routeDestinationRef.current;
+                        if (orig && dest) {
                             executeRouting(
-                                routeOriginCoord,
-                                activeRoute.originName || '',
-                                routeDestination.piste,
-                                routeDestination.coord,
-                                routeSkillLevel
+                                orig.coord,
+                                orig.name,
+                                dest.piste,
+                                dest.coord,
+                                routeSkillLevel,
+                                orig.piste,
+                                orig.lift
                             );
                         }
                     }}
@@ -2341,16 +2383,29 @@ export default function InteractiveSkiMap() {
                                 'line-opacity': 0.88,
                             }}
                         />
-                        {/* Downhill pistes / walk */}
+                        {/* Downhill pistes */}
                         <Layer
                             id="active-route-run"
                             type="line"
-                            filter={['!=', ['get', 'kind'], 'lift']}
+                            filter={['==', ['get', 'kind'], 'run']}
                             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
                             paint={{
                                 'line-color': '#2563eb',
                                 'line-width': 6,
                                 'line-opacity': 1,
+                            }}
+                        />
+                        {/* Walking transitions / snow links */}
+                        <Layer
+                            id="active-route-walk"
+                            type="line"
+                            filter={['==', ['get', 'kind'], 'walk']}
+                            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                            paint={{
+                                'line-color': '#f59e0b',
+                                'line-width': 4,
+                                'line-dasharray': [2, 2],
+                                'line-opacity': 0.95,
                             }}
                         />
                         {/* Uphill ski lifts: visually distinct dashed line */}
