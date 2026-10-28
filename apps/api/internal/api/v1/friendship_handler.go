@@ -212,3 +212,22 @@ func (h *FriendshipHandler) GetFriendsLeaderboard(c *gin.Context) {
 	}
 	httputil.RespondOK(c, leaderboard)
 }
+
+type SetGhostModeReq struct {
+	GhostMode bool `json:"ghost_mode"`
+}
+
+func (h *FriendshipHandler) SetGhostMode(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	var req SetGhostModeReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httputil.RespondError(c, fmt.Errorf("invalid ghost mode payload: %w", err))
+		return
+	}
+	err := h.svc.SetGhostMode(c.Request.Context(), userID, req.GhostMode)
+	if err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+	httputil.RespondOK(c, gin.H{"ghost_mode": req.GhostMode})
+}

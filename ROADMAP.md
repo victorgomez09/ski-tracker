@@ -163,20 +163,20 @@ mindmap
 
 ## 👥 5. Comunidad, Social e Interacciones
 
-- [ ] **5.1 Reacciones (Kudos) y Comentarios en Sesiones**
+- [x] **5.1 Reacciones (Kudos) y Comentarios en Sesiones**
   - **Utilidad:** Dinamizar el feed comunitario ([`community.tsx`](file:///home/development/projects/ski-tracker/apps/web/app/(ski-tracker)/community.tsx)) permitiendo que amigos y otros usuarios interactúen con las actividades subidas:
-    - [ ] Reacciones temáticas: 🔥 (Fuego / Bajadón), ⛷️ (Esquí), ❄️ (Nieve), 👏 (Aplausos).
-    - [ ] Hilos de comentarios con menciones (@usuario).
+    - [x] Reacciones temáticas: 🔥 (Fuego / Bajadón), ⛷️ (Esquí), ❄️ (Nieve), 👏 (Aplausos).
+    - [x] Hilos de comentarios con menciones (@usuario).
   - **Prioridad:** 🔴 Alta | **Complejidad:** M
 
-- [ ] **5.2 Grupos y "Crews" de Esquí**
+- [x] **5.2 Grupos y "Crews" de Esquí**
   - **Utilidad:** Crear grupos de amigos para viajes o escapadas de fin de semana (ej. *"Viaje a Baqueira 2026"*):
-    - [ ] Marcadores de ubicación en vivo solo visibles entre los miembros del grupo.
-    - [ ] Álbum fotográfico colaborativo de la jornada.
-    - [ ] Ranking interno de la escapada (quién bajó más rápido, quién hizo más kilómetros).
+    - [x] Marcadores de ubicación en vivo solo visibles entre los miembros del grupo.
+    - [x] Álbum fotográfico colaborativo de la jornada.
+    - [x] Ranking interno de la escapada (quién bajó más rápido, quién hizo más kilómetros).
   - **Prioridad:** 🟡 Media | **Complejidad:** M
 
-- [ ] **5.3 Modo Fantasma Temporal (Ghost Mode)**
+- [x] **5.3 Modo Fantasma Temporal (Ghost Mode)**
   - **Utilidad:** Permitir al usuario desactivar la compartición de ubicación en tiempo real con sus amigos con un solo interruptor en la pantalla de tracking, sin detener la grabación de sus métricas.
   - **Prioridad:** 🟢 Baja | **Complejidad:** S
 

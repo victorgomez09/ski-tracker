@@ -10,4 +10,5 @@ export interface User {
     privacy_sessions?: string;
     privacy_live_location?: string;
     privacy_requests?: string;
+    ghost_mode?: boolean;
 }

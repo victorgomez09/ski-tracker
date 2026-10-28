@@ -1,5 +1,6 @@
 import { Resort } from "./ski-resort.model";
 import { User } from "./user.model";
+import { SessionReaction, SessionComment } from "./social.model";
 
 export interface Session {
     id: string;
@@ -24,6 +25,8 @@ export interface Session {
     resort?: Resort | null;
     photos?: SessionPhoto[];
     points?: any[];
+    reactions?: SessionReaction[];
+    comments?: SessionComment[];
 }
 
 export interface SessionPhoto {

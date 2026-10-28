@@ -151,6 +151,7 @@ func (s *friendshipStore) GetFriendsLiveLocations(ctx context.Context, userID uu
 		Model(&friends).
 		Where("id IN (?)", friendIDsQuery).
 		Where("privacy_live_location != 'OFF'").
+		Where("ghost_mode = FALSE").
 		Where("last_resort_id = ?", resortID).
 		Where("last_location_time >= ?", fiveMinsAgo).
 		Scan(ctx)
@@ -158,6 +159,18 @@ func (s *friendshipStore) GetFriendsLiveLocations(ctx context.Context, userID uu
 		return nil, fmt.Errorf("error getting friends live locations: %w", err)
 	}
 	return friends, nil
+}
+
+func (s *friendshipStore) SetGhostMode(ctx context.Context, userID uuid.UUID, enabled bool) error {
+	_, err := s.db.NewUpdate().
+		Model((*models.User)(nil)).
+		Set("ghost_mode = ?", enabled).
+		Where("id = ?", userID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("error updating ghost mode: %w", err)
+	}
+	return nil
 }
 
 func (s *friendshipStore) GetFriendsLeaderboard(ctx context.Context, userID uuid.UUID, period string, metric string) ([]models.LeaderboardEntry, error) {

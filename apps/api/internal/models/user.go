@@ -23,6 +23,7 @@ type User struct {
 	PrivacySessions     string    `bun:"privacy_sessions,default:'FRIENDS'" json:"privacy_sessions"`
 	PrivacyLiveLocation string    `bun:"privacy_live_location,default:'WHILE_RECORDING'" json:"privacy_live_location"`
 	PrivacyRequests     string    `bun:"privacy_requests,default:'EVERYONE'" json:"privacy_requests"`
+	GhostMode           bool      `bun:"ghost_mode,default:false" json:"ghost_mode"`
 	LastLatitude        *float64  `bun:"last_latitude" json:"last_latitude,omitempty"`
 	LastLongitude       *float64  `bun:"last_longitude" json:"last_longitude,omitempty"`
 	LastResortID        string    `bun:"last_resort_id" json:"last_resort_id,omitempty"`

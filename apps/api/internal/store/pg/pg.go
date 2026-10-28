@@ -99,3 +99,9 @@ func (s *Store) SkiRun() store.SkiRunStore {
 func (s *Store) Friendship() store.FriendshipStore {
 	return &friendshipStore{db: s.db}
 }
+func (s *Store) Interaction() store.InteractionStore {
+	return &interactionStore{db: s.db}
+}
+func (s *Store) Crew() store.CrewStore {
+	return &crewStore{db: s.db}
+}

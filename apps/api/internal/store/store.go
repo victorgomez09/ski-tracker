@@ -18,6 +18,8 @@ type Store interface {
 	SessionPoint() SessionPointStore
 	SkiRun() SkiRunStore
 	Friendship() FriendshipStore
+	Interaction() InteractionStore
+	Crew() CrewStore
 }
 
 // Pagination request parameters.
@@ -120,4 +122,26 @@ type FriendshipStore interface {
 	SearchUsers(ctx context.Context, query string, currentUserID uuid.UUID) ([]models.User, error)
 	GetFriendsLiveLocations(ctx context.Context, userID uuid.UUID, resortID string) ([]models.User, error)
 	GetFriendsLeaderboard(ctx context.Context, userID uuid.UUID, period string, metric string) ([]models.LeaderboardEntry, error)
+	SetGhostMode(ctx context.Context, userID uuid.UUID, enabled bool) error
+}
+
+type InteractionStore interface {
+	ToggleReaction(ctx context.Context, sessionID, userID uuid.UUID, reactionType string) (bool, error)
+	GetReactionsBySessionID(ctx context.Context, sessionID uuid.UUID) ([]models.SessionReaction, error)
+	AddComment(ctx context.Context, comment *models.SessionComment) error
+	GetCommentsBySessionID(ctx context.Context, sessionID uuid.UUID) ([]models.SessionComment, error)
+	DeleteComment(ctx context.Context, commentID, userID uuid.UUID) error
+}
+
+type CrewStore interface {
+	Create(ctx context.Context, crew *models.Crew) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Crew, error)
+	ListUserCrews(ctx context.Context, userID uuid.UUID) ([]models.Crew, error)
+	AddMember(ctx context.Context, member *models.CrewMember) error
+	RemoveMember(ctx context.Context, crewID, userID uuid.UUID) error
+	ListMembers(ctx context.Context, crewID uuid.UUID) ([]models.CrewMember, error)
+	AddPhoto(ctx context.Context, photo *models.CrewPhoto) error
+	ListPhotos(ctx context.Context, crewID uuid.UUID) ([]models.CrewPhoto, error)
+	GetCrewLeaderboard(ctx context.Context, crewID uuid.UUID, metric string) ([]models.LeaderboardEntry, error)
+	GetCrewLiveLocations(ctx context.Context, crewID uuid.UUID) ([]models.User, error)
 }

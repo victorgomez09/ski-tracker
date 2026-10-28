@@ -29,6 +29,8 @@ func (u *skiSessionStore) List(ctx context.Context) ([]models.SkiSession, error)
 		Relation("User").
 		Relation("Resort").
 		Relation("Photos").
+		Relation("Reactions.User").
+		Relation("Comments.User").
 		Where("ss.is_public = ?", true).
 		Order("ss.created_at DESC").
 		Scan(ctx)
@@ -77,7 +79,10 @@ func (u *skiSessionStore) GetByID(ctx context.Context, sessionID uuid.UUID) (*mo
 		Model(&session).
 		Relation("Runs").
 		Relation("User").
+		Relation("Resort").
 		Relation("Photos").
+		Relation("Reactions.User").
+		Relation("Comments.User").
 		Where("ss.id = ?", sessionID).
 		Scan(ctx)
 	if err != nil {
@@ -150,6 +155,8 @@ func (u *skiSessionStore) ListFriendsSessions(ctx context.Context, userID uuid.U
 		Relation("User").
 		Relation("Resort").
 		Relation("Photos").
+		Relation("Reactions.User").
+		Relation("Comments.User").
 		Where("ss.user_id = ? OR ss.user_id IN (?)", userID, friendIDsQuery).
 		Order("ss.created_at DESC").
 		Scan(ctx)

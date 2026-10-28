@@ -172,3 +172,7 @@ func (s *FriendshipService) GetFriendsLiveLocations(ctx context.Context, userID 
 func (s *FriendshipService) GetFriendsLeaderboard(ctx context.Context, userID uuid.UUID, period string, metric string) ([]models.LeaderboardEntry, error) {
 	return s.store.Friendship().GetFriendsLeaderboard(ctx, userID, period, metric)
 }
+
+func (s *FriendshipService) SetGhostMode(ctx context.Context, userID uuid.UUID, enabled bool) error {
+	return s.store.Friendship().SetGhostMode(ctx, userID, enabled)
+}

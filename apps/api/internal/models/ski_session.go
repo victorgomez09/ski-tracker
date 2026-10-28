@@ -28,11 +28,13 @@ type SkiSession struct {
 	IsPublic      bool       `bun:"is_public,default:true" json:"is_public"`
 	CreatedAt     time.Time  `bun:"created_at,default:current_timestamp" json:"created_at"`
 
-	User   *User          `bun:"rel:belongs-to,join:user_id=id" json:"user,omitempty"`
-	Points []SessionPoint `bun:"rel:has-many,join:id=session_id" json:"points,omitempty"`
-	Runs   []SkiRun       `bun:"rel:has-many,join:id=session_id" json:"runs,omitempty"`
-	Resort *SkiResort     `bun:"rel:belongs-to,join:resort_id=id" json:"resort,omitempty"`
-	Photos []SessionPhoto `bun:"rel:has-many,join:id=session_id" json:"photos,omitempty"`
+	User      *User             `bun:"rel:belongs-to,join:user_id=id" json:"user,omitempty"`
+	Points    []SessionPoint    `bun:"rel:has-many,join:id=session_id" json:"points,omitempty"`
+	Runs      []SkiRun          `bun:"rel:has-many,join:id=session_id" json:"runs,omitempty"`
+	Resort    *SkiResort        `bun:"rel:belongs-to,join:resort_id=id" json:"resort,omitempty"`
+	Photos    []SessionPhoto    `bun:"rel:has-many,join:id=session_id" json:"photos,omitempty"`
+	Reactions []SessionReaction `bun:"rel:has-many,join:id=session_id" json:"reactions,omitempty"`
+	Comments  []SessionComment  `bun:"rel:has-many,join:id=session_id" json:"comments,omitempty"`
 }
 
 type SessionMetrics struct {

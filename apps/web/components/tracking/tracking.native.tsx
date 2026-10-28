@@ -18,7 +18,10 @@ import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useSQLiteContext } from 'expo-sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { AlertTriangle, ChevronDown, Clock, Compass, Layers, MapPin, WifiOff } from 'lucide-react-native';
+import { AlertTriangle, ChevronDown, Clock, Compass, Ghost, Layers, MapPin, WifiOff } from 'lucide-react-native';
+
+import { useAuth } from 'context/auth.context';
+import { socialService } from 'services/social.service';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { MapStyleSelectorModal } from 'components/map/map-style-selector-modal';
@@ -98,6 +101,37 @@ export default function InteractiveSkiMapNative() {
     const [locationReady, setLocationReady] = useState(false);
     const [checkingLocation, setCheckingLocation] = useState(true);
     const [showOfflineModal, setShowOfflineModal] = useState(false);
+
+    // Ghost Mode State (5.3)
+    const { user: currentUser, updateUser } = useAuth();
+    const [isGhostMode, setIsGhostMode] = useState<boolean>(currentUser?.ghost_mode || false);
+
+    useEffect(() => {
+        if (currentUser?.ghost_mode !== undefined) {
+            setIsGhostMode(currentUser.ghost_mode);
+        }
+    }, [currentUser?.ghost_mode]);
+
+    const toggleGhostMode = useCallback(async () => {
+        const nextVal = !isGhostMode;
+        setIsGhostMode(nextVal);
+        try {
+            await socialService.setGhostMode(nextVal);
+            if (currentUser) {
+                updateUser({ ...currentUser, ghost_mode: nextVal });
+            }
+            showToast(
+                nextVal
+                    ? t('ghost_mode_enabled_toast', 'Modo Fantasma activado: estás oculto para tus amigos en el mapa')
+                    : t('ghost_mode_disabled_toast', 'Modo Fantasma desactivado: tu ubicación vuelve a ser visible'),
+                'info'
+            );
+        } catch (err) {
+            console.error('Failed to toggle ghost mode:', err);
+            setIsGhostMode(!nextVal);
+            showToast(t('ghost_mode_failed', 'Error al cambiar Modo Fantasma'), 'error');
+        }
+    }, [isGhostMode, currentUser, updateUser, showToast, t]);
 
     const currentConfig = useMemo(() => ACTIVITY_CONFIGS[activityType] || ACTIVITY_CONFIGS.ski, [activityType]);
 
@@ -569,6 +603,18 @@ export default function InteractiveSkiMapNative() {
                     </View>
 
                     <View style={styles.topBarRight}>
+                        {/* Ghost Mode Toggle Button (5.3) */}
+                        <TouchableOpacity
+                            style={[
+                                styles.layerButton,
+                                isGhostMode && { backgroundColor: '#334155', borderColor: '#475569' }
+                            ]}
+                            onPress={toggleGhostMode}
+                            activeOpacity={0.7}
+                        >
+                            <Ghost size={18} color={isGhostMode ? '#38bdf8' : colors.textPrimary} />
+                        </TouchableOpacity>
+
                         {/* Map Layers Selector Button */}
                         <TouchableOpacity
                             style={styles.layerButton}
@@ -595,9 +641,18 @@ export default function InteractiveSkiMapNative() {
                 </View>
             )}
 
-            {/* Offline and Closure Status Banners */}
+            {/* Offline, Ghost Mode and Closure Status Banners */}
             {!takePictureMode && (
                 <View style={styles.statusBannersContainer} pointerEvents="box-none">
+                    {isGhostMode && (
+                        <View style={styles.ghostBanner}>
+                            <Ghost size={12} color="#38bdf8" />
+                            <Text style={styles.ghostBannerText}>
+                                {t('ghost_mode_active', 'Modo Fantasma activo (oculto en el mapa)')}
+                            </Text>
+                        </View>
+                    )}
+
                     {isOffline && (
                         <View style={styles.offlineBanner}>
                             <WifiOff size={12} color="#b45309" />
@@ -910,6 +965,24 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
             fontSize: 11,
             fontWeight: '700',
             color: '#b45309',
+        },
+        ghostBanner: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            backgroundColor: '#1e293b',
+            paddingVertical: 4,
+            paddingHorizontal: 9,
+            borderRadius: BORDER_RADIUS.md,
+            borderWidth: 1,
+            borderColor: '#334155',
+            ...SHADOWS.sm,
+            alignSelf: 'flex-start',
+        },
+        ghostBannerText: {
+            fontSize: 11,
+            fontWeight: '700',
+            color: '#f1f5f9',
         },
         liftClosureBanner: {
             flexDirection: 'row',

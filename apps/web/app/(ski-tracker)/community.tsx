@@ -28,6 +28,8 @@ import { useToast } from "context/toast.context";
 
 import { useAuth } from "context/auth.context";
 import FriendsModal from "components/social/friends-modal";
+import { SessionInteractions } from "components/social/session-interactions";
+import { CrewsTab } from "components/social/crews-tab";
 import { ActivityType, ACTIVITY_CONFIGS } from "models/activity.model";
 import { formatDuration, formatPace, formatPaceFromMinPerKm } from "components/tracking/hooks/use-live-stats";
 
@@ -249,7 +251,7 @@ export default function CommunityView() {
   const [communityData, setCommunityData] = useState<Session[]>([]);
   const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [feedFilter, setFeedFilter] = useState<'global' | 'friends' | 'leaderboard'>('global');
+  const [feedFilter, setFeedFilter] = useState<'global' | 'friends' | 'crews' | 'leaderboard'>('global');
   const [friendsModalVisible, setFriendsModalVisible] = useState(false);
   
   // Leaderboard filters
@@ -259,7 +261,7 @@ export default function CommunityView() {
   useEffect(() => {
     if (feedFilter === 'leaderboard') {
       fetchLeaderboard();
-    } else {
+    } else if (feedFilter === 'global' || feedFilter === 'friends') {
       fetchCommunityData(feedFilter);
     }
   }, [feedFilter, leaderboardPeriod, leaderboardMetric]);
@@ -346,6 +348,8 @@ export default function CommunityView() {
               <Text style={styles.badgeText}>
                 {feedFilter === 'leaderboard'
                   ? `${leaderboardData?.length || 0} ${t('riders', 'Riders')}`
+                  : feedFilter === 'crews'
+                  ? t('ski_crews', 'Crews')
                   : `${(communityData?.length || 0) === 1 ? t('sessions_count_one', { count: communityData?.length || 0 }) : t('sessions_count', { count: communityData?.length || 0 })}`}
               </Text>
             </View>
@@ -371,6 +375,14 @@ export default function CommunityView() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.toggleBtn, feedFilter === 'crews' && styles.activeToggleBtn]}
+            onPress={() => setFeedFilter('crews')}
+          >
+            <Text style={[styles.toggleText, feedFilter === 'crews' && styles.activeToggleText]}>
+              {t('crews', 'Crews')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.toggleBtn, feedFilter === 'leaderboard' && styles.activeToggleBtn]}
             onPress={() => setFeedFilter('leaderboard')}
           >
@@ -380,7 +392,9 @@ export default function CommunityView() {
           </TouchableOpacity>
         </View>
 
-        {feedFilter === 'leaderboard' ? (
+        {feedFilter === 'crews' ? (
+          <CrewsTab />
+        ) : feedFilter === 'leaderboard' ? (
           <View style={{ flex: 1 }}>
             {/* Period and Metric selectors */}
             <View style={styles.subFilterBar}>
@@ -750,6 +764,13 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
           )}
         </View>
       )}
+
+      {/* Social Interactions (Reactions & Comments) */}
+      <SessionInteractions
+        sessionId={session.id}
+        initialReactions={session.reactions}
+        initialComments={session.comments}
+      />
 
       {/* Fullscreen Photo Modal */}
       <Modal
