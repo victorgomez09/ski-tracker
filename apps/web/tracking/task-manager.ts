@@ -6,12 +6,20 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import i18n from 'i18n';
 
-import { savePointToLocalDB } from './database';
+import { batchSavePointsToLocalDB, savePointToLocalDB } from './database';
 
 const LOCATION_TASK_NAME = 'ski-background-location-task';
 
+let lastSavedCoord: { lat: number; lon: number; timestamp: number } | null = null;
+
+function fastDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const dLat = (lat2 - lat1) * 111320;
+  const dLon = (lon2 - lon1) * 111320 * Math.cos((lat1 * Math.PI) / 180);
+  return Math.sqrt(dLat * dLat + dLon * dLon);
+}
+
 /**
- * Tarea en segundo plano para registrar coordenadas GPS.
+ * Tarea en segundo plano para registrar coordenadas GPS con optimización térmica y filtro de jitter.
  */
 TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
   if (error) {
@@ -24,24 +32,53 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
     if (!locations || locations.length === 0) return;
 
     try {
-      // 1. Abrir base de datos y leer AsyncStorage UNA sola vez fuera del bucle
       const resortId = await AsyncStorage.getItem('ACTIVE_RESORT_ID');
-      const database = await SQLite.openDatabaseAsync('ski_tracker.db', { useNewConnection: true });
 
-      try {
-        for (const location of locations) {
-          console.log('GPS guardado en SQLite:', location.coords.latitude, location.coords.longitude);
-          await savePointToLocalDB(
-            location.coords.latitude,
-            location.coords.longitude,
-            location.coords.altitude || 0,
-            location.coords.speed || 0,
-            null, // Barómetro
-            resortId,
-            location.timestamp,
-            database
-          );
+      // Filtrar puntos que representen ruido estacionario (deriva de GPS mientras se está quieto en cola o cafetería)
+      const pointsToSave: Array<{
+        lat: number;
+        lon: number;
+        alt: number;
+        speed: number;
+        pressure: number | null;
+        resortId: string | null;
+        timestamp: number;
+      }> = [];
+
+      for (const location of locations) {
+        const lat = location.coords.latitude;
+        const lon = location.coords.longitude;
+        const speed = location.coords.speed || 0;
+        const timestamp = location.timestamp;
+
+        if (lastSavedCoord) {
+          const dist = fastDistanceMeters(lastSavedCoord.lat, lastSavedCoord.lon, lat, lon);
+          const timeElapsedMs = timestamp - lastSavedCoord.timestamp;
+
+          // Si el usuario se ha desplazado menos de 2.5m, la velocidad es nula/baja (<1m/s ~ 3.6km/h) y han pasado menos de 30s,
+          // se trata de fluctuación estática. Omitir para ahorrar escrituras en disco y batería.
+          if (dist < 2.5 && speed < 1.0 && timeElapsedMs < 30000) {
+            continue;
+          }
         }
+
+        lastSavedCoord = { lat, lon, timestamp };
+        pointsToSave.push({
+          lat,
+          lon,
+          alt: location.coords.altitude || 0,
+          speed,
+          pressure: null,
+          resortId,
+          timestamp,
+        });
+      }
+
+      if (pointsToSave.length === 0) return;
+
+      const database = await SQLite.openDatabaseAsync('ski_tracker.db', { useNewConnection: true });
+      try {
+        await batchSavePointsToLocalDB(pointsToSave, database);
       } finally {
         await database.closeAsync();
       }
@@ -254,6 +291,7 @@ export const persistTrackingResume = async () => {
 };
 
 export const persistTrackingClear = async () => {
+  lastSavedCoord = null;
   await Promise.all([
     AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.IS_ACTIVE),
     AsyncStorage.removeItem(TRACKING_STORAGE_KEYS.IS_PAUSED),
@@ -266,9 +304,39 @@ export const persistTrackingClear = async () => {
 };
 
 /**
+ * Actualiza dinámicamente el intervalo de muestreo GPS en caliente sin reiniciar la sesión.
+ * Permite reducir drásticamente el consumo cuando el usuario está estático o en cola de remontes.
+ */
+export const updateTrackingInterval = async (
+  trackingTime: number,
+  distanceInterval: number = 0
+): Promise<boolean> => {
+  try {
+    const isAlreadyStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+    if (!isAlreadyStarted) return false;
+
+    await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+      accuracy: Location.Accuracy.High,
+      timeInterval: trackingTime,
+      distanceInterval: distanceInterval,
+      showsBackgroundLocationIndicator: true,
+      foregroundService: {
+        notificationTitle: i18n.t('monitoring_session', 'Monitoreando tu sesión'),
+        notificationBody: i18n.t('session_in_progress', 'Tu sesión está activa en segundo plano'),
+      },
+    });
+    return true;
+  } catch (err) {
+    console.warn('Error al actualizar intervalo dinámico de tracking:', err);
+    return false;
+  }
+};
+
+/**
  * Detiene el rastreo de ubicación en segundo plano.
  */
 export const stopTracking = async (): Promise<void> => {
+  lastSavedCoord = null;
   try {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME);
     if (isRegistered) {

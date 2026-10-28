@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { AlertTriangle, Camera as CameraIcon, Download, Pause, Play, Square } from 'lucide-react-native';
+import { AlertTriangle, Camera as CameraIcon, Download, Moon, Pause, Play, Square } from 'lucide-react-native';
 import { BORDER_RADIUS, SHADOWS, SPACING, useThemeColors } from 'constants/theme';
 
 interface TrackingControlsProps {
@@ -9,11 +9,13 @@ interface TrackingControlsProps {
     isStartingTracking: boolean;
     hasTrackData: boolean;
     hasOfflinePacks: boolean;
+    isOledActive?: boolean;
     onToggleTracking: () => void;
     onTogglePause: () => void;
     onSOS: () => void;
     onOpenCamera: () => void;
     onOpenOfflineModal: () => void;
+    onToggleOled?: () => void;
 }
 
 export const TrackingControls: React.FC<TrackingControlsProps> = ({
@@ -22,11 +24,13 @@ export const TrackingControls: React.FC<TrackingControlsProps> = ({
     isStartingTracking,
     hasTrackData,
     hasOfflinePacks,
+    isOledActive = false,
     onToggleTracking,
     onTogglePause,
     onSOS,
     onOpenCamera,
     onOpenOfflineModal,
+    onToggleOled,
 }) => {
     const colors = useThemeColors();
 
@@ -49,6 +53,21 @@ export const TrackingControls: React.FC<TrackingControlsProps> = ({
                     >
                         <CameraIcon size={20} color={colors.textOnPrimary} />
                     </TouchableOpacity>
+                    {onToggleOled && (
+                        <TouchableOpacity
+                            style={[
+                                styles.iconButton,
+                                {
+                                    backgroundColor: isOledActive ? '#00FFCC' : '#0F172A',
+                                    borderColor: isOledActive ? '#00FFCC' : '#334155',
+                                    marginTop: 10,
+                                },
+                            ]}
+                            onPress={onToggleOled}
+                        >
+                            <Moon size={20} color={isOledActive ? '#000000' : '#38BDF8'} />
+                        </TouchableOpacity>
+                    )}
                 </>
             )}
 

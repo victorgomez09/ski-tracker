@@ -574,5 +574,18 @@
   "failed_delete_meeting_point": "Failed to delete meeting point",
   "navigating_to_meeting_point": "Centering map on {{title}}",
   "created_by": "Pinned by",
-  "set_meeting_point_here": "Meet here (Meeting point)"
+  "set_meeting_point_here": "Meet here (Meeting point)",
+  "oled_mode_title": "OLED PURE BLACK",
+  "oled_mode": "OLED",
+  "exit_oled_mode": "Exit OLED",
+  "extreme_cold_mode": "Extreme Cold",
+  "adaptive_gps": "Accelerometer Eco",
+  "tap_to_unlock": "Tap to unlock controls",
+  "lock_pocket": "Lock screen for pocket",
+  "low_battery_cold_alert": "Low battery ({{level}}%). Enable Extreme Cold / OLED mode to prevent cold temperature shutdowns.",
+  "motion_static": "🛑 Stationary / Queue (30s GPS)",
+  "motion_fast": "⛷️ Fast descent (2s GPS)",
+  "motion_moving": "🚠 On lift / Moving",
+  "motion_active": "📡 GPS Active",
+  "stationary_eco": "Eco"
 }

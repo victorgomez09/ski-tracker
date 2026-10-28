@@ -572,5 +572,18 @@
   "failed_delete_meeting_point": "Error al eliminar punto de encuentro",
   "navigating_to_meeting_point": "Centrando mapa en {{title}}",
   "created_by": "Fijado por",
-  "set_meeting_point_here": "Quedar aquí (Punto de encuentro)"
+  "set_meeting_point_here": "Quedar aquí (Punto de encuentro)",
+  "oled_mode_title": "OLED PURE BLACK",
+  "oled_mode": "OLED",
+  "exit_oled_mode": "Salir de OLED",
+  "extreme_cold_mode": "Frío Extremo",
+  "adaptive_gps": "Ahorro Acelerómetro",
+  "tap_to_unlock": "Toca para desbloquear controles",
+  "lock_pocket": "Bloquear pantalla para bolsillo",
+  "low_battery_cold_alert": "Batería baja ({{level}}%). Activa Modo Frío Extremo / OLED para prevenir apagados por bajas temperaturas.",
+  "motion_static": "🛑 Estático / Cola (GPS a 30s)",
+  "motion_fast": "⛷️ Descenso rápido (GPS a 2s)",
+  "motion_moving": "🚠 En remonte / Movimiento",
+  "motion_active": "📡 GPS Activo",
+  "stationary_eco": "Eco"
 }

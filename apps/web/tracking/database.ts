@@ -76,6 +76,93 @@ export const savePointToLocalDB = async (
 };
 
 /**
+ * Saves multiple points to the local SQLite database in a single transaction.
+ * Drastically reduces disk I/O, lock contention, and battery usage during background tracking.
+ */
+export const batchSavePointsToLocalDB = async (
+  points: Array<{
+    lat: number;
+    lon: number;
+    alt: number;
+    speed: number;
+    pressure: number | null;
+    resortId: string | null;
+    timestamp: number;
+  }>,
+  db: SQLite.SQLiteDatabase
+) => {
+  if (!points || points.length === 0) return;
+
+  const insertQuery = 'INSERT INTO track_points (lat, lon, alt, speed, pressure, resort_id, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)';
+
+  const executeBatch = async (targetDb: SQLite.SQLiteDatabase) => {
+    await targetDb.withTransactionAsync(async () => {
+      for (const p of points) {
+        await targetDb.runAsync(insertQuery, [
+          p.lat ?? 0,
+          p.lon ?? 0,
+          p.alt ?? 0,
+          p.speed ?? 0,
+          p.pressure ?? null,
+          p.resortId ?? null,
+          p.timestamp ?? Date.now(),
+        ]);
+      }
+    });
+  };
+
+  try {
+    await executeBatch(db);
+  } catch (err) {
+    console.warn('batchSavePointsToLocalDB error on db context, trying with isolated connection:', err);
+    const fallbackDb = await SQLite.openDatabaseAsync('ski_tracker.db', { useNewConnection: true });
+    try {
+      await executeBatch(fallbackDb);
+    } finally {
+      await fallbackDb.closeAsync();
+    }
+  }
+};
+
+/**
+ * Gets the total count of points recorded in the local SQLite database without loading all rows into JS.
+ */
+export const getPointsCount = async (db: SQLite.SQLiteDatabase): Promise<number> => {
+  const query = 'SELECT COUNT(*) as count FROM track_points';
+  try {
+    const row = await db.getFirstAsync<{ count: number }>(query);
+    return row?.count ?? 0;
+  } catch (err) {
+    const fallbackDb = await SQLite.openDatabaseAsync('ski_tracker.db', { useNewConnection: true });
+    try {
+      const row = await fallbackDb.getFirstAsync<{ count: number }>(query);
+      return row?.count ?? 0;
+    } finally {
+      await fallbackDb.closeAsync();
+    }
+  }
+};
+
+/**
+ * Gets the latest recorded point from local SQLite.
+ */
+export const getLastPoint = async (db: SQLite.SQLiteDatabase): Promise<TrackPoint | null> => {
+  const query = 'SELECT * FROM track_points ORDER BY timestamp DESC LIMIT 1';
+  try {
+    const row = await db.getFirstAsync<TrackPoint>(query);
+    return row ?? null;
+  } catch (err) {
+    const fallbackDb = await SQLite.openDatabaseAsync('ski_tracker.db', { useNewConnection: true });
+    try {
+      const row = await fallbackDb.getFirstAsync<TrackPoint>(query);
+      return row ?? null;
+    } finally {
+      await fallbackDb.closeAsync();
+    }
+  }
+};
+
+/**
  * Retrieves all location points from the local SQLite database, ordered by timestamp.
  */
 export const getAllPoints = async (db: SQLite.SQLiteDatabase): Promise<TrackPoint[]> => {

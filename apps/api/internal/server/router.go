@@ -36,6 +36,7 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		middleware.Recovery(deps.Logger),
 		middleware.Branding(),
 		middleware.RequestID(),
+		middleware.DecompressGzip(),
 		middleware.Logger(deps.Logger),
 		middleware.CORS(),
 	)
@@ -118,6 +119,8 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.POST("/sessions", skiSessionHandler.StartSession)
 			protected.POST("/ski-sessions/:id/points", skiSessionHandler.AddPoints)
 			protected.POST("/sessions/:id/points", skiSessionHandler.AddPoints)
+			protected.POST("/ski-sessions/:id/points/batch", skiSessionHandler.AddBatchPoints)
+			protected.POST("/sessions/:id/points/batch", skiSessionHandler.AddBatchPoints)
 			protected.POST("/ski-sessions/:id/finish", skiSessionHandler.FinishSession)
 			protected.POST("/sessions/:id/finish", skiSessionHandler.FinishSession)
 

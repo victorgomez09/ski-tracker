@@ -69,6 +69,8 @@ import { useTrackingSession } from './hooks/use-tracking-session';
 import { UploadSessionModal } from './modals/upload-session-modal';
 import { TrackingHUD } from './tracking-hud';
 import { TrackingControls } from './tracking-controls';
+import { OledBlackHud } from './oled-black-hud';
+import { useBatteryOptimizer } from 'hooks/use-battery-optimizer.hook';
 
 const DEFAULT_LAT = 0;
 const DEFAULT_LON = 0;
@@ -137,6 +139,15 @@ export default function InteractiveSkiMapNative() {
             showToast(t('ghost_mode_failed', 'Error al cambiar Modo Fantasma'), 'error');
         }
     }, [isGhostMode, currentUser, updateUser, showToast, t]);
+
+    // Battery & Thermal Optimization State (Phase 7)
+    const {
+        oledPureBlackEnabled,
+        toggleOledPureBlack,
+        setOledPureBlack,
+        extremeColdMode,
+        batteryLevel,
+    } = useBatteryOptimizer();
 
     // Meeting Points State (2.3)
     const [meetingPoints, setMeetingPoints] = useState<MeetingPoint[]>([]);
@@ -298,6 +309,18 @@ export default function InteractiveSkiMapNative() {
         resortId: resort?.ID,
         activityType,
     });
+
+    const hasPromptedColdWarningRef = useRef(false);
+    useEffect(() => {
+        if (isTracking && batteryLevel <= 20 && !hasPromptedColdWarningRef.current) {
+            hasPromptedColdWarningRef.current = true;
+            showToast(
+                t('low_battery_cold_alert', 'Batería baja ({{level}}%). Activa Modo Frío Extremo / OLED para prevenir apagados por bajas temperaturas.', { level: batteryLevel }),
+                'info',
+                12000
+            );
+        }
+    }, [isTracking, batteryLevel, showToast, t]);
 
     // --- Live Stats Hook ---
     const liveStats = useLiveStats(isTracking, trackPoints, elapsedSeconds);
@@ -587,6 +610,20 @@ export default function InteractiveSkiMapNative() {
 
     if (!isFocused) {
         return <View style={[styles.container, { backgroundColor: colors.background }]} />;
+    }
+
+    if (oledPureBlackEnabled && isTracking) {
+        return (
+            <OledBlackHud
+                stats={liveStats}
+                isTracking={isTracking}
+                isPaused={isPaused}
+                activityType={activityType}
+                onTogglePause={togglePause}
+                onStopTracking={toggleTracking}
+                onExitOledMode={() => setOledPureBlack(false)}
+            />
+        );
     }
 
     return (
@@ -899,7 +936,12 @@ export default function InteractiveSkiMapNative() {
             {/* Overlays & Controls */}
             {!takePictureMode && (
                 <>
-                    <TrackingHUD stats={liveStats} activityType={activityType} speedUnit={currentConfig.speedUnit} />
+                    <TrackingHUD
+                        stats={liveStats}
+                        activityType={activityType}
+                        speedUnit={currentConfig.speedUnit}
+                        onToggleOled={toggleOledPureBlack}
+                    />
 
                     {selectedMeetingPoint && (
                         <MeetingPointDetailPanel
@@ -967,6 +1009,8 @@ export default function InteractiveSkiMapNative() {
                         isStartingTracking={isStartingTracking}
                         hasTrackData={hasTrackData}
                         hasOfflinePacks={packs.length > 0}
+                        isOledActive={oledPureBlackEnabled}
+                        onToggleOled={toggleOledPureBlack}
                         onToggleTracking={toggleTracking}
                         onTogglePause={togglePause}
                         onSOS={handleSOS}

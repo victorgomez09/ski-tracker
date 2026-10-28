@@ -1,9 +1,14 @@
 package v1
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -129,9 +134,40 @@ func (h *SkiSessionHandler) StartSession(c *gin.Context) {
 func (h *SkiSessionHandler) AddPoints(c *gin.Context) {
 	sessionID := c.Param("id")
 
+	// 1. If request is application/json (or gzipped JSON decompressed by middleware), delegate to AddBatchPoints
+	contentType := c.ContentType()
+	if strings.Contains(contentType, "application/json") || (!strings.Contains(contentType, "multipart/form-data") && c.Request.ContentLength > 0) {
+		h.AddBatchPoints(c)
+		return
+	}
+
+	// 2. Handle multipart/form-data
 	pointsJSON := c.PostForm("points")
 	if pointsJSON == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing points data in request"})
+		// Check for compressed points (gzip + base64)
+		if pointsGzip := c.PostForm("points_gzip"); pointsGzip != "" {
+			gzBytes, err := base64.StdEncoding.DecodeString(pointsGzip)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 in points_gzip: " + err.Error()})
+				return
+			}
+			r, err := gzip.NewReader(bytes.NewReader(gzBytes))
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid gzip in points_gzip: " + err.Error()})
+				return
+			}
+			decompressed, err := io.ReadAll(r)
+			_ = r.Close()
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "failed to decompress points_gzip: " + err.Error()})
+				return
+			}
+			pointsJSON = string(decompressed)
+		}
+	}
+
+	if pointsJSON == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing points or points_gzip data in request"})
 		return
 	}
 
@@ -161,16 +197,60 @@ func (h *SkiSessionHandler) AddPoints(c *gin.Context) {
 	}
 
 	form, err := c.MultipartForm()
-	if err != nil {
-		httputil.RespondError(c, fmt.Errorf("failed to read multipart form: %w", err))
-		return
+	var files []*multipart.FileHeader
+	if err == nil && form != nil {
+		files = form.File["photos"]
+		if len(files) > 0 {
+			fmt.Printf("Photos from session: %s with %d photos\n", sessionID, len(files))
+		}
 	}
-	files := form.File["photos"]
-	fmt.Printf("Photos from session: %s with %d photos\n", sessionID, len(files))
 
 	err = h.svc.AddPointsAndPhotos(c.Request.Context(), points, files)
 	if err != nil {
 		httputil.RespondError(c, fmt.Errorf("failed to add points and photos: %w", err))
+		return
+	}
+
+	httputil.RespondOK(c, gin.H{
+		"success":         true,
+		"pointsProcessed": len(points),
+	})
+}
+
+// AddBatchPoints accepts high-efficiency JSON batches of coordinates (supporting gzip Content-Encoding)
+func (h *SkiSessionHandler) AddBatchPoints(c *gin.Context) {
+	sessionID := c.Param("id")
+	sessionIDInt, err := uuid.Parse(sessionID)
+	if err != nil {
+		httputil.RespondError(c, fmt.Errorf("invalid session ID: %w", err))
+		return
+	}
+
+	var req service.BatchPointsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httputil.RespondError(c, fmt.Errorf("invalid batch points JSON payload: %w", err))
+		return
+	}
+
+	if len(req.Points) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no points provided in batch"})
+		return
+	}
+
+	points := make([]models.SessionPoint, 0, len(req.Points))
+	for _, p := range req.Points {
+		geomWKT := fmt.Sprintf("SRID=4326;POINT(%f %f)", p.Lon, p.Lat)
+		points = append(points, models.SessionPoint{
+			SessionID: sessionIDInt,
+			Geom:      geomWKT,
+			Altitude:  p.Altitude,
+			Speed:     p.Speed,
+			Timestamp: p.Timestamp,
+		})
+	}
+
+	if err := h.svc.AddPointsAndPhotos(c.Request.Context(), points, nil); err != nil {
+		httputil.RespondError(c, fmt.Errorf("failed to add batch points: %w", err))
 		return
 	}
 
