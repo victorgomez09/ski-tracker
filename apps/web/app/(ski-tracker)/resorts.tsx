@@ -93,6 +93,7 @@ export default function ResortsView() {
   const [inputFocused, setInputFocused] = useState(false);
 
   // Cache sync helpers
+  /* eslint-disable react-hooks/globals */
   const setResortsWithCache = (val: Resort[]) => {
     cachedResorts = val;
     setResorts(val);
@@ -112,6 +113,7 @@ export default function ResortsView() {
     cachedSessions = val;
     setSessions(val);
   };
+  /* eslint-enable react-hooks/globals */
 
   // Debounce search API call
   useEffect(() => {
@@ -120,6 +122,7 @@ export default function ResortsView() {
     }
 
     if (searchTerm.trim().length <= 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResortsWithCache([]);
       lastFetchedSearchTerm = '';
       return;
@@ -167,7 +170,7 @@ export default function ResortsView() {
       });
 
       const weatherRequest = await api.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
-        params: { lat: resort.Latitude, lon: resort.Longitude },
+        params: { lat: resort.Latitude, lon: resort.Longitude, resort_id: resort.ID },
       });
 
       if (sessionsRequest.status === 200 && weatherRequest.status === 200) {
@@ -434,7 +437,7 @@ export default function ResortsView() {
             </View>
           )}
 
-          {/* Weather Forecast */}
+          {/* Detailed Weather & Snow Forecast */}
           {weatherData && <WeatherForecastDetails data={weatherData} />}
 
           {/* Sessions Log */}

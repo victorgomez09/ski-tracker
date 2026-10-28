@@ -1,3 +1,22 @@
+export interface SnowReport {
+  resort_id?: string;
+  resort_name?: string;
+  base_elevation_m: number;
+  summit_elevation_m: number;
+  snow_depth_base_cm: number;
+  snow_depth_summit_cm: number;
+  snow_condition: 'powder' | 'hard_packed' | 'spring' | 'wet' | 'packed_powder' | 'no_snow' | string;
+  snow_condition_label: string;
+  last_snowfall_date: string | null;
+  last_snowfall_amount_cm: number;
+  fresh_snow_24h_cm: number;
+  fresh_snow_48h_cm: number;
+  forecast_snow_7d_cm: number;
+  freezing_level_m: number;
+  data_source: string;
+  generated_at: string;
+}
+
 export interface WeatherForecast {
   latitude: number;
   longitude: number;
@@ -10,6 +29,10 @@ export interface WeatherForecast {
     interval: string;
     is_day: string;
     precipitation: string;
+    rain?: string;
+    showers?: string;
+    snowfall?: string;
+    snow_depth?: string;
     temperature_2m: string;
     time: string;
     weather_code: string;
@@ -26,6 +49,10 @@ export interface WeatherForecast {
     interval: number;
     is_day: number;
     precipitation: number;
+    rain?: number;
+    showers?: number;
+    snowfall?: number;
+    snow_depth?: number;
     temperature_2m: number;
     time: string;
     weather_code: number;
@@ -92,4 +119,5 @@ export interface WeatherForecast {
     snowfall_sum: number[];
     precipitation_probability_max: number[];
   };
+  snow_report?: SnowReport;
 }

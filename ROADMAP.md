@@ -111,24 +111,19 @@ mindmap
 
 ---
 
-## ❄️ 3. Información de Nieve, Meteorología y Estación
+## ❄️ 3. Información de Nieve, Meteorología y Previsión de Nevadas
 
-- [ ] **3.1 Partes de Nieve y Estado de Pistas en Tiempo Real**
-  - **Utilidad:** Proporcionar información oficial y de la comunidad sobre la estación:
-    - [ ] Espesor de nieve acumulada (base y cumbre).
-    - [ ] Tipo y calidad de nieve (polvo, dura, húmeda, primavera).
-    - [ ] Número de pistas y remontes abiertos vs. totales.
-    - [ ] Fecha y centímetros de la última nevada.
+- [x] **3.1 Previsión de Nevadas, Espesores y Tiempo Detallado (Open-Meteo)**
+  - **Utilidad:** Proporcionar información meteorológica y de nieve en alta resolución para planificar las jornadas de esquí:
+    - [x] Espesor de nieve acumulada en cota base y cota cumbre (Open-Meteo dual-elevation batch query).
+    - [x] Previsión de nevadas acumuladas a 7 días y desglose diario de días con nevadas previstas (fechas, cm y temperaturas mín/máx).
+    - [x] Acumulado de nieve reciente en últimas 24h, 48h y fecha/centímetros de la última nevada detectada en el histórico de 7 días.
+    - [x] Tipo y calidad de nieve (polvo, dura/venteada, primavera, húmeda, polvo dura) calculado a partir de temperaturas, nevadas recientes y viento.
+    - [x] Cota de congelación / isocero 0ºC (`freezing_level_height`).
+  - **Detalle de Implementación:**
+    - [x] **Backend:** Extensión de `WeatherService` y `WeatherHandler` con soporte para multi-elevación (`baseElev` y `summitElev`) y cálculo de `SnowReport`. Sistema de caché en memoria de 1 hora (`gin-contrib/cache`) por estación/coordenadas para proteger los límites de la API pública de Open-Meteo.
+    - [x] **Frontend:** Integración unificada dentro del componente `WeatherForecastDetails` en la pantalla de detalle de estación: pestaña destacada de "Nieve", barra de estado rápido en "Actual", y desglose diario de nevadas previstas. (Se descartaron webcams genéricas y estimaciones de remontes abiertos para mantener datos 100% precisos basados en modelos meteorológicos).
   - **Prioridad:** 🔴 Alta | **Complejidad:** M
-
-- [ ] **3.2 Webcams en Directo de la Estación**
-  - **Utilidad:** Añadir en la ficha de cada estación un carrusel de webcams en directo para comprobar visibilidad, estado de las nubes y afluencia en remontes.
-  - **Detalle:** Integración de enlaces de streaming o capturas estáticas actualizadas periódicamente (vía scraping o APIs públicas de estaciones).
-  - **Prioridad:** 🟡 Media | **Complejidad:** S
-
-- [ ] **3.3 Boletín de Peligro de Aludes (BPA) y Cotas Críticas**
-  - **Utilidad:** Vital para practicantes de esquí de travesía y freeride. Mostrar la escala europea de riesgo de aludes (1 a 5), laderas y orientaciones peligrosas según informes de AEMET / agencias meteorológicas locales.
-  - **Prioridad:** 🟢 Baja | **Complejidad:** M
 
 ---
 

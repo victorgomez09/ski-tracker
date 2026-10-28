@@ -38,7 +38,7 @@ func NewContainer(
 		SkiLift:    NewSkiLiftService(s, logger),
 		User:       NewUserService(s, jwtManager, logger),
 		SkiSession: NewSkiSessionService(s, jwtManager, logger, minioClient),
-		Weather:    NewWeatherService(logger),
+		Weather:    NewWeatherService(s, logger),
 		OTA:        NewOTAService(minioClient, otaBucket, apiPublicURL, logger),
 		AppRelease: NewAppReleaseService(minioClient, otaBucket, apiPublicURL, logger),
 		Friendship: NewFriendshipService(s, logger),

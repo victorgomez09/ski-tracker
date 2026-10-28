@@ -1,4 +1,19 @@
-import { Sun, Cloud, CloudRain, Snowflake, Wind, Compass, Droplets, Flame, Gauge, Umbrella, Eye } from 'lucide-react-native';
+import {
+    Sun,
+    Cloud,
+    CloudRain,
+    Snowflake,
+    Wind,
+    Compass,
+    Droplets,
+    Flame,
+    Gauge,
+    Umbrella,
+    Eye,
+    MountainSnow,
+    Layers,
+    Calendar,
+} from 'lucide-react-native';
 import { WeatherForecast } from 'models/weather.model';
 import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
@@ -9,15 +24,20 @@ interface WeatherWidgetProps {
     data: WeatherForecast;
 }
 
+type WeatherTab = 'snow' | 'current' | 'hourly' | 'daily';
+
 export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) => {
     const { t, i18n } = useTranslation();
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
-    const [activeTab, setActiveTab] = useState<'current' | 'hourly' | 'daily'>('current');
+
+    const hasSnowReport = Boolean(data.snow_report);
+    const [activeTab, setActiveTab] = useState<WeatherTab>(hasSnowReport ? 'snow' : 'current');
 
     const current = data.current;
     const currentUnits = data.current_units;
     const hourlyUnits = data.hourly_units;
+    const snowReport = data.snow_report;
 
     const formatVisibility = (meters: number) => {
         if (!meters && meters !== 0) return t('na');
@@ -60,24 +80,97 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
 
     const currentWeatherInfo = getWeatherInfo(current.weather_code);
 
+    // Filter upcoming days with snowfall in the 7-day window
+    const upcomingSnowDays = useMemo(() => {
+        if (!data.daily) return [];
+        const list: {
+            dayName: string;
+            snowfall: number;
+            tempMax: number;
+            tempMin: number;
+            precipProb?: number;
+        }[] = [];
+
+        data.daily.time.forEach((dayStr, idx) => {
+            const snowfall = data.daily?.snowfall_sum?.[idx] ?? 0;
+            if (snowfall > 0) {
+                const dateObj = new Date(dayStr);
+                const dayName = dateObj.toLocaleDateString(i18n.language, {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                });
+                list.push({
+                    dayName,
+                    snowfall,
+                    tempMax: data.daily?.temperature_2m_max?.[idx] ?? 0,
+                    tempMin: data.daily?.temperature_2m_min?.[idx] ?? 0,
+                    precipProb: data.daily?.precipitation_probability_max?.[idx],
+                });
+            }
+        });
+
+        return list;
+    }, [data.daily, i18n.language]);
+
+    // Format last snowfall date
+    const formattedLastSnowfall = (() => {
+        if (!snowReport?.last_snowfall_date) return null;
+        try {
+            const dateObj = new Date(snowReport.last_snowfall_date);
+            const dateText = dateObj.toLocaleDateString(i18n.language, {
+                day: 'numeric',
+                month: 'short',
+            });
+            return `${dateText} (${snowReport.last_snowfall_amount_cm} cm)`;
+        } catch {
+            return `${snowReport.last_snowfall_date} (${snowReport.last_snowfall_amount_cm} cm)`;
+        }
+    })();
+
+    const snowConditionLabel = snowReport
+        ? t(`snow_condition_${snowReport.snow_condition}`, {
+              defaultValue: snowReport.snow_condition_label || t('snow_condition_packed_powder'),
+          })
+        : '';
+
     return (
         <View style={styles.container}>
             {/* Header Tabs */}
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>{t('detailed_weather')}</Text>
                 <View style={styles.tabsWrapper}>
+                    {hasSnowReport && (
+                        <TouchableOpacity
+                            style={[styles.tabButton, activeTab === 'snow' && styles.tabButtonActive]}
+                            onPress={() => setActiveTab('snow')}
+                        >
+                            <Snowflake
+                                size={12}
+                                color={activeTab === 'snow' ? colors.textOnPrimary : colors.primary}
+                                style={{ marginRight: 4 }}
+                            />
+                            <Text style={[styles.tabText, activeTab === 'snow' && styles.tabTextActive]}>
+                                {t('tab_snow')}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                         style={[styles.tabButton, activeTab === 'current' && styles.tabButtonActive]}
                         onPress={() => setActiveTab('current')}
                     >
-                        <Text style={[styles.tabText, activeTab === 'current' && styles.tabTextActive]}>{t('current')}</Text>
+                        <Text style={[styles.tabText, activeTab === 'current' && styles.tabTextActive]}>
+                            {t('current')}
+                        </Text>
                     </TouchableOpacity>
                     {data.hourly && (
                         <TouchableOpacity
                             style={[styles.tabButton, activeTab === 'hourly' && styles.tabButtonActive]}
                             onPress={() => setActiveTab('hourly')}
                         >
-                            <Text style={[styles.tabText, activeTab === 'hourly' && styles.tabTextActive]}>{t('hourly')}</Text>
+                            <Text style={[styles.tabText, activeTab === 'hourly' && styles.tabTextActive]}>
+                                {t('hourly')}
+                            </Text>
                         </TouchableOpacity>
                     )}
                     {data.daily && (
@@ -85,11 +178,156 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             style={[styles.tabButton, activeTab === 'daily' && styles.tabButtonActive]}
                             onPress={() => setActiveTab('daily')}
                         >
-                            <Text style={[styles.tabText, activeTab === 'daily' && styles.tabTextActive]}>{t('daily')}</Text>
+                            <Text style={[styles.tabText, activeTab === 'daily' && styles.tabTextActive]}>
+                                {t('daily')}
+                            </Text>
                         </TouchableOpacity>
                     )}
                 </View>
             </View>
+
+            {/* SNOW & SNOWFALL FORECAST TAB */}
+            {activeTab === 'snow' && snowReport && (
+                <View style={styles.bodyCard}>
+                    {/* Hero Snowfall Forecast Banner */}
+                    <View style={styles.snowHeroCard}>
+                        <View style={styles.snowHeroHeader}>
+                            <View style={styles.snowHeroIconBadge}>
+                                <MountainSnow size={22} color="#0284c7" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.snowHeroTitle}>{t('snow_forecast')}</Text>
+                                <Text style={styles.snowHeroSubtitle}>{t('snow_forecast_7d_total')}</Text>
+                            </View>
+                            <View style={styles.snowHeroStat}>
+                                <Text style={styles.snowHeroAmount}>
+                                    {snowReport.forecast_snow_7d_cm > 0 ? `+${snowReport.forecast_snow_7d_cm}` : '0'}
+                                </Text>
+                                <Text style={styles.snowHeroUnit}>cm</Text>
+                            </View>
+                        </View>
+
+                        {/* 24h & 48h mini stats */}
+                        <View style={styles.snowHeroSubRow}>
+                            <View style={styles.snowSubMetric}>
+                                <Text style={styles.snowSubLabel}>{t('fresh_snow_24h')}</Text>
+                                <Text style={styles.snowSubValue}>
+                                    {snowReport.fresh_snow_24h_cm > 0 ? `+${snowReport.fresh_snow_24h_cm} cm` : '0 cm'}
+                                </Text>
+                            </View>
+                            <View style={styles.snowSubDivider} />
+                            <View style={styles.snowSubMetric}>
+                                <Text style={styles.snowSubLabel}>{t('fresh_snow_48h')}</Text>
+                                <Text style={styles.snowSubValue}>
+                                    {snowReport.fresh_snow_48h_cm > 0 ? `+${snowReport.fresh_snow_48h_cm} cm` : '0 cm'}
+                                </Text>
+                            </View>
+                            <View style={styles.snowSubDivider} />
+                            <View style={styles.snowSubMetric}>
+                                <Text style={styles.snowSubLabel}>{t('freezing_level')}</Text>
+                                <Text style={styles.snowSubValue}>
+                                    {Math.round(snowReport.freezing_level_m)} m
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    {/* Snowpack by Elevation (Base vs Summit) */}
+                    <View>
+                        <Text style={styles.sectionHeader}>{t('snowpack_overview')}</Text>
+                        <View style={styles.elevationGrid}>
+                            <View style={styles.elevationCard}>
+                                <View style={styles.elevationIconCircle}>
+                                    <Layers size={16} color={colors.primary} />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.elevationTitle}>{t('cota_base')}</Text>
+                                    <Text style={styles.elevationAlt}>
+                                        {Math.round(snowReport.base_elevation_m)} m
+                                    </Text>
+                                </View>
+                                <View style={{ alignItems: 'flex-end' }}>
+                                    <Text style={styles.elevationDepth}>{snowReport.snow_depth_base_cm}</Text>
+                                    <Text style={styles.elevationDepthUnit}>cm</Text>
+                                </View>
+                            </View>
+
+                            <View style={styles.elevationCard}>
+                                <View style={[styles.elevationIconCircle, { backgroundColor: '#e0f2fe' }]}>
+                                    <MountainSnow size={16} color="#0284c7" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.elevationTitle}>{t('cota_summit')}</Text>
+                                    <Text style={styles.elevationAlt}>
+                                        {Math.round(snowReport.summit_elevation_m)} m
+                                    </Text>
+                                </View>
+                                <View style={{ alignItems: 'flex-end' }}>
+                                    <Text style={styles.elevationDepth}>{snowReport.snow_depth_summit_cm}</Text>
+                                    <Text style={styles.elevationDepthUnit}>cm</Text>
+                                </View>
+                            </View>
+                        </View>
+                    </View>
+
+                    {/* Snow Quality & Conditions */}
+                    <View style={styles.metricsGrid}>
+                        <View style={styles.metricCard}>
+                            <Snowflake size={16} color="#0284c7" />
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.gridMetricLabel}>{t('snow_quality')}</Text>
+                                <Text style={styles.gridMetricValue} numberOfLines={1}>
+                                    {snowConditionLabel}
+                                </Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.metricCard}>
+                            <Calendar size={16} color="#8b5cf6" />
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.gridMetricLabel}>{t('last_snowfall')}</Text>
+                                <Text style={styles.gridMetricValue} numberOfLines={1}>
+                                    {formattedLastSnowfall || t('no_recent_snow')}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    {/* Upcoming Snowfalls in Next 7 Days */}
+                    <View>
+                        <Text style={styles.sectionHeader}>{t('upcoming_snowfalls')}</Text>
+                        {upcomingSnowDays.length > 0 ? (
+                            <View style={styles.upcomingList}>
+                                {upcomingSnowDays.map((item, index) => (
+                                    <View key={index} style={styles.snowDayItem}>
+                                        <View style={styles.snowDayLeft}>
+                                            <Snowflake size={14} color="#0284c7" />
+                                            <Text style={styles.snowDayName}>{item.dayName}</Text>
+                                        </View>
+
+                                        <View style={styles.snowDayBadge}>
+                                            <Text style={styles.snowDayBadgeText}>+{item.snowfall} cm</Text>
+                                        </View>
+
+                                        <View style={styles.dailyTempRange}>
+                                            <Text style={styles.dailyMaxText}>{item.tempMax}°</Text>
+                                            <Text style={styles.dailySlashText}>/</Text>
+                                            <Text style={styles.dailyMinText}>{item.tempMin}°</Text>
+                                        </View>
+                                    </View>
+                                ))}
+                            </View>
+                        ) : (
+                            <View style={styles.noSnowCard}>
+                                <Sun size={20} color="#f59e0b" />
+                                <Text style={styles.noSnowCardText}>{t('no_snow_forecast_7d')}</Text>
+                            </View>
+                        )}
+                    </View>
+
+                    <Text style={styles.dataSourceNotice}>{t('open_meteo_credit')}</Text>
+                </View>
+            )}
 
             {/* CURRENT TAB */}
             {activeTab === 'current' && (
@@ -101,17 +339,52 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             </View>
                             <View style={styles.conditionTextContainer}>
                                 <Text style={styles.metricLabel}>{t('condition')}</Text>
-                                <Text style={styles.conditionText} numberOfLines={1} ellipsizeMode="tail">{currentWeatherInfo.label}</Text>
+                                <Text style={styles.conditionText} numberOfLines={1} ellipsizeMode="tail">
+                                    {currentWeatherInfo.label}
+                                </Text>
                                 <Text style={styles.timeText} numberOfLines={1} ellipsizeMode="tail">
                                     {t('updated')}: {new Date(current.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </Text>
                             </View>
                         </View>
                         <View style={styles.conditionRight}>
-                            <Text style={styles.tempText}>{current.temperature_2m}{currentUnits.temperature_2m}</Text>
-                            <Text style={styles.feelsLikeText}>{t('feels_like', { temp: `${current.apparent_temperature}${currentUnits.temperature_2m}` })}</Text>
+                            <Text style={styles.tempText}>
+                                {current.temperature_2m}{currentUnits.temperature_2m}
+                            </Text>
+                            <Text style={styles.feelsLikeText}>
+                                {t('feels_like', { temp: `${current.apparent_temperature}${currentUnits.temperature_2m}` })}
+                            </Text>
                         </View>
                     </View>
+
+                    {/* Quick Snow Bar if SnowReport exists */}
+                    {snowReport && (
+                        <View style={styles.quickSnowBar}>
+                            <View style={styles.quickSnowItem}>
+                                <Snowflake size={14} color="#0284c7" />
+                                <Text style={styles.quickSnowLabel}>{t('snow_depth')}:</Text>
+                                <Text style={styles.quickSnowValue}>
+                                    {snowReport.snow_depth_base_cm} - {snowReport.snow_depth_summit_cm} cm
+                                </Text>
+                            </View>
+                            <View style={styles.quickSnowDivider} />
+                            <View style={styles.quickSnowItem}>
+                                <Text style={styles.quickSnowLabel}>{t('snow_quality')}:</Text>
+                                <Text style={styles.quickSnowValue}>{snowConditionLabel}</Text>
+                            </View>
+                            {snowReport.forecast_snow_7d_cm > 0 && (
+                                <>
+                                    <View style={styles.quickSnowDivider} />
+                                    <View style={styles.quickSnowItem}>
+                                        <Text style={styles.quickSnowLabel}>7d:</Text>
+                                        <Text style={[styles.quickSnowValue, { color: '#0284c7' }]}>
+                                            +{snowReport.forecast_snow_7d_cm} cm
+                                        </Text>
+                                    </View>
+                                </>
+                            )}
+                        </View>
+                    )}
 
                     {/* Metrics Grid */}
                     <View style={styles.metricsGrid}>
@@ -181,7 +454,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             return (
                                 <View key={index} style={styles.hourlyItem}>
                                     <Text style={styles.hourText}>{hourFormatted}</Text>
-                                    
+
                                     <View style={styles.hourlyBadgeContainer}>
                                         {snowfall > 0 ? (
                                             <View style={styles.snowBadge}>
@@ -197,12 +470,12 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                                             <Text style={styles.noPrecipText}>{t('no_precip')}</Text>
                                         )}
                                     </View>
-                                    
+
                                     <View style={styles.hourlyWind}>
                                         <Wind size={10} color={colors.textSecondary} />
                                         <Text style={styles.hourlyWindText}>{windSpeed} {hourlyUnits.wind_speed_10m}</Text>
                                     </View>
-                                    
+
                                     <Text style={styles.hourlyTempText}>{temp}°</Text>
                                 </View>
                             );
@@ -259,6 +532,8 @@ const getStyles = (colors: any) => StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 4,
+        flexWrap: 'wrap',
+        gap: 6,
     },
     headerTitle: {
         fontSize: 12,
@@ -270,19 +545,22 @@ const getStyles = (colors: any) => StyleSheet.create({
     tabsWrapper: {
         flexDirection: 'row',
         backgroundColor: colors.background,
-        padding: 4,
+        padding: 3,
         borderRadius: BORDER_RADIUS.md,
+        alignItems: 'center',
     },
     tabButton: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
         borderRadius: BORDER_RADIUS.sm,
     },
     tabButtonActive: {
         backgroundColor: colors.primary,
     },
     tabText: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '600',
         color: colors.textSecondary,
     },
@@ -298,6 +576,216 @@ const getStyles = (colors: any) => StyleSheet.create({
         flexDirection: 'column',
         gap: SPACING.md,
         ...SHADOWS.sm,
+    },
+    snowHeroCard: {
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: BORDER_RADIUS.md,
+        padding: SPACING.md,
+        gap: 12,
+    },
+    snowHeroHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    snowHeroIconBadge: {
+        backgroundColor: '#e0f2fe',
+        padding: 10,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: '#bae6fd',
+    },
+    snowHeroTitle: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+    },
+    snowHeroSubtitle: {
+        fontSize: 11,
+        color: colors.textSecondary,
+        marginTop: 1,
+    },
+    snowHeroStat: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        gap: 2,
+    },
+    snowHeroAmount: {
+        fontSize: 26,
+        fontWeight: '800',
+        color: '#0284c7',
+        lineHeight: 30,
+    },
+    snowHeroUnit: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#0284c7',
+        marginBottom: 3,
+    },
+    snowHeroSubRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderColor: colors.border,
+    },
+    snowSubMetric: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    snowSubLabel: {
+        fontSize: 9,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        color: colors.textSecondary,
+        marginBottom: 2,
+    },
+    snowSubValue: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+    },
+    snowSubDivider: {
+        width: 1,
+        height: 20,
+        backgroundColor: colors.border,
+    },
+    elevationGrid: {
+        flexDirection: 'row',
+        gap: 8,
+        marginTop: 4,
+    },
+    elevationCard: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: BORDER_RADIUS.md,
+        padding: 10,
+    },
+    elevationIconCircle: {
+        padding: 8,
+        borderRadius: BORDER_RADIUS.sm,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    elevationTitle: {
+        fontSize: 11,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+    },
+    elevationAlt: {
+        fontSize: 9,
+        color: colors.textSecondary,
+    },
+    elevationDepth: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#0284c7',
+    },
+    elevationDepthUnit: {
+        fontSize: 9,
+        fontWeight: 'bold',
+        color: colors.textSecondary,
+    },
+    upcomingList: {
+        flexDirection: 'column',
+        gap: 6,
+        marginTop: 4,
+    },
+    snowDayItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: colors.background,
+        borderRadius: BORDER_RADIUS.md,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    snowDayLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flex: 1,
+    },
+    snowDayName: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: colors.textPrimary,
+    },
+    snowDayBadge: {
+        backgroundColor: '#e0f2fe',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: BORDER_RADIUS.round,
+        marginHorizontal: 8,
+    },
+    snowDayBadgeText: {
+        fontSize: 11,
+        fontWeight: 'bold',
+        color: '#0284c7',
+    },
+    noSnowCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: colors.background,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginTop: 4,
+    },
+    noSnowCardText: {
+        fontSize: 11,
+        color: colors.textSecondary,
+        flex: 1,
+    },
+    dataSourceNotice: {
+        fontSize: 9,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        marginTop: 2,
+    },
+    quickSnowBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: BORDER_RADIUS.md,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+    },
+    quickSnowItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    quickSnowLabel: {
+        fontSize: 10,
+        color: colors.textSecondary,
+        fontWeight: '500',
+    },
+    quickSnowValue: {
+        fontSize: 11,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+    },
+    quickSnowDivider: {
+        width: 1,
+        height: 12,
+        backgroundColor: colors.border,
     },
     conditionRow: {
         flexDirection: 'row',
@@ -357,7 +845,7 @@ const getStyles = (colors: any) => StyleSheet.create({
         flexDirection: 'row',
         flexWrap: 'wrap',
         gap: 8,
-        paddingTop: SPACING.md,
+        paddingTop: SPACING.sm,
         borderTopWidth: 1,
         borderColor: colors.border,
     },

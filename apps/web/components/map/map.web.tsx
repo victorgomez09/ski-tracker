@@ -1026,7 +1026,7 @@ export default function InteractiveSkiMap() {
     useEffect(() => {
         if (!isPoiEnabled || viewState.zoom < 11 || searchParams.sessionId) return;
 
-        resorts.forEach((resort) => {
+        resorts?.forEach((resort) => {
             if (!resort.ID || fetchedPoiResortIds.current.has(resort.ID)) return;
             if (resort.pois && resort.pois.length > 0) {
                 fetchedPoiResortIds.current.add(resort.ID);
