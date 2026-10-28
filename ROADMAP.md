@@ -104,7 +104,7 @@ mindmap
     - [ ] Envío automático de SMS / WhatsApp a contactos de emergencia preconfigurados con un clic.
   - **Prioridad:** 🔴 Alta | **Complejidad:** S
 
-- [ ] **2.3 Puntos de Encuentro Grupales en el Mapa ("Meeting Points")**
+- [x] **2.3 Puntos de Encuentro Grupales en el Mapa ("Meeting Points")**
   - **Utilidad:** Fijar un punto geográfico temporal en el mapa (ej. *"Comida en Restaurante Borreguiles a las 14:00"* o *"Nos vemos abajo del telesilla"*).
   - **Detalle:** Visible en tiempo real para todos los amigos del grupo, mostrando la distancia y la ruta de esquí para llegar.
   - **Prioridad:** 🟡 Media | **Complejidad:** S

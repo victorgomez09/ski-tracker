@@ -20,6 +20,7 @@ type Store interface {
 	Friendship() FriendshipStore
 	Interaction() InteractionStore
 	Crew() CrewStore
+	MeetingPoint() MeetingPointStore
 }
 
 // Pagination request parameters.
@@ -145,3 +146,11 @@ type CrewStore interface {
 	GetCrewLeaderboard(ctx context.Context, crewID uuid.UUID, metric string) ([]models.LeaderboardEntry, error)
 	GetCrewLiveLocations(ctx context.Context, crewID uuid.UUID) ([]models.User, error)
 }
+
+type MeetingPointStore interface {
+	Create(ctx context.Context, point *models.MeetingPoint) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.MeetingPoint, error)
+	ListForUser(ctx context.Context, userID uuid.UUID, resortID string) ([]models.MeetingPoint, error)
+	Delete(ctx context.Context, id, userID uuid.UUID) error
+}
+

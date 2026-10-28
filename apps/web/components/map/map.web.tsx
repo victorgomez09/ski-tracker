@@ -11,6 +11,7 @@ import {
     CircleQuestionMark,
     Coffee,
     Crosshair,
+    Flag,
     HeartPulse,
     Hotel,
     Info,
@@ -26,6 +27,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { API_BASE_URL } from 'constants/constants';
 import { getMapStyleValue, MAP_STYLE_STORAGE_KEY, MapStyleId } from 'constants/map-styles';
 import { useAuth } from 'context/auth.context';
+import { useToast } from 'context/toast.context';
 import { Lift, Piste, Resort, ResortDetail, ResortPOI } from 'models/ski-resort.model';
 import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 import { formatDuration, formatPace, formatPaceFromMinPerKm } from 'components/tracking/hooks/use-live-stats';
@@ -36,6 +38,11 @@ import { ResortDetailPanel } from './resort-detail-panel';
 import { LegendDetailPanel } from './legend-detail-panel';
 import { RouteNavigationPanel } from './route-navigation-panel';
 import { RouteOriginModal } from './route-origin-modal';
+import { MeetingPointMarker } from './meeting-point-marker';
+import { MeetingPointDetailPanel } from './meeting-point-detail-panel';
+import { CreateMeetingPointModal } from './create-meeting-point-modal';
+import { MeetingPoint } from '../../models/meeting-point.model';
+import { meetingPointService } from '../../services/meeting-point.service';
 import { SkiRoutingEngine, RouteResult, SkillLevel, RouteLeg, calculateDistanceM } from '../../utils/ski-routing.util';
 import api from 'interceptor/api';
 
@@ -563,6 +570,7 @@ const MapCustomControlGroup = ({
 
 export default function InteractiveSkiMap() {
     const { t } = useTranslation();
+    const { showToast } = useToast();
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
     const searchParams = useLocalSearchParams();
@@ -626,6 +634,46 @@ export default function InteractiveSkiMap() {
     const [fastLifts, setFastLifts] = useState(false);
     const [badWeather, setBadWeather] = useState(false);
     const [isLoadingGps, setIsLoadingGps] = useState(false);
+
+    // Meeting Points State (2.3)
+    const [meetingPoints, setMeetingPoints] = useState<MeetingPoint[]>([]);
+    const [selectedMeetingPoint, setSelectedMeetingPoint] = useState<MeetingPoint | null>(null);
+    const [showCreateMeetingPointModal, setShowCreateMeetingPointModal] = useState(false);
+    const [createMeetingPointTarget, setCreateMeetingPointTarget] = useState<{
+        coords: { latitude: number; longitude: number };
+        title?: string;
+        resortId?: string;
+        resortName?: string;
+    } | null>(null);
+
+    const fetchMeetingPoints = useCallback(async () => {
+        const resortIdToFetch = selectedResort?.ID || (resorts && resorts.length > 0 ? resorts[0].ID : undefined);
+        if (!resortIdToFetch) return;
+        try {
+            const data = await meetingPointService.list(resortIdToFetch);
+            setMeetingPoints(data || []);
+        } catch (err) {
+            console.error('Failed to fetch meeting points on web:', err);
+        }
+    }, [selectedResort?.ID, resorts]);
+
+    useEffect(() => {
+        fetchMeetingPoints();
+        const interval = setInterval(fetchMeetingPoints, 20000);
+        return () => clearInterval(interval);
+    }, [fetchMeetingPoints]);
+
+    const handleDeleteMeetingPoint = useCallback(async (point: MeetingPoint) => {
+        try {
+            await meetingPointService.delete(point.id);
+            setMeetingPoints((prev) => prev.filter((p) => p.id !== point.id));
+            setSelectedMeetingPoint(null);
+            showToast(t('meeting_point_deleted_success', 'Punto de encuentro eliminado'), 'success');
+        } catch (err) {
+            console.error('Failed to delete meeting point:', err);
+            showToast(t('failed_delete_meeting_point', 'Error al eliminar punto de encuentro'), 'error');
+        }
+    }, [showToast, t]);
 
     const isSelectingRouteOriginRef = useRef(isSelectingRouteOrigin);
     const routeDestinationRef = useRef(routeDestination);
@@ -1948,6 +1996,21 @@ export default function InteractiveSkiMap() {
                     onClose={() => { setSelectedFeature(null); setChartHoverPoint(null); }}
                     onChartPointSelected={setChartHoverPoint}
                     onCalculateRoute={handleInitiateRoute}
+                    onCreateMeetingPoint={(feature, coord) => {
+                        const parentResort = resorts.find((r) =>
+                            r.pistes?.some((p) => p.ID === feature.ID) ||
+                            r.lifts?.some((l) => l.ID === feature.ID)
+                        ) || selectedResort;
+                        const lat = coord ? coord[1] : viewState.latitude;
+                        const lon = coord ? coord[0] : viewState.longitude;
+                        setCreateMeetingPointTarget({
+                            coords: { latitude: lat, longitude: lon },
+                            title: feature.Name || '',
+                            resortId: parentResort?.ID || selectedResort?.ID || 'general',
+                            resortName: parentResort?.Name || selectedResort?.Name,
+                        });
+                        setShowCreateMeetingPointModal(true);
+                    }}
                 />
             )}
             {selectedResort && (
@@ -2161,6 +2224,35 @@ export default function InteractiveSkiMap() {
                     >
                         <CircleQuestionMark size={16} color="#333333" />
                     </button>
+
+                    <button
+                        type="button"
+                        title={t('meeting_points', 'Puntos de Encuentro')}
+                        aria-label="Meeting Points"
+                        onClick={() => {
+                            const activeResort = selectedResort || (resorts && resorts.length > 0 ? resorts[0] : null);
+                            setCreateMeetingPointTarget({
+                                coords: { latitude: viewState.latitude, longitude: viewState.longitude },
+                                title: '',
+                                resortId: activeResort?.ID || 'general',
+                                resortName: activeResort?.Name,
+                            });
+                            setShowCreateMeetingPointModal(true);
+                        }}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '29px',
+                            height: '29px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            backgroundColor: meetingPoints.length > 0 ? '#fef3c7' : 'transparent',
+                            color: meetingPoints.length > 0 ? '#d97706' : '#333333',
+                        }}
+                    >
+                        <Flag size={16} color={meetingPoints.length > 0 ? '#d97706' : '#333333'} />
+                    </button>
                 </MapCustomControlGroup>
                 {!searchParams.sessionId && isSnowLayer && resorts?.map(resort => (
                     <Marker
@@ -2346,6 +2438,41 @@ export default function InteractiveSkiMap() {
                                     >
                                         {t('route_to_poi', 'Calcular ruta hasta aquí')}
                                     </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const parentResort = resorts.find((r) =>
+                                                r.pois?.some((p) => p.id === selectedPoi.id)
+                                            ) || selectedResort;
+                                            setCreateMeetingPointTarget({
+                                                coords: { latitude: selectedPoi.latitude, longitude: selectedPoi.longitude },
+                                                title: selectedPoi.name || '',
+                                                resortId: parentResort?.ID || selectedResort?.ID || 'general',
+                                                resortName: parentResort?.Name || selectedResort?.Name,
+                                            });
+                                            setShowCreateMeetingPointModal(true);
+                                            setSelectedPoi(null);
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '6px 10px',
+                                            borderRadius: '6px',
+                                            backgroundColor: '#fef3c7',
+                                            color: '#b45309',
+                                            border: '1px solid #fde68a',
+                                            fontSize: '11px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            marginTop: '6px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '4px',
+                                        }}
+                                    >
+                                        🚩 {t('set_meeting_point_here', 'Quedar aquí (Punto de encuentro)')}
+                                    </button>
                                 </div>
                             </Popup>
                         )}
@@ -2484,7 +2611,87 @@ export default function InteractiveSkiMap() {
                         </Marker>
                     </>
                 )}
+
+                {/* Meeting Points (2.3) */}
+                {meetingPoints.map((point) => (
+                    <Marker
+                        key={point.id}
+                        longitude={point.longitude}
+                        latitude={point.latitude}
+                        anchor="bottom"
+                        onClick={(e) => {
+                            if (e && e.originalEvent) {
+                                e.originalEvent.stopPropagation();
+                            }
+                            setSelectedMeetingPoint(point);
+                        }}
+                    >
+                        <MeetingPointMarker point={point} onPress={(p) => setSelectedMeetingPoint(p)} />
+                    </Marker>
+                ))}
             </Map>
+
+            {selectedMeetingPoint && (
+                <MeetingPointDetailPanel
+                    point={selectedMeetingPoint}
+                    userLocation={{ latitude: viewState.latitude, longitude: viewState.longitude }}
+                    onClose={() => setSelectedMeetingPoint(null)}
+                    onNavigate={(p) => {
+                        const allPistes = [
+                            ...(resorts ? resorts.flatMap((r) => r.pistes || []) : []),
+                            ...(selectedResort?.pistes || []),
+                        ];
+                        if (allPistes.length > 0) {
+                            let closestPiste = allPistes[0];
+                            let minD = Infinity;
+                            for (const piste of allPistes) {
+                                const c = piste.GeometryGeoJSON?.coordinates;
+                                if (c && c.length > 0) {
+                                    for (const pt of c) {
+                                        const d = getDistance(p.latitude, p.longitude, pt[1], pt[0]);
+                                        if (d < minD) {
+                                            minD = d;
+                                            closestPiste = piste;
+                                        }
+                                    }
+                                }
+                            }
+                            setSelectedMeetingPoint(null);
+                            handleInitiateRoute(closestPiste, [p.longitude, p.latitude]);
+                        } else {
+                            if (mapRef.current) {
+                                mapRef.current.getMap().flyTo({
+                                    center: [p.longitude, p.latitude],
+                                    zoom: 15,
+                                    essential: true,
+                                });
+                            }
+                        }
+                    }}
+                    onDelete={handleDeleteMeetingPoint}
+                />
+            )}
+
+            {showCreateMeetingPointModal && (
+                <CreateMeetingPointModal
+                    visible={showCreateMeetingPointModal}
+                    resortId={createMeetingPointTarget?.resortId || selectedResort?.ID || (resorts && resorts.length > 0 ? resorts[0].ID : 'general')}
+                    resortName={createMeetingPointTarget?.resortName || selectedResort?.Name}
+                    initialCoords={createMeetingPointTarget?.coords || {
+                        latitude: viewState.latitude,
+                        longitude: viewState.longitude,
+                    }}
+                    initialTitle={createMeetingPointTarget?.title}
+                    onClose={() => {
+                        setShowCreateMeetingPointModal(false);
+                        setCreateMeetingPointTarget(null);
+                    }}
+                    onCreated={(p) => {
+                        setMeetingPoints((prev) => [p, ...prev]);
+                        setSelectedMeetingPoint(p);
+                    }}
+                />
+            )}
 
             {searchParams.sessionId && trackPoints.length > 0 && (() => {
                 const sessionActivity = (sessionDetails?.activity_type || 'ski') as ActivityType;

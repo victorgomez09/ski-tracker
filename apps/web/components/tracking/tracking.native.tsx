@@ -18,15 +18,20 @@ import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useSQLiteContext } from 'expo-sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { AlertTriangle, ChevronDown, Clock, Compass, Ghost, Layers, MapPin, WifiOff } from 'lucide-react-native';
+import { AlertTriangle, ChevronDown, Clock, Compass, Flag, Ghost, Layers, MapPin, WifiOff } from 'lucide-react-native';
 
 import { useAuth } from 'context/auth.context';
 import { socialService } from 'services/social.service';
+import { meetingPointService } from 'services/meeting-point.service';
+import { MeetingPoint } from 'models/meeting-point.model';
 
 import { MapDetailPanel } from 'components/map/map-detail-panel';
 import { MapStyleSelectorModal } from 'components/map/map-style-selector-modal';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
 import { CoverageWarningModal } from 'components/tracking/coverage-warning-modal';
+import { MeetingPointMarker } from 'components/map/meeting-point-marker';
+import { MeetingPointDetailPanel } from 'components/map/meeting-point-detail-panel';
+import { CreateMeetingPointModal } from 'components/map/create-meeting-point-modal';
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from 'constants/theme';
 import { DEFAULT_STYLE_BY_ACTIVITY, getMapStyleValue, MAP_STYLE_STORAGE_KEY, MapStyleId } from 'constants/map-styles';
 import { useToast } from 'context/toast.context';
@@ -132,6 +137,39 @@ export default function InteractiveSkiMapNative() {
             showToast(t('ghost_mode_failed', 'Error al cambiar Modo Fantasma'), 'error');
         }
     }, [isGhostMode, currentUser, updateUser, showToast, t]);
+
+    // Meeting Points State (2.3)
+    const [meetingPoints, setMeetingPoints] = useState<MeetingPoint[]>([]);
+    const [selectedMeetingPoint, setSelectedMeetingPoint] = useState<MeetingPoint | null>(null);
+    const [showCreateMeetingPointModal, setShowCreateMeetingPointModal] = useState(false);
+
+    const fetchMeetingPoints = useCallback(async () => {
+        if (isOffline) return;
+        try {
+            const data = await meetingPointService.list(resort?.ID);
+            setMeetingPoints(data || []);
+        } catch (err) {
+            console.error('Failed to fetch meeting points:', err);
+        }
+    }, [resort?.ID, isOffline]);
+
+    useEffect(() => {
+        fetchMeetingPoints();
+        const interval = setInterval(fetchMeetingPoints, 20000);
+        return () => clearInterval(interval);
+    }, [fetchMeetingPoints]);
+
+    const handleDeleteMeetingPoint = useCallback(async (point: MeetingPoint) => {
+        try {
+            await meetingPointService.delete(point.id);
+            setMeetingPoints((prev) => prev.filter((p) => p.id !== point.id));
+            setSelectedMeetingPoint(null);
+            showToast(t('meeting_point_deleted_success', 'Punto de encuentro eliminado'), 'success');
+        } catch (err) {
+            console.error('Failed to delete meeting point:', err);
+            showToast(t('failed_delete_meeting_point', 'Error al eliminar punto de encuentro'), 'error');
+        }
+    }, [showToast, t]);
 
     const currentConfig = useMemo(() => ACTIVITY_CONFIGS[activityType] || ACTIVITY_CONFIGS.ski, [activityType]);
 
@@ -603,6 +641,18 @@ export default function InteractiveSkiMapNative() {
                     </View>
 
                     <View style={styles.topBarRight}>
+                        {/* Meeting Point Button (2.3) */}
+                        <TouchableOpacity
+                            style={[
+                                styles.layerButton,
+                                meetingPoints.length > 0 && { borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.12)' }
+                            ]}
+                            onPress={() => setShowCreateMeetingPointModal(true)}
+                            activeOpacity={0.7}
+                        >
+                            <Flag size={18} color={meetingPoints.length > 0 ? '#f59e0b' : colors.textPrimary} />
+                        </TouchableOpacity>
+
                         {/* Ghost Mode Toggle Button (5.3) */}
                         <TouchableOpacity
                             style={[
@@ -836,12 +886,69 @@ export default function InteractiveSkiMapNative() {
                 {friendsLocations.map((friend) => (
                     <FriendMarker key={friend.id} friend={friend} />
                 ))}
+
+                {meetingPoints.map((point) => (
+                    <MeetingPointMarker
+                        key={point.id}
+                        point={point}
+                        onPress={(p) => setSelectedMeetingPoint(p)}
+                    />
+                ))}
             </NativeMap>
 
             {/* Overlays & Controls */}
             {!takePictureMode && (
                 <>
                     <TrackingHUD stats={liveStats} activityType={activityType} speedUnit={currentConfig.speedUnit} />
+
+                    {selectedMeetingPoint && (
+                        <MeetingPointDetailPanel
+                            point={selectedMeetingPoint}
+                            userLocation={
+                                trackPoints.length > 0
+                                    ? { latitude: trackPoints[trackPoints.length - 1].lat, longitude: trackPoints[trackPoints.length - 1].lon }
+                                    : { latitude: viewState.latitude, longitude: viewState.longitude }
+                            }
+                            onClose={() => setSelectedMeetingPoint(null)}
+                            onNavigate={(p) => {
+                                try {
+                                    cameraRef.current?.easeTo({
+                                        center: [p.longitude, p.latitude],
+                                        zoom: 15,
+                                        duration: 1000,
+                                    });
+                                } catch {}
+                                showToast(
+                                    t('navigating_to_meeting_point', 'Centrando mapa en {{title}}', { title: p.title }),
+                                    'info'
+                                );
+                            }}
+                            onDelete={handleDeleteMeetingPoint}
+                        />
+                    )}
+
+                    {showCreateMeetingPointModal && (
+                        <CreateMeetingPointModal
+                            visible={showCreateMeetingPointModal}
+                            resortId={resort?.ID || 'general'}
+                            resortName={resort?.Name}
+                            initialCoords={{
+                                latitude:
+                                    trackPoints.length > 0
+                                        ? trackPoints[trackPoints.length - 1].lat
+                                        : viewState.latitude,
+                                longitude:
+                                    trackPoints.length > 0
+                                        ? trackPoints[trackPoints.length - 1].lon
+                                        : viewState.longitude,
+                            }}
+                            onClose={() => setShowCreateMeetingPointModal(false)}
+                            onCreated={(p) => {
+                                setMeetingPoints((prev) => [p, ...prev]);
+                                setSelectedMeetingPoint(p);
+                            }}
+                        />
+                    )}
 
                     {selectedFeature && (
                         <MapDetailPanel

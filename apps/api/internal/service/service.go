@@ -18,9 +18,10 @@ type Container struct {
 	Weather    *WeatherService
 	OTA        *OTAService
 	AppRelease *AppReleaseService
-	Friendship  *FriendshipService
-	Interaction *InteractionService
-	Crew        *CrewService
+	Friendship   *FriendshipService
+	Interaction  *InteractionService
+	Crew         *CrewService
+	MeetingPoint *MeetingPointService
 }
 
 // NewContainer creates all services with shared dependencies.
@@ -35,16 +36,17 @@ func NewContainer(
 	apiPublicURL string,
 ) *Container {
 	return &Container{
-		SkiResort:   NewSkiResortService(s, logger),
-		SkiPiste:    NewSkiPisteService(s, logger),
-		SkiLift:     NewSkiLiftService(s, logger),
-		User:        NewUserService(s, jwtManager, logger),
-		SkiSession:  NewSkiSessionService(s, jwtManager, logger, minioClient),
-		Weather:     NewWeatherService(s, logger),
-		OTA:         NewOTAService(minioClient, otaBucket, apiPublicURL, logger),
-		AppRelease:  NewAppReleaseService(minioClient, otaBucket, apiPublicURL, logger),
-		Friendship:  NewFriendshipService(s, logger),
-		Interaction: NewInteractionService(s, logger),
-		Crew:        NewCrewService(s, logger),
+		SkiResort:    NewSkiResortService(s, logger),
+		SkiPiste:     NewSkiPisteService(s, logger),
+		SkiLift:      NewSkiLiftService(s, logger),
+		User:         NewUserService(s, jwtManager, logger),
+		SkiSession:   NewSkiSessionService(s, jwtManager, logger, minioClient),
+		Weather:      NewWeatherService(s, logger),
+		OTA:          NewOTAService(minioClient, otaBucket, apiPublicURL, logger),
+		AppRelease:   NewAppReleaseService(minioClient, otaBucket, apiPublicURL, logger),
+		Friendship:   NewFriendshipService(s, logger),
+		Interaction:  NewInteractionService(s, logger),
+		Crew:         NewCrewService(s, logger),
+		MeetingPoint: NewMeetingPointService(s, logger),
 	}
 }

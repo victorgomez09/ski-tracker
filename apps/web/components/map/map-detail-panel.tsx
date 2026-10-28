@@ -2,7 +2,7 @@ import { Lift, Piste } from 'models/ski-resort.model';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform, processColor, StyleSheet, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, Maximize2, Navigation, Compass, Crosshair } from 'lucide-react-native';
+import { X, Maximize2, Navigation, Compass, Crosshair, Flag } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
@@ -18,6 +18,7 @@ interface MapDetailPanelProps {
     onClose: () => void;
     onChartPointSelected?: (coord: [number, number] | null) => void;
     onCalculateRoute?: (targetPiste: Piste, targetCoord?: [number, number], originMode?: 'gps' | 'map') => void;
+    onCreateMeetingPoint?: (target: Piste | Lift, coord?: [number, number]) => void;
 }
 
 interface ChartDatum {
@@ -480,7 +481,13 @@ const getCoordinateAtDistance = (coords: number[][], targetDistM: number): [numb
     return [last[0], last[1]];
 };
 
-export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, onChartPointSelected, onCalculateRoute }) => {
+export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({
+    data,
+    onClose,
+    onChartPointSelected,
+    onCalculateRoute,
+    onCreateMeetingPoint,
+}) => {
     const isWeb = Platform.OS === 'web';
     const { t } = useTranslation();
     const colors = useThemeColors();
@@ -642,47 +649,68 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, o
                                 {t('downhill_ski_run', { difficulty: t(diffMeta.labelKey) })}
                             </Text>
 
-                            {onCalculateRoute && (
+                            {(onCalculateRoute || onCreateMeetingPoint) && (
                                 <View style={styles.routeActionSection}>
-                                    <View style={styles.originTabsContainer}>
-                                        <TouchableOpacity
-                                            style={[styles.originTab, originMode === 'gps' && styles.originTabActive]}
-                                            activeOpacity={0.7}
-                                            onPress={() => setOriginMode('gps')}
-                                        >
-                                            <Compass size={14} color={originMode === 'gps' ? colors.primary : colors.textSecondary} />
-                                            <Text style={[styles.originTabText, originMode === 'gps' && styles.originTabTextActive]}>
-                                                {t('origin_gps_tab', 'Mi GPS actual')}
-                                            </Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            style={[styles.originTab, originMode === 'map' && styles.originTabActive]}
-                                            activeOpacity={0.7}
-                                            onPress={() => setOriginMode('map')}
-                                        >
-                                            <Crosshair size={14} color={originMode === 'map' ? colors.primary : colors.textSecondary} />
-                                            <Text style={[styles.originTabText, originMode === 'map' && styles.originTabTextActive]}>
-                                                {t('origin_map_tab', 'Elegir en mapa')}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    </View>
+                                    {onCalculateRoute && (
+                                        <>
+                                            <View style={styles.originTabsContainer}>
+                                                <TouchableOpacity
+                                                    style={[styles.originTab, originMode === 'gps' && styles.originTabActive]}
+                                                    activeOpacity={0.7}
+                                                    onPress={() => setOriginMode('gps')}
+                                                >
+                                                    <Compass size={14} color={originMode === 'gps' ? colors.primary : colors.textSecondary} />
+                                                    <Text style={[styles.originTabText, originMode === 'gps' && styles.originTabTextActive]}>
+                                                        {t('origin_gps_tab', 'Mi GPS actual')}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    style={[styles.originTab, originMode === 'map' && styles.originTabActive]}
+                                                    activeOpacity={0.7}
+                                                    onPress={() => setOriginMode('map')}
+                                                >
+                                                    <Crosshair size={14} color={originMode === 'map' ? colors.primary : colors.textSecondary} />
+                                                    <Text style={[styles.originTabText, originMode === 'map' && styles.originTabTextActive]}>
+                                                        {t('origin_map_tab', 'Elegir en mapa')}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            </View>
 
-                                    <TouchableOpacity
-                                        style={styles.calculateRouteButton}
-                                        activeOpacity={0.8}
-                                        onPress={() => {
-                                            const coords = data.GeometryGeoJSON?.coordinates as number[][];
-                                            const targetCoord = coords && coords.length > 0 ? [coords[0][0], coords[0][1]] as [number, number] : undefined;
-                                            onCalculateRoute(data as Piste, targetCoord, originMode);
-                                        }}
-                                    >
-                                        <Navigation size={15} color="#FFFFFF" />
-                                        <Text style={styles.calculateRouteButtonText}>
-                                            {originMode === 'gps'
-                                                ? t('calculate_route_gps', 'Calcular ruta desde mi GPS')
-                                                : t('calculate_route_pick_map', 'Elegir origen en el mapa')}
-                                        </Text>
-                                    </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={styles.calculateRouteButton}
+                                                activeOpacity={0.8}
+                                                onPress={() => {
+                                                    const coords = data.GeometryGeoJSON?.coordinates as number[][];
+                                                    const targetCoord = coords && coords.length > 0 ? [coords[0][0], coords[0][1]] as [number, number] : undefined;
+                                                    onCalculateRoute(data as Piste, targetCoord, originMode);
+                                                }}
+                                            >
+                                                <Navigation size={15} color="#FFFFFF" />
+                                                <Text style={styles.calculateRouteButtonText}>
+                                                    {originMode === 'gps'
+                                                        ? t('calculate_route_gps', 'Calcular ruta desde mi GPS')
+                                                        : t('calculate_route_pick_map', 'Elegir origen en el mapa')}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        </>
+                                    )}
+
+                                    {onCreateMeetingPoint && (
+                                        <TouchableOpacity
+                                            style={styles.meetingPointButton}
+                                            activeOpacity={0.8}
+                                            onPress={() => {
+                                                const coords = data.GeometryGeoJSON?.coordinates as number[][];
+                                                const targetCoord = coords && coords.length > 0 ? [coords[0][0], coords[0][1]] as [number, number] : undefined;
+                                                onCreateMeetingPoint(data, targetCoord);
+                                            }}
+                                        >
+                                            <Flag size={15} color="#b45309" />
+                                            <Text style={styles.meetingPointButtonText}>
+                                                {t('set_meeting_point_here', 'Quedar aquí (Punto de encuentro)')}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
                             )}
 
@@ -753,6 +781,23 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({ data, onClose, o
                                 </Text>
                             </View>
                         </View>
+                    )}
+
+                    {((data as Lift).LiftType && type === 'LineString' && onCreateMeetingPoint) && (
+                        <TouchableOpacity
+                            style={[styles.meetingPointButton, { marginTop: SPACING.sm }]}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                                const coords = data.GeometryGeoJSON?.coordinates as number[][];
+                                const targetCoord = coords && coords.length > 0 ? [coords[0][0], coords[0][1]] as [number, number] : undefined;
+                                onCreateMeetingPoint(data, targetCoord);
+                            }}
+                        >
+                            <Flag size={15} color="#b45309" />
+                            <Text style={styles.meetingPointButtonText}>
+                                {t('set_meeting_point_here', 'Quedar aquí (Punto de encuentro)')}
+                            </Text>
+                        </TouchableOpacity>
                     )}
                 </ScrollView>
             </View>
@@ -912,6 +957,24 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     },
     calculateRouteButtonText: {
         color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    meetingPointButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: '#fef3c7',
+        borderWidth: 1,
+        borderColor: '#fde68a',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: BORDER_RADIUS.lg,
+        ...SHADOWS.sm,
+    },
+    meetingPointButtonText: {
+        color: '#b45309',
         fontSize: 13,
         fontWeight: '700',
     },

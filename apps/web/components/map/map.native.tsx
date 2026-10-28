@@ -15,7 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router/build/hooks';
 import { useOfflineMaps } from 'hooks/use-offline.hook';
-import { ArrowLeft, CircleHelp, Clock, Crosshair, Download, Layers, MapPin, WifiOff, X } from 'lucide-react-native';
+import { ArrowLeft, CircleHelp, Clock, Crosshair, Download, Flag, Layers, MapPin, WifiOff, X } from 'lucide-react-native';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { offlineResortService } from 'services/offline-resort.service';
@@ -40,6 +40,11 @@ import { OfflineMapsModal } from './offline-maps-panel';
 import { ResortDetailPanel } from './resort-detail-panel';
 import { RouteNavigationPanel } from './route-navigation-panel';
 import { RouteOriginModal } from './route-origin-modal';
+import { MeetingPointMarker } from './meeting-point-marker';
+import { MeetingPointDetailPanel } from './meeting-point-detail-panel';
+import { CreateMeetingPointModal } from './create-meeting-point-modal';
+import { MeetingPoint } from '../../models/meeting-point.model';
+import { meetingPointService } from '../../services/meeting-point.service';
 import { SkiRoutingEngine, RouteResult, SkillLevel, RouteLeg, calculateDistanceM } from '../../utils/ski-routing.util';
 
 let LineChart: any = null;
@@ -488,6 +493,46 @@ export default function InteractiveSkiMapNative() {
     const [fastLifts, setFastLifts] = useState(false);
     const [badWeather, setBadWeather] = useState(false);
     const [isLoadingGps, setIsLoadingGps] = useState(false);
+
+    // Meeting Points State (2.3)
+    const [meetingPoints, setMeetingPoints] = useState<MeetingPoint[]>([]);
+    const [selectedMeetingPoint, setSelectedMeetingPoint] = useState<MeetingPoint | null>(null);
+    const [showCreateMeetingPointModal, setShowCreateMeetingPointModal] = useState(false);
+    const [createMeetingPointTarget, setCreateMeetingPointTarget] = useState<{
+        coords: { latitude: number; longitude: number };
+        title?: string;
+        resortId?: string;
+        resortName?: string;
+    } | null>(null);
+
+    const fetchMeetingPoints = useCallback(async () => {
+        const resortIdToFetch = selectedResort?.ID || (resorts && resorts.length > 0 ? resorts[0].ID : undefined);
+        if (!resortIdToFetch || networkState?.isConnected === false) return;
+        try {
+            const data = await meetingPointService.list(resortIdToFetch);
+            setMeetingPoints(data || []);
+        } catch (err) {
+            console.error('Failed to fetch meeting points:', err);
+        }
+    }, [selectedResort?.ID, resorts, networkState?.isConnected]);
+
+    useEffect(() => {
+        fetchMeetingPoints();
+        const interval = setInterval(fetchMeetingPoints, 20000);
+        return () => clearInterval(interval);
+    }, [fetchMeetingPoints]);
+
+    const handleDeleteMeetingPoint = useCallback(async (point: MeetingPoint) => {
+        try {
+            await meetingPointService.delete(point.id);
+            setMeetingPoints((prev) => prev.filter((p) => p.id !== point.id));
+            setSelectedMeetingPoint(null);
+            showToast(t('meeting_point_deleted_success', 'Punto de encuentro eliminado'), 'success');
+        } catch (err) {
+            console.error('Failed to delete meeting point:', err);
+            showToast(t('failed_delete_meeting_point', 'Error al eliminar punto de encuentro'), 'error');
+        }
+    }, [showToast, t]);
 
     const liftClosureStatus = useMemo(() => {
         const lifts = selectedResort?.lifts || [];
@@ -2025,6 +2070,14 @@ export default function InteractiveSkiMapNative() {
                         </NativeMarker>
                     </>
                 )}
+
+                {meetingPoints.map((point) => (
+                    <MeetingPointMarker
+                        key={point.id}
+                        point={point}
+                        onPress={(p) => setSelectedMeetingPoint(p)}
+                    />
+                ))}
             </NativeMap>
 
             {!searchParams.sessionId && isSnowLayer && isLoadingResorts && (
@@ -2058,6 +2111,25 @@ export default function InteractiveSkiMapNative() {
                         style={styles.layersButton}
                     >
                         <Layers size={18} color={colors.primary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        onPress={() => {
+                            const activeResort = selectedResort || (resorts && resorts.length > 0 ? resorts[0] : null);
+                            setCreateMeetingPointTarget({
+                                coords: { latitude: viewState.latitude, longitude: viewState.longitude },
+                                title: '',
+                                resortId: activeResort?.ID || 'general',
+                                resortName: activeResort?.Name,
+                            });
+                            setShowCreateMeetingPointModal(true);
+                        }}
+                        style={[
+                            styles.meetingPointButton,
+                            meetingPoints.length > 0 && { borderColor: '#f59e0b', backgroundColor: '#fef3c7' }
+                        ]}
+                    >
+                        <Flag size={18} color={meetingPoints.length > 0 ? '#d97706' : colors.primary} />
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -2133,6 +2205,21 @@ export default function InteractiveSkiMapNative() {
                     onClose={() => { setSelectedFeature(null); setChartHoverPoint(null); }}
                     onChartPointSelected={setChartHoverPoint}
                     onCalculateRoute={handleInitiateRoute}
+                    onCreateMeetingPoint={(feature, coord) => {
+                        const parentResort = resorts.find((r) =>
+                            r.pistes?.some((p) => p.ID === feature.ID) ||
+                            r.lifts?.some((l) => l.ID === feature.ID)
+                        ) || selectedResort;
+                        const lat = coord ? coord[1] : viewState.latitude;
+                        const lon = coord ? coord[0] : viewState.longitude;
+                        setCreateMeetingPointTarget({
+                            coords: { latitude: lat, longitude: lon },
+                            title: feature.Name || '',
+                            resortId: parentResort?.ID || selectedResort?.ID || 'general',
+                            resortName: parentResort?.Name || selectedResort?.Name,
+                        });
+                        setShowCreateMeetingPointModal(true);
+                    }}
                 />
             )}
 
@@ -2228,6 +2315,64 @@ export default function InteractiveSkiMapNative() {
                         </Text>
                     </TouchableOpacity>
                 </View>
+            )}
+
+            {selectedMeetingPoint && (
+                <MeetingPointDetailPanel
+                    point={selectedMeetingPoint}
+                    userLocation={{ latitude: viewState.latitude, longitude: viewState.longitude }}
+                    onClose={() => setSelectedMeetingPoint(null)}
+                    onNavigate={(p) => {
+                        if (selectedResort?.pistes && selectedResort.pistes.length > 0) {
+                            let closestPiste = selectedResort.pistes[0];
+                            let minDist = Infinity;
+                            for (const piste of selectedResort.pistes) {
+                                const coords = piste.GeometryGeoJSON?.coordinates;
+                                if (coords && coords.length > 0) {
+                                    for (const pt of coords) {
+                                        const d = getDistance(p.latitude, p.longitude, pt[1], pt[0]);
+                                        if (d < minDist) {
+                                            minDist = d;
+                                            closestPiste = piste;
+                                        }
+                                    }
+                                }
+                            }
+                            setSelectedMeetingPoint(null);
+                            handleInitiateRoute(closestPiste, [p.longitude, p.latitude]);
+                        } else {
+                            try {
+                                cameraRef.current?.easeTo({
+                                    center: [p.longitude, p.latitude],
+                                    zoom: 15,
+                                    duration: 1000,
+                                });
+                            } catch {}
+                        }
+                    }}
+                    onDelete={handleDeleteMeetingPoint}
+                />
+            )}
+
+            {showCreateMeetingPointModal && (
+                <CreateMeetingPointModal
+                    visible={showCreateMeetingPointModal}
+                    resortId={createMeetingPointTarget?.resortId || selectedResort?.ID || (resorts && resorts.length > 0 ? resorts[0].ID : 'general')}
+                    resortName={createMeetingPointTarget?.resortName || selectedResort?.Name}
+                    initialCoords={createMeetingPointTarget?.coords || {
+                        latitude: viewState.latitude,
+                        longitude: viewState.longitude,
+                    }}
+                    initialTitle={createMeetingPointTarget?.title}
+                    onClose={() => {
+                        setShowCreateMeetingPointModal(false);
+                        setCreateMeetingPointTarget(null);
+                    }}
+                    onCreated={(p) => {
+                        setMeetingPoints((prev) => [p, ...prev]);
+                        setSelectedMeetingPoint(p);
+                    }}
+                />
             )}
 
             {searchParams.sessionId && trackPoints.length > 0 && (() => {
@@ -2597,6 +2742,20 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         fontSize: 12,
         fontWeight: 'bold',
         color: colors.primary,
+    },
+    meetingPointButton: {
+        position: 'absolute',
+        bottom: 16,
+        left: 210,
+        zIndex: 50,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 12,
+        borderRadius: BORDER_RADIUS.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        ...SHADOWS.md,
     },
     indicatorDot: {
         width: 8,

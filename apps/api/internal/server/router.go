@@ -178,6 +178,13 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.GET("/weather", weatherHandler.GetWeather)
 			protected.GET("/resorts/by-id/:id/snow-report", weatherHandler.GetSnowReport)
 			protected.GET("/resorts/:id/snow-report", weatherHandler.GetSnowReport)
+
+			// Meeting Points routes (2.3)
+			meetingPointHandler := v1.NewMeetingPointHandler(deps.Services.MeetingPoint, deps.Logger)
+			protected.POST("/meeting-points", meetingPointHandler.Create)
+			protected.GET("/meeting-points", meetingPointHandler.List)
+			protected.GET("/meeting-points/:id", meetingPointHandler.GetByID)
+			protected.DELETE("/meeting-points/:id", meetingPointHandler.Delete)
 		}
 	}
 

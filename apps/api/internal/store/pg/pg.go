@@ -105,3 +105,6 @@ func (s *Store) Interaction() store.InteractionStore {
 func (s *Store) Crew() store.CrewStore {
 	return &crewStore{db: s.db}
 }
+func (s *Store) MeetingPoint() store.MeetingPointStore {
+	return &meetingPointStore{db: s.db}
+}
