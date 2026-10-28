@@ -133,23 +133,36 @@ type DailyData struct {
 	PrecipitationProbabilityMax []int     `json:"precipitation_probability_max"`
 }
 
+type AvalancheReport struct {
+	DangerLevel        int      `json:"danger_level"` // 1 - 5
+	DangerLevelTitle   string   `json:"danger_level_title"`
+	DangerColor        string   `json:"danger_color"`
+	CriticalElevationM float64  `json:"critical_elevation_m"`
+	DangerousAspects   []string `json:"dangerous_aspects"`
+	Summary            string   `json:"summary"`
+	WindRisk           string   `json:"wind_risk"`
+	FreshSnowRisk      string   `json:"fresh_snow_risk"`
+	Confidence         string   `json:"confidence"`
+}
+
 type SnowReport struct {
-	ResortID             string    `json:"resort_id,omitempty"`
-	ResortName           string    `json:"resort_name,omitempty"`
-	BaseElevationM       float64   `json:"base_elevation_m"`
-	SummitElevationM     float64   `json:"summit_elevation_m"`
-	SnowDepthBaseCM      float64   `json:"snow_depth_base_cm"`
-	SnowDepthSummitCM    float64   `json:"snow_depth_summit_cm"`
-	SnowCondition        string    `json:"snow_condition"` // powder, hard_packed, spring, wet, packed_powder, no_snow
-	SnowConditionLabel   string    `json:"snow_condition_label"`
-	LastSnowfallDate     *string   `json:"last_snowfall_date"`
-	LastSnowfallAmountCM float64   `json:"last_snowfall_amount_cm"`
-	FreshSnow24hCM       float64   `json:"fresh_snow_24h_cm"`
-	FreshSnow48hCM       float64   `json:"fresh_snow_48h_cm"`
-	ForecastSnow7dCM     float64   `json:"forecast_snow_7d_cm"`
-	FreezingLevelM       float64   `json:"freezing_level_m"`
-	DataSource           string    `json:"data_source"`
-	GeneratedAt          time.Time `json:"generated_at"`
+	ResortID             string          `json:"resort_id,omitempty"`
+	ResortName           string          `json:"resort_name,omitempty"`
+	BaseElevationM       float64         `json:"base_elevation_m"`
+	SummitElevationM     float64         `json:"summit_elevation_m"`
+	SnowDepthBaseCM      float64         `json:"snow_depth_base_cm"`
+	SnowDepthSummitCM    float64         `json:"snow_depth_summit_cm"`
+	SnowCondition        string          `json:"snow_condition"` // powder, hard_packed, spring, wet, packed_powder, no_snow
+	SnowConditionLabel   string          `json:"snow_condition_label"`
+	LastSnowfallDate     *string         `json:"last_snowfall_date"`
+	LastSnowfallAmountCM float64         `json:"last_snowfall_amount_cm"`
+	FreshSnow24hCM       float64         `json:"fresh_snow_24h_cm"`
+	FreshSnow48hCM       float64         `json:"fresh_snow_48h_cm"`
+	ForecastSnow7dCM     float64         `json:"forecast_snow_7d_cm"`
+	FreezingLevelM       float64         `json:"freezing_level_m"`
+	AvalancheReport      AvalancheReport `json:"avalanche_report"`
+	DataSource           string          `json:"data_source"`
+	GeneratedAt          time.Time       `json:"generated_at"`
 }
 
 type WeatherService struct {
@@ -437,6 +450,110 @@ func computeSnowReport(
 		}
 	}
 
+	// 4. European Avalanche Danger Level (1 to 5)
+	dangerLevel := 1
+	windRisk := "Bajo"
+	freshSnowRisk := "Bajo"
+
+	maxGust := summitForecast.Current.WindGusts10m
+	if baseForecast.Current.WindGusts10m > maxGust {
+		maxGust = baseForecast.Current.WindGusts10m
+	}
+
+	if summitDepthCM >= 15.0 {
+		if freshSnow24hCM >= 35.0 || freshSnow48hCM >= 50.0 {
+			dangerLevel += 2
+			freshSnowRisk = "Muy Alto"
+		} else if freshSnow24hCM >= 15.0 || freshSnow48hCM >= 25.0 {
+			dangerLevel += 1
+			freshSnowRisk = "Alto"
+		} else if freshSnow24hCM >= 5.0 {
+			freshSnowRisk = "Moderado"
+		}
+
+		if maxGust >= 55.0 && (freshSnow48hCM >= 8.0 || summitDepthCM >= 30.0) {
+			dangerLevel += 1
+			windRisk = "Alto"
+		} else if maxGust >= 40.0 && freshSnow48hCM >= 5.0 && dangerLevel < 4 {
+			dangerLevel += 1
+			windRisk = "Moderado"
+		}
+
+		if summitForecast.Current.Rain > 1.0 || (summitForecast.Current.Temperature2m > 5.0 && summitDepthCM >= 30.0) {
+			if dangerLevel < 4 {
+				dangerLevel += 1
+			}
+		}
+	}
+
+	if dangerLevel > 5 {
+		dangerLevel = 5
+	}
+	if dangerLevel < 1 {
+		dangerLevel = 1
+	}
+
+	dangerTitles := map[int]string{
+		1: "Débil",
+		2: "Moderado",
+		3: "Notable",
+		4: "Fuerte",
+		5: "Muy Fuerte",
+	}
+	dangerColors := map[int]string{
+		1: "#22c55e",
+		2: "#eab308",
+		3: "#f97316",
+		4: "#ef4444",
+		5: "#7f1d1d",
+	}
+
+	windDeg := summitForecast.Current.WindDirection10m
+	var dangerousAspects []string
+	if windDeg >= 337 || windDeg < 23 {
+		dangerousAspects = []string{"SE", "S", "SW"}
+	} else if windDeg >= 23 && windDeg < 68 {
+		dangerousAspects = []string{"S", "SW", "W"}
+	} else if windDeg >= 68 && windDeg < 113 {
+		dangerousAspects = []string{"SW", "W", "NW"}
+	} else if windDeg >= 113 && windDeg < 158 {
+		dangerousAspects = []string{"W", "NW", "N"}
+	} else if windDeg >= 158 && windDeg < 203 {
+		dangerousAspects = []string{"NW", "N", "NE"}
+	} else if windDeg >= 203 && windDeg < 248 {
+		dangerousAspects = []string{"N", "NE", "E"}
+	} else if windDeg >= 248 && windDeg < 293 {
+		dangerousAspects = []string{"NE", "E", "SE"}
+	} else {
+		dangerousAspects = []string{"E", "SE", "S"}
+	}
+
+	critElevation := freezingLevel
+	if critElevation == 0 || critElevation < baseElev {
+		critElevation = baseElev + (summitElev-baseElev)*0.5
+	}
+	critElevation = math.Round(critElevation)
+
+	summary := fmt.Sprintf(
+		"Peligro %s (Nivel %d/5). Especial precaución en laderas sotavento por encima de los %.0fm debido a la acumulación de viento y transporte de nieve.",
+		dangerTitles[dangerLevel], dangerLevel, critElevation,
+	)
+	if dangerLevel == 1 {
+		summary = "Manto nivoso generalmente bien estabilizado en la mayor parte de las pendientes. Riesgo bajo de aludes espontáneos."
+	}
+
+	avalancheReport := AvalancheReport{
+		DangerLevel:        dangerLevel,
+		DangerLevelTitle:   dangerTitles[dangerLevel],
+		DangerColor:        dangerColors[dangerLevel],
+		CriticalElevationM: critElevation,
+		DangerousAspects:   dangerousAspects,
+		Summary:            summary,
+		WindRisk:           windRisk,
+		FreshSnowRisk:      freshSnowRisk,
+		Confidence:         "estimated_openmeteo",
+	}
+
 	return SnowReport{
 		ResortID:             resortID,
 		ResortName:           resortName,
@@ -452,6 +569,7 @@ func computeSnowReport(
 		FreshSnow48hCM:       freshSnow48hCM,
 		ForecastSnow7dCM:     forecastSnow7dCM,
 		FreezingLevelM:       freezingLevel,
+		AvalancheReport:      avalancheReport,
 		DataSource:           "open-meteo",
 		GeneratedAt:          time.Now(),
 	}

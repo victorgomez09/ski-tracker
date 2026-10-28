@@ -470,5 +470,11 @@
   "snow_condition_no_snow": "No snow",
   "snowpack_overview": "Mountain Snowpack",
   "cota_base": "Base Elevation",
-  "cota_summit": "Summit Elevation"
+  "cota_summit": "Summit Elevation",
+  "avalanche_level_1": "Low",
+  "avalanche_level_2": "Moderate",
+  "avalanche_level_3": "Considerable",
+  "avalanche_level_4": "High",
+  "avalanche_level_5": "Very High",
+  "avalanche_risk_label": "Avalanche Risk"
 }

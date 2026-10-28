@@ -13,6 +13,9 @@ import {
     MountainSnow,
     Layers,
     Calendar,
+    ShieldAlert,
+    ArrowUpRight,
+    AlertTriangle,
 } from 'lucide-react-native';
 import { WeatherForecast } from 'models/weather.model';
 import React, { useState, useMemo } from 'react';
@@ -25,6 +28,14 @@ interface WeatherWidgetProps {
 }
 
 type WeatherTab = 'snow' | 'current' | 'hourly' | 'daily';
+
+const SCALE_LEVELS = [
+    { level: 1, titleKey: 'avalanche_level_1', titleDef: 'Débil', color: '#16a34a' },
+    { level: 2, titleKey: 'avalanche_level_2', titleDef: 'Moderado', color: '#ca8a04' },
+    { level: 3, titleKey: 'avalanche_level_3', titleDef: 'Notable', color: '#ea580c' },
+    { level: 4, titleKey: 'avalanche_level_4', titleDef: 'Fuerte', color: '#dc2626' },
+    { level: 5, titleKey: 'avalanche_level_5', titleDef: 'Muy Fuerte', color: '#7f1d1d' },
+];
 
 export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) => {
     const { t, i18n } = useTranslation();
@@ -325,6 +336,140 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                         )}
                     </View>
 
+                    {/* AVALANCHE DANGER BULLETIN (BPA) SECTION */}
+                    {snowReport.avalanche_report && (
+                        <View style={styles.avalancheCard}>
+                            <View style={styles.avalancheHeaderRow}>
+                                <View style={styles.avalancheHeaderLeft}>
+                                    <View
+                                        style={[
+                                            styles.avalancheIconCircle,
+                                            { backgroundColor: snowReport.avalanche_report.danger_color || '#ea580c' },
+                                        ]}
+                                    >
+                                        <ShieldAlert size={16} color="#ffffff" />
+                                    </View>
+                                    <View>
+                                        <Text style={styles.sectionHeader}>
+                                            {t('avalanche_bulletin', 'Peligro de Aludes (BPA)')}
+                                        </Text>
+                                        <Text style={styles.avalancheSubtitle}>
+                                            {t('avalanche_scale', 'Escala Europea (1 a 5)')}
+                                        </Text>
+                                    </View>
+                                </View>
+
+                                <View
+                                    style={[
+                                        styles.avalancheBadge,
+                                        { backgroundColor: snowReport.avalanche_report.danger_color || '#ea580c' },
+                                    ]}
+                                >
+                                    <Text style={styles.avalancheBadgeText}>
+                                        {snowReport.avalanche_report.danger_level} ·{' '}
+                                        {t(`avalanche_level_${snowReport.avalanche_report.danger_level}`, {
+                                            defaultValue: snowReport.avalanche_report.danger_level_title,
+                                        })}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* European 5-Level Visual Bar */}
+                            <View style={styles.scaleContainer}>
+                                {SCALE_LEVELS.map((item) => {
+                                    const isActive = item.level === snowReport.avalanche_report?.danger_level;
+                                    return (
+                                        <View key={item.level} style={styles.scaleSegment}>
+                                            <View
+                                                style={[
+                                                    styles.scaleBar,
+                                                    {
+                                                        backgroundColor: item.color,
+                                                        opacity: isActive ? 1.0 : 0.25,
+                                                        height: isActive ? 10 : 6,
+                                                    },
+                                                ]}
+                                            />
+                                            <Text
+                                                style={[
+                                                    styles.scaleNum,
+                                                    isActive
+                                                        ? { color: item.color, fontWeight: '800' }
+                                                        : { color: colors.textSecondary },
+                                                ]}
+                                            >
+                                                {item.level}
+                                            </Text>
+                                        </View>
+                                    );
+                                })}
+                            </View>
+
+                            {/* Critical Factors Row */}
+                            <View style={styles.avalancheFactorsRow}>
+                                <View style={styles.avalancheFactorCard}>
+                                    <View style={styles.avalancheFactorHeader}>
+                                        <ArrowUpRight size={12} color={colors.primary} />
+                                        <Text style={styles.avalancheFactorLabel}>
+                                            {t('critical_elevation', 'Cota crítica')}
+                                        </Text>
+                                    </View>
+                                    <Text style={styles.avalancheFactorValue}>
+                                        &gt; {Math.round(snowReport.avalanche_report.critical_elevation_m || 2000)} m
+                                    </Text>
+                                </View>
+
+                                <View style={styles.avalancheFactorCard}>
+                                    <View style={styles.avalancheFactorHeader}>
+                                        <Compass size={12} color="#ea580c" />
+                                        <Text style={styles.avalancheFactorLabel}>
+                                            {t('dangerous_aspects', 'Laderas críticas')}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.aspectsPillWrap}>
+                                        {snowReport.avalanche_report.dangerous_aspects?.length > 0 ? (
+                                            snowReport.avalanche_report.dangerous_aspects.map((aspect) => (
+                                                <View key={aspect} style={styles.aspectPill}>
+                                                    <Text style={styles.aspectPillText}>{aspect}</Text>
+                                                </View>
+                                            ))
+                                        ) : (
+                                            <Text style={styles.avalancheFactorValue}>Todas</Text>
+                                        )}
+                                    </View>
+                                </View>
+
+                                <View style={styles.avalancheFactorCard}>
+                                    <View style={styles.avalancheFactorHeader}>
+                                        <Wind size={12} color="#0284c7" />
+                                        <Text style={styles.avalancheFactorLabel}>
+                                            {t('avalanche_wind_risk', 'Viento')}
+                                        </Text>
+                                    </View>
+                                    <Text style={styles.avalancheFactorValue}>
+                                        {snowReport.avalanche_report.wind_risk || 'Bajo'}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Advisory Summary Box */}
+                            <View
+                                style={[
+                                    styles.avalancheSummaryBox,
+                                    { borderLeftColor: snowReport.avalanche_report.danger_color || colors.primary },
+                                ]}
+                            >
+                                <AlertTriangle
+                                    size={14}
+                                    color={snowReport.avalanche_report.danger_color || colors.textSecondary}
+                                />
+                                <Text style={styles.avalancheSummaryText}>
+                                    {snowReport.avalanche_report.summary}
+                                </Text>
+                            </View>
+                        </View>
+                    )}
+
                     <Text style={styles.dataSourceNotice}>{t('open_meteo_credit')}</Text>
                 </View>
             )}
@@ -379,6 +524,30 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                                         <Text style={styles.quickSnowLabel}>7d:</Text>
                                         <Text style={[styles.quickSnowValue, { color: '#0284c7' }]}>
                                             +{snowReport.forecast_snow_7d_cm} cm
+                                        </Text>
+                                    </View>
+                                </>
+                            )}
+                            {snowReport.avalanche_report && (
+                                <>
+                                    <View style={styles.quickSnowDivider} />
+                                    <View style={styles.quickSnowItem}>
+                                        <ShieldAlert
+                                            size={12}
+                                            color={snowReport.avalanche_report.danger_color || '#ea580c'}
+                                        />
+                                        <Text style={styles.quickSnowLabel}>BPA:</Text>
+                                        <Text
+                                            style={[
+                                                styles.quickSnowValue,
+                                                {
+                                                    color:
+                                                        snowReport.avalanche_report.danger_color ||
+                                                        colors.textPrimary,
+                                                },
+                                            ]}
+                                        >
+                                            {snowReport.avalanche_report.danger_level}/5
                                         </Text>
                                     </View>
                                 </>
@@ -750,6 +919,129 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.textSecondary,
         flex: 1,
     },
+    avalancheCard: {
+        backgroundColor: colors.background,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: SPACING.md,
+        gap: 10,
+        marginTop: 4,
+    },
+    avalancheHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    avalancheHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flex: 1,
+    },
+    avalancheIconCircle: {
+        width: 30,
+        height: 30,
+        borderRadius: BORDER_RADIUS.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    avalancheSubtitle: {
+        fontSize: 10,
+        color: colors.textSecondary,
+        marginTop: 1,
+    },
+    avalancheBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: BORDER_RADIUS.round,
+    },
+    avalancheBadgeText: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: '#ffffff',
+        textTransform: 'uppercase',
+    },
+    scaleContainer: {
+        flexDirection: 'row',
+        gap: 6,
+        alignItems: 'center',
+        marginVertical: 2,
+    },
+    scaleSegment: {
+        flex: 1,
+        alignItems: 'center',
+        gap: 3,
+    },
+    scaleBar: {
+        width: '100%',
+        borderRadius: BORDER_RADIUS.round,
+    },
+    scaleNum: {
+        fontSize: 10,
+    },
+    avalancheFactorsRow: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    avalancheFactorCard: {
+        flex: 1,
+        backgroundColor: colors.card,
+        borderRadius: BORDER_RADIUS.sm,
+        padding: 8,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    avalancheFactorHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginBottom: 2,
+    },
+    avalancheFactorLabel: {
+        fontSize: 9,
+        fontWeight: '600',
+        color: colors.textSecondary,
+        textTransform: 'uppercase',
+    },
+    avalancheFactorValue: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: colors.textPrimary,
+    },
+    aspectsPillWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 2,
+    },
+    aspectPill: {
+        backgroundColor: colors.background,
+        paddingHorizontal: 4,
+        paddingVertical: 1,
+        borderRadius: BORDER_RADIUS.sm,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    aspectPillText: {
+        fontSize: 9,
+        fontWeight: '700',
+        color: colors.textPrimary,
+    },
+    avalancheSummaryBox: {
+        flexDirection: 'row',
+        gap: 8,
+        alignItems: 'flex-start',
+        backgroundColor: colors.card,
+        padding: 10,
+        borderRadius: BORDER_RADIUS.sm,
+        borderLeftWidth: 3,
+    },
+    avalancheSummaryText: {
+        flex: 1,
+        fontSize: 11,
+        color: colors.textPrimary,
+        lineHeight: 15,
+    },
     dataSourceNotice: {
         fontSize: 9,
         color: colors.textSecondary,
@@ -766,6 +1058,8 @@ const getStyles = (colors: any) => StyleSheet.create({
         borderRadius: BORDER_RADIUS.md,
         paddingVertical: 6,
         paddingHorizontal: 10,
+        flexWrap: 'wrap',
+        gap: 4,
     },
     quickSnowItem: {
         flexDirection: 'row',

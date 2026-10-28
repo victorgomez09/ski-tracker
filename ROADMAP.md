@@ -120,6 +120,7 @@ mindmap
     - [x] Acumulado de nieve reciente en últimas 24h, 48h y fecha/centímetros de la última nevada detectada en el histórico de 7 días.
     - [x] Tipo y calidad de nieve (polvo, dura/venteada, primavera, húmeda, polvo dura) calculado a partir de temperaturas, nevadas recientes y viento.
     - [x] Cota de congelación / isocero 0ºC (`freezing_level_height`).
+    - [x] Boletín de Peligro de Aludes (BPA): Estimación en escala europea (1 a 5), cota crítica, laderas sotavento peligrosas por sobrecarga de viento y nieve reciente, integrado como sección dentro del apartado de nieve y nevadas.
   - **Detalle de Implementación:**
     - [x] **Backend:** Extensión de `WeatherService` y `WeatherHandler` con soporte para multi-elevación (`baseElev` y `summitElev`) y cálculo de `SnowReport`. Sistema de caché en memoria de 1 hora (`gin-contrib/cache`) por estación/coordenadas para proteger los límites de la API pública de Open-Meteo.
     - [x] **Frontend:** Integración unificada dentro del componente `WeatherForecastDetails` en la pantalla de detalle de estación: pestaña destacada de "Nieve", barra de estado rápido en "Actual", y desglose diario de nevadas previstas. (Se descartaron webcams genéricas y estimaciones de remontes abiertos para mantener datos 100% precisos basados en modelos meteorológicos).

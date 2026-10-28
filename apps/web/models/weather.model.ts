@@ -1,3 +1,15 @@
+export interface AvalancheReport {
+  danger_level: number; // 1 to 5
+  danger_level_title: string;
+  danger_color: string;
+  critical_elevation_m: number;
+  dangerous_aspects: string[];
+  summary: string;
+  wind_risk: string;
+  fresh_snow_risk: string;
+  confidence: string;
+}
+
 export interface SnowReport {
   resort_id?: string;
   resort_name?: string;
@@ -13,6 +25,7 @@ export interface SnowReport {
   fresh_snow_48h_cm: number;
   forecast_snow_7d_cm: number;
   freezing_level_m: number;
+  avalanche_report?: AvalancheReport;
   data_source: string;
   generated_at: string;
 }

@@ -468,5 +468,11 @@
   "snow_condition_no_snow": "Sin nieve",
   "snowpack_overview": "Espesor en Estación",
   "cota_base": "Cota Base",
-  "cota_summit": "Cota Cumbre"
+  "cota_summit": "Cota Cumbre",
+  "avalanche_level_1": "Débil",
+  "avalanche_level_2": "Moderado",
+  "avalanche_level_3": "Notable",
+  "avalanche_level_4": "Fuerte",
+  "avalanche_level_5": "Muy Fuerte",
+  "avalanche_risk_label": "Peligro de Aludes"
 }

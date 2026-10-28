@@ -80,4 +80,15 @@ func TestComputeSnowReport(t *testing.T) {
 	if report.ForecastSnow7dCM <= 0 {
 		t.Errorf("expected forecast snow 7d > 0, got %.1f", report.ForecastSnow7dCM)
 	}
+
+	// Verify Avalanche Report
+	if report.AvalancheReport.DangerLevel < 1 || report.AvalancheReport.DangerLevel > 5 {
+		t.Errorf("expected avalanche danger level between 1 and 5, got %d", report.AvalancheReport.DangerLevel)
+	}
+	if report.AvalancheReport.DangerLevelTitle == "" {
+		t.Errorf("expected non-empty danger level title")
+	}
+	if report.AvalancheReport.Summary == "" {
+		t.Errorf("expected non-empty avalanche summary")
+	}
 }
