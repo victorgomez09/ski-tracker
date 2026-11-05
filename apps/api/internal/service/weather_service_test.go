@@ -3,6 +3,8 @@ package service
 import (
 	"testing"
 	"time"
+
+	"github.com/victorgomez09/ski-tracker/internal/models"
 )
 
 func TestComputeSnowReport(t *testing.T) {
@@ -58,6 +60,8 @@ func TestComputeSnowReport(t *testing.T) {
 		2300,
 		baseForecast,
 		summitForecast,
+		1,
+		0,
 	)
 
 	// Verify Snow Depths
@@ -73,9 +77,12 @@ func TestComputeSnowReport(t *testing.T) {
 		t.Errorf("expected snow condition 'powder', got %s", report.SnowCondition)
 	}
 
-	// Verify Fresh Snow and Forecast
-	if report.FreshSnow24hCM != 15.0 {
-		t.Errorf("expected fresh snow 24h 15.0cm, got %.1f", report.FreshSnow24hCM)
+	// Verify Fresh Snow takes the max between base and summit (summit = 20.0)
+	if report.FreshSnow24hCM != 20.0 {
+		t.Errorf("expected fresh snow 24h 20.0cm, got %.1f", report.FreshSnow24hCM)
+	}
+	if report.FreshSnow48hCM != 35.0 { // 20.0 (today) + 15.0 (yesterday)
+		t.Errorf("expected fresh snow 48h 35.0cm, got %.1f", report.FreshSnow48hCM)
 	}
 	if report.ForecastSnow7dCM <= 0 {
 		t.Errorf("expected forecast snow 7d > 0, got %.1f", report.ForecastSnow7dCM)
@@ -90,5 +97,104 @@ func TestComputeSnowReport(t *testing.T) {
 	}
 	if report.AvalancheReport.Summary == "" {
 		t.Errorf("expected non-empty avalanche summary")
+	}
+}
+
+func TestComputeSnowReportCerlerScenario(t *testing.T) {
+	// In Cerler: base has 0 snowfall and 4.2°C temp.
+	// Summit has 1.26cm snowfall on yesterday and 0.98cm coming in 5 days, -4.3°C temp.
+	todayStr := time.Now().Format("2006-01-02")
+	yesterdayStr := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	futureDayStr := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
+
+	baseForecast := WeatherForecast{
+		Elevation: 1503,
+		Current: CurrentWeather{
+			Temperature2m: 4.2,
+			SnowDepth:     0.0,
+			WeatherCode:   0,
+		},
+		Daily: DailyData{
+			Time:        []string{yesterdayStr, todayStr, futureDayStr},
+			SnowfallSum: []float64{0.0, 0.0, 0.0},
+		},
+	}
+
+	summitForecast := WeatherForecast{
+		Elevation: 2618,
+		Current: CurrentWeather{
+			Temperature2m: -4.3,
+			SnowDepth:     0.01, // 1cm
+			WeatherCode:   3,
+		},
+		Daily: DailyData{
+			Time:        []string{yesterdayStr, todayStr, futureDayStr},
+			SnowfallSum: []float64{1.26, 0.0, 0.98},
+		},
+	}
+
+	report := computeSnowReport(
+		"cerler-id",
+		"Aramón Cerler",
+		1503,
+		2618,
+		baseForecast,
+		summitForecast,
+		1,
+		0,
+	)
+
+	// Past snowfall detection should find yesterday's 1.3 cm snowfall at summit
+	if report.LastSnowfallDate == nil || *report.LastSnowfallDate != yesterdayStr {
+		t.Errorf("expected last snowfall date %s, got %v", yesterdayStr, report.LastSnowfallDate)
+	}
+	if report.LastSnowfallAmountCM != 1.3 {
+		t.Errorf("expected last snowfall amount 1.3cm, got %.1f", report.LastSnowfallAmountCM)
+	}
+
+	// 48h fresh snow should include yesterday's snowfall
+	if report.FreshSnow48hCM != 1.3 {
+		t.Errorf("expected fresh snow 48h 1.3cm, got %.1f", report.FreshSnow48hCM)
+	}
+
+	// 7d forecast should include the future snowfall (0.98 -> 1.0cm)
+	if report.ForecastSnow7dCM != 1.0 {
+		t.Errorf("expected 7d forecast 1.0cm, got %.1f", report.ForecastSnow7dCM)
+	}
+
+	// Summit snow depth should be at least 1.0cm
+	if report.SnowDepthSummitCM < 1.0 {
+		t.Errorf("expected summit snow depth >= 1.0cm, got %.1f", report.SnowDepthSummitCM)
+	}
+
+	// Snow condition at summit should be packed_powder, NOT no_snow
+	if report.SnowCondition == "no_snow" {
+		t.Errorf("expected condition not to be no_snow, got %s", report.SnowCondition)
+	}
+}
+
+func TestExtractResortElevations(t *testing.T) {
+	// Nested tags as stored in PostgreSQL for Cerler
+	resort := models.SkiResort{
+		Name: "Aramón Cerler",
+		Tags: map[string]interface{}{
+			"statistics": map[string]interface{}{
+				"minElevation": 1503.1,
+				"maxElevation": 2617.6,
+				"runs": map[string]interface{}{
+					"minElevation": 1503.1,
+					"maxElevation": 2617.6,
+				},
+				"lifts": map[string]interface{}{
+					"minElevation": 1128.5,
+					"maxElevation": 2618.2,
+				},
+			},
+		},
+	}
+
+	minE, maxE := extractResortElevations(resort)
+	if minE != 1503.1 || maxE != 2617.6 {
+		t.Errorf("expected 1503.1 and 2617.6, got %.1f and %.1f", minE, maxE)
 	}
 }

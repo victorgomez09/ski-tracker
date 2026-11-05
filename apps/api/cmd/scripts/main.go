@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"os"
 
@@ -13,6 +14,21 @@ import (
 )
 
 func main() {
+	var (
+		countryCode = flag.String("country", "", "Filter POI sync by country code (e.g. ES)")
+		resortName  = flag.String("resort", "", "Filter POI sync by resort name substring (e.g. Valdelinares)")
+		resortID    = flag.String("resort-id", "", "Filter POI sync by exact resort ID")
+		skipResorts = flag.Bool("skip-resorts", false, "Skip downloading and syncing ski resorts")
+		skipPistes  = flag.Bool("skip-pistes", false, "Skip downloading and syncing ski pistes")
+		skipLifts   = flag.Bool("skip-lifts", false, "Skip downloading and syncing ski lifts")
+		skipPOIs    = flag.Bool("skip-pois", false, "Skip downloading and syncing POIs from OpenStreetMap")
+		forcePOIs   = flag.Bool("force-pois", false, "Force re-syncing POIs even if already present in database")
+		poiLimit    = flag.Int("poi-limit", 0, "Limit number of resorts to sync POIs for (0 for all)")
+		workers     = flag.Int("workers", 3, "Number of concurrent workers for POI synchronization")
+		liveOSM     = flag.Bool("live-osm", false, "Use live OpenStreetMap map API for POIs (recommended only with -resort or -country)")
+	)
+	flag.Parse()
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -68,8 +84,24 @@ func main() {
 		logger.Info("migrations applied", slog.String("group", group.String()))
 	}
 
-	if err := sync.SyncPistesData(ctx, store.DB(), logger); err != nil {
-		logger.Error("failed to sync pistes data", slog.Any("error", err))
+	syncOpts := sync.SyncOptions{
+		SkipResorts: *skipResorts,
+		SkipPistes:  *skipPistes,
+		SkipLifts:   *skipLifts,
+		SkipPOIs:    *skipPOIs,
+		POIOptions: sync.SyncPOIOptions{
+			Country:    *countryCode,
+			ResortName: *resortName,
+			ResortID:   *resortID,
+			Force:      *forcePOIs,
+			Limit:        *poiLimit,
+			Workers:      *workers,
+			UseOSMMapAPI: *liveOSM,
+		},
+	}
+
+	if err := sync.SyncWithOptions(ctx, store.DB(), logger, syncOpts); err != nil {
+		logger.Error("failed to sync ski data", slog.Any("error", err))
 		os.Exit(1)
 	}
 

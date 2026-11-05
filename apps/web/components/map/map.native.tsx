@@ -43,6 +43,7 @@ import { RouteOriginModal } from './route-origin-modal';
 import { MeetingPointMarker } from './meeting-point-marker';
 import { MeetingPointDetailPanel } from './meeting-point-detail-panel';
 import { CreateMeetingPointModal } from './create-meeting-point-modal';
+import { OverlappingPistesModal } from './overlapping-pistes-modal';
 import { MeetingPoint } from '../../models/meeting-point.model';
 import { meetingPointService } from '../../services/meeting-point.service';
 import { SkiRoutingEngine, RouteResult, SkillLevel, RouteLeg, calculateDistanceM } from '../../utils/ski-routing.util';
@@ -463,6 +464,8 @@ export default function InteractiveSkiMapNative() {
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
+    const [overlappingFeatures, setOverlappingFeatures] = useState<(Piste | Lift)[]>([]);
+    const [showOverlappingModal, setShowOverlappingModal] = useState<boolean>(false);
     const [chartHoverPoint, setChartHoverPoint] = useState<[number, number] | null>(null);
     const [selectedResort, setSelectedResort] = useState<Resort | ResortDetail | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
@@ -479,6 +482,7 @@ export default function InteractiveSkiMapNative() {
 
     // Ski Routing State
     const [activeRoute, setActiveRoute] = useState<RouteResult | null>(null);
+    const [selectedRouteLegIndex, setSelectedRouteLegIndex] = useState<number | null>(null);
     const [routeDestination, setRouteDestination] = useState<{ piste: Piste; coord?: [number, number] } | null>(null);
     const [routeOriginCoord, setRouteOriginCoord] = useState<[number, number] | null>(null);
     const [routeOrigin, setRouteOrigin] = useState<{
@@ -1061,6 +1065,44 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
+    const pisteAreaFillStyle: any = {
+        id: 'piste-areas-fill',
+        sourceID: 'piste-areas-source',
+        type: 'fill',
+        paint: {
+            'fill-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00a859',
+                'easy', '#0072bc',
+                'intermediate', '#f0141e',
+                'advanced', '#000000',
+                'expert', '#000000',
+                '#94A3B8'
+            ],
+            'fill-opacity': 0.15
+        }
+    };
+
+    const pisteAreaOutlineStyle: any = {
+        id: 'piste-areas-outline',
+        sourceID: 'piste-areas-source',
+        type: 'line',
+        paint: {
+            'line-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#00a859',
+                'easy', '#0072bc',
+                'intermediate', '#f0141e',
+                'advanced', '#000000',
+                'expert', '#000000',
+                '#94A3B8'
+            ],
+            'line-width': 1,
+            'line-opacity': 0.35,
+            'line-dasharray': [2, 2]
+        }
+    };
+
     const pisteLineStyle: any = {
         id: 'piste-lines',
         sourceID: 'pistes-source',
@@ -1254,22 +1296,40 @@ export default function InteractiveSkiMapNative() {
         }
     };
 
-    const getFeatureFromEvent = useCallback((e: any): Piste | Lift | undefined => {
+    const getAllFeaturesFromEvent = useCallback((e: any): (Piste | Lift)[] => {
         const features = e?.features ?? e?.nativeEvent?.features ?? [];
-        if (!Array.isArray(features) || features.length === 0) return undefined;
+        if (!Array.isArray(features) || features.length === 0) return [];
 
-        const feature = features[0];
-        if (!feature?.properties?.id) return undefined;
+        const matched: (Piste | Lift)[] = [];
+        const seenIds = new Set<string>();
+        const seenNames = new Set<string>();
 
-        const featureId = feature.properties.id;
-        for (const resort of (resorts || [])) {
-            if (!resort) continue;
-            const found = resort.pistes?.find(p => p?.ID === featureId) || resort.lifts?.find(l => l?.ID === featureId);
-            if (found) return found;
+        for (const feature of features) {
+            const featureId = feature?.properties?.id;
+            if (!featureId || seenIds.has(featureId)) continue;
+
+            for (const resort of (resorts || [])) {
+                if (!resort) continue;
+                const found = resort.pistes?.find(p => p?.ID === featureId) || resort.lifts?.find(l => l?.ID === featureId);
+                if (found && !seenIds.has(found.ID)) {
+                    seenIds.add(found.ID);
+                    const nameKey = (found.Name || '').toLowerCase().trim();
+                    if (!seenNames.has(nameKey)) {
+                        if (nameKey) seenNames.add(nameKey);
+                        matched.push(found);
+                    }
+                    break;
+                }
+            }
         }
 
-        return undefined;
+        return matched;
     }, [resorts]);
+
+    const getFeatureFromEvent = useCallback((e: any): Piste | Lift | undefined => {
+        const all = getAllFeaturesFromEvent(e);
+        return all.length > 0 ? all[0] : undefined;
+    }, [getAllFeaturesFromEvent]);
 
     const normalizeGeoJSONLine = (geometry: any) => {
         if (!geometry) return null;
@@ -1288,6 +1348,30 @@ export default function InteractiveSkiMapNative() {
         return null;
     };
 
+    const pisteAreasGeoJSON = useMemo(() => {
+        const features = (resorts || []).flatMap(resort => {
+            if (!resort || !Array.isArray(resort.pistes)) return [];
+            return resort.pistes
+                .filter(piste => {
+                    const geomType = piste?.GeometryGeoJSON?.type;
+                    return geomType === 'Polygon' || geomType === 'MultiPolygon';
+                })
+                .map(piste => ({
+                    type: 'Feature' as const,
+                    properties: {
+                        id: piste.ID,
+                        resortId: resort.ID,
+                        name: piste.Name || '',
+                        difficulty: piste.Difficulty ? piste.Difficulty.toLowerCase() : 'easy',
+                        pisteType: piste.PisteType?.toLowerCase() || 'downhill',
+                        grooming: piste.Grooming?.toLowerCase() || 'classic'
+                    },
+                    geometry: piste.GeometryGeoJSON
+                }));
+        });
+        return { type: 'FeatureCollection' as const, features: features as any };
+    }, [resorts]);
+
     const pistesGeoJSON = useMemo(() => {
         const features = (resorts || []).flatMap(resort => {
             if (!resort || !Array.isArray(resort.pistes)) return [];
@@ -1297,12 +1381,20 @@ export default function InteractiveSkiMapNative() {
                 if (!baseGeom) return null;
                 const geom = getOrientedPisteGeometry(baseGeom, piste, resort.lifts);
                 if (!geom) return null;
+                const pisteName = piste.Name ||
+                    piste.Tags?.['piste:name'] ||
+                    piste.Tags?.name ||
+                    piste.Tags?.['name:es'] ||
+                    piste.Tags?.['name:en'] ||
+                    piste.Tags?.['piste:ref'] ||
+                    piste.Tags?.ref ||
+                    '';
                 return {
                     type: 'Feature' as const,
                     properties: {
                         id: piste.ID,
                         resortId: resort.ID,
-                        name: piste.Name || 'Piste',
+                        name: pisteName,
                         difficulty: piste.Difficulty ? piste.Difficulty.toLowerCase() : 'easy',
                         pisteType: piste.PisteType?.toLowerCase() || 'downhill',
                         grooming: piste.Grooming?.toLowerCase() || 'classic'
@@ -1522,6 +1614,7 @@ export default function InteractiveSkiMapNative() {
             if (result.success) {
                 result.originName = originName;
                 setActiveRoute(result);
+                setSelectedRouteLegIndex(null);
                 setRouteOriginCoord(originCoord);
                 const origObj = {
                     coord: originCoord,
@@ -1666,7 +1759,10 @@ export default function InteractiveSkiMapNative() {
         [executeRouting]
     );
 
-    const handleSelectRouteLeg = useCallback((leg: RouteLeg) => {
+    const handleSelectRouteLeg = useCallback((leg: RouteLeg, index?: number) => {
+        if (typeof index === 'number') {
+            setSelectedRouteLegIndex(index);
+        }
         if (!leg.coordinates || leg.coordinates.length < 2) return;
         let minLon = leg.coordinates[0][0], maxLon = leg.coordinates[0][0];
         let minLat = leg.coordinates[0][1], maxLat = leg.coordinates[0][1];
@@ -1703,7 +1799,8 @@ export default function InteractiveSkiMapNative() {
     }, [activeRoute]);
 
     const handleNativeFeaturePress = useCallback((e: any) => {
-        const found = getFeatureFromEvent(e);
+        const allFound = getAllFeaturesFromEvent(e);
+        const found = allFound.length > 0 ? allFound[0] : undefined;
         if (isSelectingRouteOriginRef.current && routeDestinationRef.current) {
             const dest = routeDestinationRef.current;
             const coords = (found?.GeometryGeoJSON?.coordinates as any)?.[0] || e?.geometry?.coordinates;
@@ -1725,11 +1822,17 @@ export default function InteractiveSkiMapNative() {
             );
             return;
         }
+        if (allFound.length > 1) {
+            setChartHoverPoint(null);
+            setOverlappingFeatures(allFound);
+            setShowOverlappingModal(true);
+            return;
+        }
         if (found) {
             setChartHoverPoint(null);
             setSelectedFeature(found);
         }
-    }, [getFeatureFromEvent, executeRouting, routeSkillLevel]);
+    }, [getAllFeaturesFromEvent, executeRouting, routeSkillLevel]);
 
     const handleNativeMapPress = useCallback((e: any) => {
         if (isSelectingRouteOriginRef.current && routeDestinationRef.current) {
@@ -1755,7 +1858,14 @@ export default function InteractiveSkiMapNative() {
             );
             return;
         }
-        const found = getFeatureFromEvent(e);
+        const allFound = getAllFeaturesFromEvent(e);
+        if (allFound.length > 1) {
+            setChartHoverPoint(null);
+            setOverlappingFeatures(allFound);
+            setShowOverlappingModal(true);
+            return;
+        }
+        const found = allFound.length > 0 ? allFound[0] : undefined;
         if (found) {
             setChartHoverPoint(null);
             setSelectedFeature(found);
@@ -1763,7 +1873,7 @@ export default function InteractiveSkiMapNative() {
         }
         setSelectedFeature(null);
         setChartHoverPoint(null);
-    }, [getFeatureFromEvent, executeRouting, routeSkillLevel, t]);
+    }, [getAllFeaturesFromEvent, getFeatureFromEvent, executeRouting, routeSkillLevel, t]);
 
     const handleNativeRegionDidChange = useCallback((e: any) => {
         const ne = e?.nativeEvent || e;
@@ -1942,6 +2052,11 @@ export default function InteractiveSkiMapNative() {
 
                 {!searchParams.sessionId && isSnowLayer && viewState.zoom >= 10 && (
                     <>
+                        <NativeGeoJSONSource id="piste-areas-source" data={pisteAreasGeoJSON} onPress={handleNativeFeaturePress}>
+                            <NativeLayer {...pisteAreaFillStyle} onPress={handleNativeFeaturePress} />
+                            <NativeLayer {...pisteAreaOutlineStyle} />
+                        </NativeGeoJSONSource>
+
                         <NativeGeoJSONSource id="pistes-source" data={pistesGeoJSON} onPress={handleNativeFeaturePress} hitbox={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                             <NativeLayer {...pisteCasingStyle} />
                             <NativeLayer {...pisteLineStyle} onPress={handleNativeFeaturePress} />
@@ -1977,6 +2092,20 @@ export default function InteractiveSkiMapNative() {
 
                 {routeGeoJSON && (
                     <NativeGeoJSONSource id="active-route-source" data={routeGeoJSON}>
+                        {selectedRouteLegIndex !== null && (
+                            <NativeLayer
+                                id="active-route-selected-leg"
+                                type="line"
+                                filter={['==', ['get', 'id'], `leg-${selectedRouteLegIndex}`]}
+                                style={{
+                                    lineCap: 'round',
+                                    lineJoin: 'round',
+                                    lineColor: '#facc15',
+                                    lineWidth: 13,
+                                    lineOpacity: 0.9,
+                                }}
+                            />
+                        )}
                         <NativeLayer
                             id="active-route-casing"
                             type="line"
@@ -1988,7 +2117,7 @@ export default function InteractiveSkiMapNative() {
                                 lineOpacity: 0.88,
                             }}
                         />
-                        {/* Downhill pistes */}
+                        {/* Downhill pistes (difficulty-aware matching step-by-step panel) */}
                         <NativeLayer
                             id="active-route-run"
                             type="line"
@@ -1996,7 +2125,15 @@ export default function InteractiveSkiMapNative() {
                             style={{
                                 lineCap: 'round',
                                 lineJoin: 'round',
-                                lineColor: '#2563eb',
+                                lineColor: [
+                                    'match', ['get', 'difficulty'],
+                                    'novice', '#16a34a',
+                                    'easy', '#2563eb',
+                                    'intermediate', '#dc2626',
+                                    'advanced', '#1e293b',
+                                    'expert', '#1e293b',
+                                    '#2563eb'
+                                ],
                                 lineWidth: 6,
                                 lineOpacity: 1,
                             }}
@@ -2223,6 +2360,19 @@ export default function InteractiveSkiMapNative() {
                 />
             )}
 
+            <OverlappingPistesModal
+                visible={showOverlappingModal}
+                features={overlappingFeatures}
+                onSelect={(feature) => {
+                    setShowOverlappingModal(false);
+                    setSelectedFeature(feature);
+                    setSelectedResort(null);
+                }}
+                onClose={() => {
+                    setShowOverlappingModal(false);
+                }}
+            />
+
             {selectedResort && (
                 <ResortDetailPanel resort={selectedResort} onClose={() => setSelectedResort(null)} />
             )}
@@ -2246,6 +2396,7 @@ export default function InteractiveSkiMapNative() {
                     currentLevel={routeSkillLevel}
                     onClose={() => {
                         setActiveRoute(null);
+                        setSelectedRouteLegIndex(null);
                         setRouteDestination(null);
                         setRouteOriginCoord(null);
                         setRouteOrigin(null);
@@ -2257,6 +2408,7 @@ export default function InteractiveSkiMapNative() {
                     }}
                     onLevelChange={handleLevelChange}
                     onSelectLeg={handleSelectRouteLeg}
+                    selectedLegIndex={selectedRouteLegIndex}
                     fastLifts={fastLifts}
                     onToggleFastLifts={() => {
                         const next = !fastLifts;

@@ -444,10 +444,63 @@ func getEndpoints(piste models.SkiPiste) (PistePoint, PistePoint, bool) {
 	return PistePoint{X: fX, Y: fY}, PistePoint{X: lX, Y: lY}, true
 }
 
+func extractPisteName(p models.SkiPiste) string {
+	if strings.TrimSpace(p.Name) != "" {
+		return strings.TrimSpace(p.Name)
+	}
+	if p.Tags != nil {
+		for _, key := range []string{"name", "piste:name", "name:es", "name:en", "ref", "piste:ref", "description"} {
+			if v, ok := p.Tags[key]; ok && v != nil {
+				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+					return strings.TrimSpace(s)
+				}
+				if f, ok := v.(float64); ok && f > 0 {
+					return fmt.Sprintf("%.0f", f)
+				}
+			}
+		}
+		if nested, ok := p.Tags["tags"].(map[string]interface{}); ok && nested != nil {
+			for _, key := range []string{"name", "piste:name", "name:es", "name:en", "ref", "piste:ref"} {
+				if v, ok := nested[key]; ok && v != nil {
+					if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+						return strings.TrimSpace(s)
+					}
+					if f, ok := v.(float64); ok && f > 0 {
+						return fmt.Sprintf("%.0f", f)
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func splitCompositeNames(name string) []string {
+	delims := []string{",", ";", "/", " - "}
+	parts := []string{name}
+	for _, d := range delims {
+		var newParts []string
+		for _, p := range parts {
+			sub := strings.Split(p, d)
+			for _, s := range sub {
+				trimmed := strings.TrimSpace(s)
+				if trimmed != "" {
+					newParts = append(newParts, trimmed)
+				}
+			}
+		}
+		parts = newParts
+	}
+	return parts
+}
+
 func pointsClose(p1, p2 PistePoint) bool {
-	// Let's use a small epsilon for coordinate matching (e.g. ~1-2 meters in degrees is roughly 0.00002)
-	const eps = 0.00005
-	return math.Abs(p1.X-p2.X) < eps && math.Abs(p1.Y-p2.Y) < eps
+	// Coordinate proximity threshold: ~15 meters
+	if math.Abs(p1.X-p2.X) > 0.00035 || math.Abs(p1.Y-p2.Y) > 0.00035 {
+		return false
+	}
+	distMeters := calculateDistance(p1.Y, p1.X, p2.Y, p2.X) * 1000.0
+	return distMeters <= 15.0
 }
 
 func mergeContiguousPistes(pistes []models.SkiPiste) []models.SkiPiste {
@@ -455,7 +508,39 @@ func mergeContiguousPistes(pistes []models.SkiPiste) []models.SkiPiste {
 		return pistes
 	}
 
-	// Group pistes by Name + PisteType (we group segments with different difficulties together to merge them)
+	// 1. Ensure any missing Name is recovered from OSM tags (piste:name, ref, etc.)
+	// and expand composite names (e.g. "Tajera, La Mina") so the shared segment
+	// contributes to both pistes without merging them together into a zigzag.
+	var expanded []models.SkiPiste
+	for _, p := range pistes {
+		if p.Name == "" {
+			p.Name = extractPisteName(p)
+		}
+		parts := splitCompositeNames(p.Name)
+		if len(parts) > 1 {
+			for idx, part := range parts {
+				clone := p
+				clone.ID = fmt.Sprintf("%s_part%d", p.ID, idx)
+				clone.Name = part
+
+				// Mark as shared section in tags and record composite names
+				tagsCopy := make(map[string]interface{})
+				for k, v := range p.Tags {
+					tagsCopy[k] = v
+				}
+				tagsCopy["is_shared"] = true
+				tagsCopy["shared_with"] = parts
+				tagsCopy["composite_name"] = p.Name
+				clone.Tags = tagsCopy
+
+				expanded = append(expanded, clone)
+			}
+		} else {
+			expanded = append(expanded, p)
+		}
+	}
+
+	// Group pistes by Name + PisteType
 	type groupKey struct {
 		Name      string
 		PisteType string
@@ -464,7 +549,7 @@ func mergeContiguousPistes(pistes []models.SkiPiste) []models.SkiPiste {
 	groups := make(map[groupKey][]models.SkiPiste)
 	var namelessOrSingle []models.SkiPiste
 
-	for _, p := range pistes {
+	for _, p := range expanded {
 		if p.Name == "" {
 			namelessOrSingle = append(namelessOrSingle, p)
 			continue
@@ -627,17 +712,47 @@ func mergeContiguousPistes(pistes []models.SkiPiste) []models.SkiPiste {
 					}
 				}
 
-				if hasElevations && len(combinedHeights) > 0 {
-					newTags := make(map[string]interface{})
-					for k, v := range mergedPiste.Tags {
-						newTags[k] = v
+				var combinedSharedWith []string
+				hasSharedSegment := false
+				for _, item := range chain {
+					if isSh, _ := item.Tags["is_shared"].(bool); isSh {
+						hasSharedSegment = true
 					}
+					if sw, ok := item.Tags["shared_with"].([]string); ok {
+						for _, name := range sw {
+							found := false
+							for _, existing := range combinedSharedWith {
+								if strings.EqualFold(existing, name) {
+									found = true
+									break
+								}
+							}
+							if !found {
+								combinedSharedWith = append(combinedSharedWith, name)
+							}
+						}
+					}
+				}
+
+				newTags := make(map[string]interface{})
+				for k, v := range mergedPiste.Tags {
+					newTags[k] = v
+				}
+
+				if hasSharedSegment {
+					newTags["is_shared"] = true
+					if len(combinedSharedWith) > 0 {
+						newTags["shared_with"] = combinedSharedWith
+					}
+				}
+
+				if hasElevations && len(combinedHeights) > 0 {
 					newTags["elevationProfile"] = map[string]interface{}{
 						"heights":    combinedHeights,
 						"resolution": resolution,
 					}
-					mergedPiste.Tags = newTags
 				}
+				mergedPiste.Tags = newTags
 
 				mergedPistes = append(mergedPistes, mergedPiste)
 			}

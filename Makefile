@@ -24,7 +24,7 @@ dev-api: docker-up ## Start Go API with hot reload
 	cd $(API_DIR) && air
 
 dev-web: ## Start Next.js dev server
-	cd $(WEB_DIR) && bun web
+	cd $(WEB_DIR) && pnpm web
 
 # ============================================================================
 # Build

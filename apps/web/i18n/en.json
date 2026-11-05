@@ -587,5 +587,8 @@
   "motion_fast": "⛷️ Fast descent (2s GPS)",
   "motion_moving": "🚠 On lift / Moving",
   "motion_active": "📡 GPS Active",
-  "stationary_eco": "Eco"
+  "stationary_eco": "Eco",
+  "overlapping_slopes_title": "Overlapping Pistes",
+  "overlapping_slopes_subtitle": "This section is shared by multiple pistes. Select the one you want to view:",
+  "shared_section_badge": "Shared section"
 }

@@ -25,6 +25,16 @@ func (h *WeatherHandler) GetWeather(c *gin.Context) {
 	lon := c.DefaultQuery("lon", "-3.7038")
 	resortID := c.Query("resort_id")
 
+	if c.Query("nocache") == "true" || c.Query("refresh") == "true" {
+		weatherData, err := h.svc.GetWeather(c, lat, lon, resortID)
+		if err != nil {
+			httputil.RespondError(c, fmt.Errorf("could not get weather forecast: %w", err))
+			return
+		}
+		httputil.RespondOK(c, weatherData)
+		return
+	}
+
 	c.Request.Header.Del("Cache-Control")
 	c.Request.Header.Del("Pragma")
 
@@ -46,6 +56,16 @@ func (h *WeatherHandler) GetSnowReport(c *gin.Context) {
 	resortID := c.Param("id")
 	if resortID == "" {
 		httputil.RespondError(c, fmt.Errorf("missing resort id"))
+		return
+	}
+
+	if c.Query("nocache") == "true" || c.Query("refresh") == "true" {
+		report, err := h.svc.GetSnowReport(c, resortID)
+		if err != nil {
+			httputil.RespondError(c, fmt.Errorf("could not get snow report: %w", err))
+			return
+		}
+		httputil.RespondOK(c, report)
 		return
 	}
 

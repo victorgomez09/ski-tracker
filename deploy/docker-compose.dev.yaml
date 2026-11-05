@@ -18,7 +18,7 @@ services:
       retries: 5
   
   minio:
-    image: minio/minio
+    image: quay.io/minio/aistor/minio
     environment:
       - MINIO_ROOT_USER=ski_tracker
       - MINIO_ROOT_PASSWORD=ski_tracker

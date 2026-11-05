@@ -585,5 +585,8 @@
   "motion_fast": "⛷️ Descenso rápido (GPS a 2s)",
   "motion_moving": "🚠 En remonte / Movimiento",
   "motion_active": "📡 GPS Activo",
-  "stationary_eco": "Eco"
+  "stationary_eco": "Eco",
+  "overlapping_slopes_title": "Pistas superpuestas",
+  "overlapping_slopes_subtitle": "Este tramo es compartido por varias pistas. Selecciona la que deseas ver:",
+  "shared_section_badge": "Tramo compartido"
 }

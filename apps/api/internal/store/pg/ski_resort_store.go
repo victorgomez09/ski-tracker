@@ -210,6 +210,7 @@ func (s *skiResortStore) SavePOIs(ctx context.Context, pois []models.SkiResortPO
 	_, err := s.db.NewInsert().
 		Model(&pois).
 		On("CONFLICT (id) DO UPDATE").
+		Set("resort_id = EXCLUDED.resort_id").
 		Set("name = EXCLUDED.name").
 		Set("category = EXCLUDED.category").
 		Set("latitude = EXCLUDED.latitude").

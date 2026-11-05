@@ -102,10 +102,16 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
             precipProb?: number;
         }[] = [];
 
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
         data.daily.time.forEach((dayStr, idx) => {
             const snowfall = data.daily?.snowfall_sum?.[idx] ?? 0;
             if (snowfall > 0) {
                 const dateObj = new Date(dayStr);
+                // Only upcoming or today
+                if (dateObj < today) return;
+
                 const dayName = dateObj.toLocaleDateString(i18n.language, {
                     weekday: 'short',
                     day: 'numeric',
@@ -113,7 +119,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                 });
                 list.push({
                     dayName,
-                    snowfall,
+                    snowfall: Math.round(snowfall * 10) / 10,
                     tempMax: data.daily?.temperature_2m_max?.[idx] ?? 0,
                     tempMin: data.daily?.temperature_2m_min?.[idx] ?? 0,
                     precipProb: data.daily?.precipitation_probability_max?.[idx],

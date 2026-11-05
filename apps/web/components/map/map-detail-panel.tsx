@@ -2,7 +2,7 @@ import { Lift, Piste } from 'models/ski-resort.model';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform, processColor, StyleSheet, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, Maximize2, Navigation, Compass, Crosshair, Flag } from 'lucide-react-native';
+import { X, Maximize2, Navigation, Compass, Crosshair, Flag, Layers } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
@@ -645,9 +645,19 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({
 
                     {(!(data as Lift).LiftType && type === 'LineString') && (
                         <>
-                            <Text style={styles.subtitleText}>
-                                {t('downhill_ski_run', { difficulty: t(diffMeta.labelKey) })}
-                            </Text>
+                            <View style={styles.subtitleRow}>
+                                <Text style={styles.subtitleText}>
+                                    {t('downhill_ski_run', { difficulty: t(diffMeta.labelKey) })}
+                                </Text>
+                                {(tags?.is_shared || (tags?.shared_with && tags.shared_with.length > 1)) && (
+                                    <View style={styles.sharedBadge}>
+                                        <Layers size={11} color={colors.primary} />
+                                        <Text style={styles.sharedBadgeText}>
+                                            {t('shared_section_badge', 'Tramo compartido')}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
 
                             {(onCalculateRoute || onCreateMeetingPoint) && (
                                 <View style={styles.routeActionSection}>
@@ -680,9 +690,8 @@ export const MapDetailPanel: React.FC<MapDetailPanelProps> = ({
                                                 style={styles.calculateRouteButton}
                                                 activeOpacity={0.8}
                                                 onPress={() => {
-                                                    const coords = data.GeometryGeoJSON?.coordinates as number[][];
-                                                    const targetCoord = coords && coords.length > 0 ? [coords[0][0], coords[0][1]] as [number, number] : undefined;
-                                                    onCalculateRoute(data as Piste, targetCoord, originMode);
+                                                    // When routing to a piste from the detail panel, route to the piste and descend it to its base
+                                                    onCalculateRoute(data as Piste, undefined, originMode);
                                                 }}
                                             >
                                                 <Navigation size={15} color="#FFFFFF" />
@@ -901,11 +910,34 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         color: colors.textPrimary,
         flex: 1,
     },
+    subtitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 6,
+    },
     subtitleText: {
         fontSize: 12,
         color: colors.textSecondary,
         textTransform: 'capitalize',
         fontWeight: '500',
+    },
+    sharedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: `${colors.primary}15`,
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: BORDER_RADIUS.round,
+        borderWidth: 1,
+        borderColor: `${colors.primary}30`,
+    },
+    sharedBadgeText: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: colors.primary,
     },
     routeActionSection: {
         marginTop: 6,

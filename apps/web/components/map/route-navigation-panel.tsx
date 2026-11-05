@@ -31,7 +31,8 @@ interface RouteNavigationPanelProps {
     onChangeOrigin?: () => void;
     currentLevel?: SkillLevel;
     onLevelChange?: (level: SkillLevel) => void;
-    onSelectLeg?: (leg: RouteLeg) => void;
+    onSelectLeg?: (leg: RouteLeg, index?: number) => void;
+    selectedLegIndex?: number | null;
     fastLifts?: boolean;
     onToggleFastLifts?: () => void;
     badWeather?: boolean;
@@ -78,6 +79,7 @@ export const RouteNavigationPanel: React.FC<RouteNavigationPanelProps> = ({
     currentLevel = 'all',
     onLevelChange,
     onSelectLeg,
+    selectedLegIndex = null,
     fastLifts = false,
     onToggleFastLifts,
     badWeather = false,
@@ -317,12 +319,13 @@ export const RouteNavigationPanel: React.FC<RouteNavigationPanelProps> = ({
                         <View style={styles.stepList}>
                             {route.legs.map((leg, index) => {
                                 const diffMeta = leg.kind === 'run' ? getDifficultyMeta(leg.difficulty) : null;
+                                const isSelected = selectedLegIndex === index;
                                 return (
                                     <TouchableOpacity
                                         key={`leg-${index}`}
-                                        style={styles.stepItem}
+                                        style={[styles.stepItem, isSelected && styles.stepItemActive]}
                                         activeOpacity={0.7}
-                                        onPress={() => onSelectLeg?.(leg)}
+                                        onPress={() => onSelectLeg?.(leg, index)}
                                     >
                                         <View style={styles.stepIndicatorCol}>
                                             {leg.kind === 'run' ? (
@@ -636,6 +639,13 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
             alignItems: 'flex-start',
             gap: 12,
             paddingVertical: 6,
+            paddingHorizontal: 8,
+            borderRadius: 8,
+        },
+        stepItemActive: {
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.primary,
         },
         stepIndicatorCol: {
             alignItems: 'center',

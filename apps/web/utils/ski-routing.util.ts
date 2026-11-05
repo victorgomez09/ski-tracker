@@ -75,17 +75,17 @@ const LIFT_WAIT = 60;       // seconds wait at base station
 const WALK_SPEED = 1.1;     // m/s on snow with equipment
 
 // Robust connection distances in meters (calibrated to real-world OSM ski resorts)
-const MAX_PISTE_TO_LIFT_M = 320;     // Piste bottom to lift base station across snow front / resort base
-const MAX_PISTE_MID_TO_LIFT_M = 100; // Mid-piste node to lift base station
-const MAX_LIFT_TO_PISTE_M = 220;     // Lift top station to piste head
-const MAX_LIFT_TO_PISTE_MID_M = 120; // Lift top station to any downstream piste node
-const MAX_LIFT_TO_LIFT_M = 320;      // Lift top to next lift base (hub/station transfer)
-const MAX_BASE_TO_BASE_M = 380;      // Lift base to another lift base (transferring at resort base / valley)
-const MAX_RIDGE_TRANSFER_M = 120;    // Lift top to lift top walking transfer
-const MAX_PISTE_TO_PISTE_M = 120;    // Piste bottom to next piste head
-const MAX_PISTE_MERGE_M = 30;        // Piste bottom merging into any node of another piste
-const MAX_PISTE_JUNCTION_M = 15;     // Direct intersection/fork between two pistes (tighter to avoid cutting across hairpins)
-const MAX_SNAP_DIST_M = 250;        // Initial radius to snap GPS/tap to a piste/lift
+const MAX_PISTE_TO_LIFT_M = 350;     // Piste bottom to lift base station across snow front / resort base
+const MAX_PISTE_MID_TO_LIFT_M = 120; // Mid-piste node to lift base station
+const MAX_LIFT_TO_PISTE_M = 250;     // Lift top station to piste head
+const MAX_LIFT_TO_PISTE_MID_M = 150; // Lift top station to any downstream piste node
+const MAX_LIFT_TO_LIFT_M = 350;      // Lift top to next lift base (hub/station transfer)
+const MAX_BASE_TO_BASE_M = 400;      // Lift base to another lift base (transferring at resort base / valley)
+const MAX_RIDGE_TRANSFER_M = 150;    // Lift top to lift top walking transfer
+const MAX_PISTE_TO_PISTE_M = 150;    // Piste bottom to next piste head
+const MAX_PISTE_MERGE_M = 50;        // Piste bottom merging into any node of another piste (wider for skiable zones)
+const MAX_PISTE_JUNCTION_M = 25;     // Direct intersection/fork between two pistes
+const MAX_SNAP_DIST_M = 300;        // Initial radius to snap GPS/tap to a piste/lift
 
 const EASY_LEVEL: Record<string, boolean> = { novice: true, easy: true, other: true };
 const NO_BLACK_LEVEL: Record<string, boolean> = { novice: true, easy: true, intermediate: true, other: true };
@@ -109,6 +109,7 @@ interface FeatureMeta {
     piste?: Piste;
     lift?: Lift;
     diff: string;
+    isArea?: boolean;
     liftType?: string;
     name: string;
     topNode: number;
@@ -315,13 +316,13 @@ export class SkiRoutingEngine {
             }
         });
 
-        // 1. Process Pistes (Strictly Downhill Flow)
+        // 1. Process Pistes & Skiable Areas (Strictly Downhill Flow)
         pistes.forEach((piste) => {
             const rawCoords = piste.GeometryGeoJSON?.coordinates;
             if (!rawCoords || rawCoords.length < 2) return;
 
             const geomType = piste.GeometryGeoJSON?.type;
-            if (geomType === 'Polygon' || geomType === 'MultiPolygon') return;
+            const isArea = geomType === 'Polygon' || geomType === 'MultiPolygon';
 
             // Exclude ski touring (uphill climbing tracks), hiking paths, sled tracks, nordic flat tracks
             const pType = (piste.PisteType || '').toLowerCase();
@@ -329,21 +330,109 @@ export class SkiRoutingEngine {
                 return;
             }
 
-            const flatCoords = rawCoords.map((c) => [c[0], c[1]] as [number, number]);
-            const { startElev, endElev } = this.getPisteElevation(
-                piste,
-                flatCoords,
-                elevationProvider,
-                liftBases,
-                liftSummits
-            );
+            let pts: [number, number, number][] = [];
+            let startElev: number | null = null;
+            let endElev: number | null = null;
 
-            let pts = rawCoords.map((c) => [c[0], c[1], c[2] ?? 0] as [number, number, number]);
+            if (isArea) {
+                let ring: any[] = [];
+                if (geomType === 'Polygon' && Array.isArray(rawCoords[0])) {
+                    ring = rawCoords[0];
+                } else if (geomType === 'MultiPolygon' && Array.isArray(rawCoords[0]) && Array.isArray(rawCoords[0][0])) {
+                    ring = rawCoords[0][0];
+                }
+                if (ring.length < 3) return;
 
-            // If start elevation is lower than end elevation, it was drawn uphill in OSM.
-            // Reverse so index 0 is at summit and last index is at base.
-            if (startElev !== null && endElev !== null && endElev > startElev + 1.2) {
-                pts = [...pts].reverse();
+                // Find highest point (top) and lowest point (bottom) in the ring
+                let topPt: [number, number, number] | null = null;
+                let bottomPt: [number, number, number] | null = null;
+                let maxElev = -Infinity;
+                let minElev = Infinity;
+                let sumLon = 0;
+                let sumLat = 0;
+                let count = 0;
+
+                for (const pt of ring) {
+                    if (!Array.isArray(pt) || pt.length < 2) continue;
+                    const lon = Number(pt[0]);
+                    const lat = Number(pt[1]);
+                    const ele = Number(pt[2]) || 0;
+                    if (isNaN(lon) || isNaN(lat)) continue;
+
+                    sumLon += lon;
+                    sumLat += lat;
+                    count++;
+
+                    if (ele > 0) {
+                        if (ele > maxElev) {
+                            maxElev = ele;
+                            topPt = [lon, lat, ele];
+                        }
+                        if (ele < minElev) {
+                            minElev = ele;
+                            bottomPt = [lon, lat, ele];
+                        }
+                    }
+                }
+
+                if (count === 0) return;
+                const centerLon = sumLon / count;
+                const centerLat = sumLat / count;
+
+                // If 3D elevation was missing or flat, orient by proximity to lift summits and bases
+                if (!topPt || !bottomPt || maxElev - minElev < 2.0) {
+                    if (liftSummits.length > 0 && liftBases.length > 0) {
+                        let bestSummitD = Infinity;
+                        let bestBaseD = Infinity;
+                        for (const pt of ring) {
+                            const c: [number, number] = [pt[0], pt[1]];
+                            const dSummit = Math.min(...liftSummits.map((s) => calculateDistanceM(c, s)));
+                            const dBase = Math.min(...liftBases.map((b) => calculateDistanceM(c, b)));
+                            if (dSummit < bestSummitD) {
+                                bestSummitD = dSummit;
+                                topPt = [pt[0], pt[1], 2000];
+                            }
+                            if (dBase < bestBaseD) {
+                                bestBaseD = dBase;
+                                bottomPt = [pt[0], pt[1], 1000];
+                            }
+                        }
+                    }
+                }
+
+                if (!topPt || !bottomPt) {
+                    const midIdx = Math.floor(ring.length / 2);
+                    topPt = [ring[0][0], ring[0][1], ring[0][2] || 0];
+                    bottomPt = [ring[midIdx][0], ring[midIdx][1], ring[midIdx][2] || 0];
+                }
+
+                const centerElev = ((topPt[2] || 0) + (bottomPt[2] || 0)) / 2;
+                pts = [
+                    topPt,
+                    [centerLon, centerLat, centerElev],
+                    bottomPt,
+                ];
+                startElev = topPt[2];
+                endElev = bottomPt[2];
+            } else {
+                const flatCoords = rawCoords.map((c) => [c[0], c[1]] as [number, number]);
+                const elevRes = this.getPisteElevation(
+                    piste,
+                    flatCoords,
+                    elevationProvider,
+                    liftBases,
+                    liftSummits
+                );
+                startElev = elevRes.startElev;
+                endElev = elevRes.endElev;
+
+                pts = rawCoords.map((c) => [c[0], c[1], c[2] ?? 0] as [number, number, number]);
+
+                // If start elevation is lower than end elevation, it was drawn uphill in OSM.
+                // Reverse so index 0 is at summit and last index is at base.
+                if (startElev !== null && endElev !== null && endElev > startElev + 1.2) {
+                    pts = [...pts].reverse();
+                }
             }
 
             const diff = (piste.Difficulty || 'easy').toLowerCase();
@@ -374,7 +463,8 @@ export class SkiRoutingEngine {
                 kind: 'run',
                 piste,
                 diff,
-                name: piste.Name || `Pista ${diff}`,
+                isArea,
+                name: piste.Name || (isArea ? `Zona esquiable (${diff})` : `Pista ${diff}`),
                 topNode: firstNode,
                 bottomNode: prevNode ?? firstNode,
                 nodeIndices,
@@ -1053,6 +1143,13 @@ export class SkiRoutingEngine {
                                 if (opts.fastLifts && (feat.diff === 'novice' || feat.diff === 'easy')) {
                                     edgeWeight *= 1.15;
                                 }
+
+                                // Prioritize taking marked line pistes!
+                                // In the transitions and interludes of skiable areas, skiers strongly prefer
+                                // skiing along marked pistes even for a small stretch, rather than walking.
+                                if (!feat.isArea) {
+                                    edgeWeight *= 0.65;
+                                }
                             } else if (feat.kind === 'lift') {
                                 // CRITICAL RULE 2: UPHILL ONLY!
                                 // Lifts strictly transport skiers uphill to summits / higher stations.
@@ -1083,6 +1180,11 @@ export class SkiRoutingEngine {
                                 }
                             }
                         }
+                    } else {
+                        // Walking or liaison connection across skiable areas, between pistes, or at resort hubs.
+                        // Add a disincentive penalty so Dijkstra prefers taking marked ski pistes wherever available.
+                        const walkPenalty = e.distance > 30 ? 45 : 15;
+                        edgeWeight += walkPenalty;
                     }
 
                     const nextState = e.to * 2 + nextHasReached;
@@ -1297,25 +1399,38 @@ export class SkiRoutingEngine {
             }
         });
 
-        // If route ended at an intermediate node of destPiste and destCoord is further downstream on it,
-        // seamlessly append the downstream ski descent to the destination point!
+        // If route reached destPiste and destCoord is further downstream (or destination is the piste itself),
+        // seamlessly append the downstream ski descent to the destination point/base!
         const reachedFeatIdx = this.network.nodes[endNode].featureIndex;
         const reachedLocalIdx = this.network.nodes[endNode].nodeLocalIndex;
+
+        let targetLocalIdx: number | null = null;
         if (targetSpecificNode !== null) {
             const targetFeatIdx = this.network.nodes[targetSpecificNode].featureIndex;
-            const targetLocalIdx = this.network.nodes[targetSpecificNode].nodeLocalIndex;
+            if (targetFeatIdx === reachedFeatIdx) {
+                targetLocalIdx = this.network.nodes[targetSpecificNode].nodeLocalIndex;
+            }
+        }
 
-            if (reachedFeatIdx === targetFeatIdx && reachedLocalIdx < targetLocalIdx) {
-                const targetFeat = this.network.features[reachedFeatIdx];
+        const targetFeat = reachedFeatIdx >= 0 ? this.network.features[reachedFeatIdx] : null;
+        if (targetFeat && targetFeat.kind === 'run') {
+            const lastLocalIdx = targetFeat.coordinates.length - 1;
+            // If targetLocalIdx was 0 (the top/entrance of the piste) or null (destination is the piste itself),
+            // the skier wants to ski down to the bottom of this destination piste!
+            const effectiveTargetLocalIdx = (targetLocalIdx === null || targetLocalIdx === 0)
+                ? lastLocalIdx
+                : targetLocalIdx;
+
+            if (reachedLocalIdx < effectiveTargetLocalIdx) {
                 const extensionCoords = targetFeat.coordinates
-                    .slice(reachedLocalIdx, targetLocalIdx + 1)
+                    .slice(reachedLocalIdx, effectiveTargetLocalIdx + 1)
                     .map((c) => [c[0], c[1]] as [number, number]);
 
                 let extensionDist = 0;
                 for (let i = 1; i < extensionCoords.length; i++) {
                     extensionDist += calculateDistanceM(extensionCoords[i - 1], extensionCoords[i]);
                 }
-                const elevDiff = targetFeat.coordinates[targetLocalIdx][2] - targetFeat.coordinates[reachedLocalIdx][2];
+                const elevDiff = (targetFeat.coordinates[effectiveTargetLocalIdx][2] || 0) - (targetFeat.coordinates[reachedLocalIdx][2] || 0);
 
                 const lastLeg = legs[legs.length - 1];
                 if (lastLeg && lastLeg.kind === 'run' && lastLeg.name === targetFeat.name) {

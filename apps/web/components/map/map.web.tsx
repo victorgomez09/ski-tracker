@@ -41,6 +41,7 @@ import { RouteOriginModal } from './route-origin-modal';
 import { MeetingPointMarker } from './meeting-point-marker';
 import { MeetingPointDetailPanel } from './meeting-point-detail-panel';
 import { CreateMeetingPointModal } from './create-meeting-point-modal';
+import { OverlappingPistesModal } from './overlapping-pistes-modal';
 import { MeetingPoint } from '../../models/meeting-point.model';
 import { meetingPointService } from '../../services/meeting-point.service';
 import { SkiRoutingEngine, RouteResult, SkillLevel, RouteLeg, calculateDistanceM } from '../../utils/ski-routing.util';
@@ -582,6 +583,8 @@ export default function InteractiveSkiMap() {
     const [hoveredResortId, setHoveredResortId] = useState<string | null>(null);
     const [selectedLegend, setSelectedLegend] = useState<boolean>(false);
     const [selectedFeature, setSelectedFeature] = useState<Piste | Lift | null>(null);
+    const [overlappingFeatures, setOverlappingFeatures] = useState<(Piste | Lift)[]>([]);
+    const [showOverlappingModal, setShowOverlappingModal] = useState<boolean>(false);
     const [chartHoverPoint, setChartHoverPoint] = useState<[number, number] | null>(null);
     const [selectedResort, setSelectedResort] = useState<Resort | null>(null);
     const [hoveredFeatureId, setHoveredFeatureId] = useState<string | null>(null);
@@ -620,6 +623,7 @@ export default function InteractiveSkiMap() {
 
     // Ski Routing State
     const [activeRoute, setActiveRoute] = useState<RouteResult | null>(null);
+    const [selectedRouteLegIndex, setSelectedRouteLegIndex] = useState<number | null>(null);
     const [routeDestination, setRouteDestination] = useState<{ piste: Piste; coord?: [number, number] } | null>(null);
     const [routeOriginCoord, setRouteOriginCoord] = useState<[number, number] | null>(null);
     const [routeOrigin, setRouteOrigin] = useState<{
@@ -1113,6 +1117,40 @@ export default function InteractiveSkiMap() {
     }, [isPoiEnabled, selectedResort]);
 
     // --- Layer styles ---
+    const pisteAreaFillStyle: LayerProps = {
+        id: 'piste-areas-fill',
+        type: 'fill',
+        paint: {
+            'fill-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#81c784',
+                'easy', '#90caf9',
+                'intermediate', '#ef9a9a',
+                'advanced', '#616161',
+                '#b0bec5'
+            ],
+            'fill-opacity': 0.15
+        }
+    };
+
+    const pisteAreaOutlineStyle: LayerProps = {
+        id: 'piste-areas-outline',
+        type: 'line',
+        paint: {
+            'line-color': [
+                'match', ['get', 'difficulty'],
+                'novice', '#66bb6a',
+                'easy', '#64b5f6',
+                'intermediate', '#e57373',
+                'advanced', '#424242',
+                '#90a4ae'
+            ],
+            'line-width': 1,
+            'line-opacity': 0.35,
+            'line-dasharray': [2, 2]
+        }
+    };
+
     const pisteCasingStyle: LayerProps = {
         id: 'piste-casing',
         type: 'line',
@@ -1310,6 +1348,31 @@ export default function InteractiveSkiMap() {
     };
 
     // --- Data transformation ---
+    const pisteAreasGeoJSON = useMemo(() => {
+        const features = resorts?.flatMap((r) => {
+            if (!r.pistes || !Array.isArray(r.pistes)) return [];
+            return r.pistes
+                .filter((p) => {
+                    const geomType = p.GeometryGeoJSON?.type;
+                    return geomType === 'Polygon' || geomType === 'MultiPolygon';
+                })
+                .map((p) => ({
+                    type: 'Feature' as const,
+                    properties: {
+                        id: p.ID,
+                        difficulty: p.Difficulty ? p.Difficulty.toLowerCase() : 'easy',
+                        pisteType: p.PisteType?.toLowerCase() || 'downhill',
+                        grooming: p.Tags?.grooming,
+                        name: p.Name || '',
+                        resortName: r.Name,
+                        resortId: r.ID
+                    },
+                    geometry: p.GeometryGeoJSON
+                }));
+        }) || [];
+        return { type: 'FeatureCollection' as const, features };
+    }, [resorts]);
+
     const pistesGeoJSON = useMemo(() => {
         const pistesFeatures = resorts?.flatMap(r => {
             if (!r.pistes || !Array.isArray(r.pistes)) return [];
@@ -1322,6 +1385,14 @@ export default function InteractiveSkiMap() {
                 .map(p => {
                     const geom = getOrientedPisteGeometry(p.GeometryGeoJSON, p, r.lifts);
                     if (!geom) return null;
+                    const pisteName = p.Name ||
+                        p.Tags?.['piste:name'] ||
+                        p.Tags?.name ||
+                        p.Tags?.['name:es'] ||
+                        p.Tags?.['name:en'] ||
+                        p.Tags?.['piste:ref'] ||
+                        p.Tags?.ref ||
+                        '';
                     return {
                         type: 'Feature' as const,
                         properties: {
@@ -1329,7 +1400,7 @@ export default function InteractiveSkiMap() {
                             difficulty: p.Difficulty,
                             pisteType: p.PisteType,
                             grooming: p.Tags?.grooming,
-                            name: p.Name || `Piste #${p.ID.slice(0, 4)}`,
+                            name: pisteName,
                             resortName: r.Name,
                             resortId: r.ID
                         },
@@ -1550,6 +1621,7 @@ export default function InteractiveSkiMap() {
             if (result.success) {
                 result.originName = originName;
                 setActiveRoute(result);
+                setSelectedRouteLegIndex(null);
                 setRouteOriginCoord(originCoord);
                 const origObj = {
                     coord: originCoord,
@@ -1681,7 +1753,10 @@ export default function InteractiveSkiMap() {
         [executeRouting]
     );
 
-    const handleSelectRouteLeg = useCallback((leg: RouteLeg) => {
+    const handleSelectRouteLeg = useCallback((leg: RouteLeg, index?: number) => {
+        if (typeof index === 'number') {
+            setSelectedRouteLegIndex(index);
+        }
         if (!leg.coordinates || leg.coordinates.length < 2) return;
         let minLon = leg.coordinates[0][0], maxLon = leg.coordinates[0][0];
         let minLat = leg.coordinates[0][1], maxLat = leg.coordinates[0][1];
@@ -1806,8 +1881,10 @@ export default function InteractiveSkiMap() {
 
         try {
             if (!map.getLayer('piste-lines') || !map.getLayer('lift-lines')) return;
+            const checkLayers = ['piste-lines', 'lift-lines'];
+            if (map.getLayer('piste-areas-fill')) checkLayers.push('piste-areas-fill');
             const features = map.queryRenderedFeatures(event.point, {
-                layers: ['piste-lines', 'lift-lines']
+                layers: checkLayers
             });
 
             if (features.length > 0) {
@@ -1841,10 +1918,12 @@ export default function InteractiveSkiMap() {
             let clickedLift: Lift | undefined;
 
             try {
+                const checkLayers = ['piste-lines', 'lift-lines'];
+                if (map.getLayer('piste-areas-fill')) checkLayers.push('piste-areas-fill');
                 const features = event.features && event.features.length > 0
                     ? event.features
                     : (map.getLayer('piste-lines') && map.getLayer('lift-lines')
-                        ? map.queryRenderedFeatures(event.point, { layers: ['piste-lines', 'lift-lines'] })
+                        ? map.queryRenderedFeatures(event.point, { layers: checkLayers })
                         : []);
 
                 if (features && features.length > 0) {
@@ -1889,11 +1968,17 @@ export default function InteractiveSkiMap() {
 
         try {
             if (!map.getLayer('piste-lines') || !map.getLayer('lift-lines')) return;
-            const features = event.features && event.features.length > 0
-                ? event.features
-                : map.queryRenderedFeatures(event.point, {
-                    layers: ['piste-lines', 'lift-lines']
-                });
+            const checkLayers = ['piste-lines', 'lift-lines'];
+            if (map.getLayer('piste-areas-fill')) checkLayers.push('piste-areas-fill');
+
+            // Query with a bounding box around the click point to capture overlapping lines accurately
+            const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
+                [event.point.x - 7, event.point.y - 7],
+                [event.point.x + 7, event.point.y + 7]
+            ];
+            const features = map.queryRenderedFeatures(bbox, {
+                layers: checkLayers
+            });
 
             if (!features || !features.length) {
                 setSelectedFeature(null);
@@ -1902,26 +1987,57 @@ export default function InteractiveSkiMap() {
                 return;
             }
 
-            const clickedFeature = features[0];
-            const featureId = clickedFeature.properties?.id;
-            const isLift = clickedFeature.layer?.id === 'lift-lines';
+            // Collect all matched features, deduplicated by ID and Name
+            const matchedItems: (Piste | Lift)[] = [];
+            const seenIds = new Set<string>();
+            const seenNames = new Set<string>();
 
-            for (const resort of resorts) {
-                if (isLift && resort.lifts) {
-                    const foundLift = resort.lifts.find(l => l.ID === featureId);
-                    if (foundLift) {
-                        setSelectedFeature(foundLift);
-                        setSelectedResort(null);
-                        return;
-                    }
-                } else if (!isLift && resort.pistes) {
-                    const foundPiste = resort.pistes.find(p => p.ID === featureId);
-                    if (foundPiste) {
-                        setSelectedFeature(foundPiste);
-                        setSelectedResort(null);
-                        return;
+            for (const f of features) {
+                const featureId = f.properties?.id;
+                const isLift = f.layer?.id === 'lift-lines';
+                if (!featureId || seenIds.has(featureId)) continue;
+
+                for (const resort of resorts) {
+                    if (isLift && resort.lifts) {
+                        const foundLift = resort.lifts.find(l => l.ID === featureId);
+                        if (foundLift && !seenIds.has(foundLift.ID)) {
+                            seenIds.add(foundLift.ID);
+                            const nameKey = (foundLift.Name || '').toLowerCase().trim();
+                            if (!seenNames.has(nameKey)) {
+                                if (nameKey) seenNames.add(nameKey);
+                                matchedItems.push(foundLift);
+                            }
+                            break;
+                        }
+                    } else if (!isLift && resort.pistes) {
+                        const foundPiste = resort.pistes.find(p => p.ID === featureId);
+                        if (foundPiste && !seenIds.has(foundPiste.ID)) {
+                            seenIds.add(foundPiste.ID);
+                            const nameKey = (foundPiste.Name || '').toLowerCase().trim();
+                            if (!seenNames.has(nameKey)) {
+                                if (nameKey) seenNames.add(nameKey);
+                                matchedItems.push(foundPiste);
+                            }
+                            break;
+                        }
                     }
                 }
+            }
+
+            if (matchedItems.length === 0) {
+                setSelectedFeature(null);
+                setChartHoverPoint(null);
+                setSelectedResort(null);
+                return;
+            }
+
+            if (matchedItems.length > 1) {
+                // Multiple overlapping/superposed tracks at click point: show selection modal
+                setOverlappingFeatures(matchedItems);
+                setShowOverlappingModal(true);
+            } else {
+                setSelectedFeature(matchedItems[0]);
+                setSelectedResort(null);
             }
         } catch (error) {
             console.error("Error querying features on click:", error);
@@ -2013,6 +2129,19 @@ export default function InteractiveSkiMap() {
                     }}
                 />
             )}
+
+            <OverlappingPistesModal
+                visible={showOverlappingModal}
+                features={overlappingFeatures}
+                onSelect={(feature) => {
+                    setShowOverlappingModal(false);
+                    setSelectedFeature(feature);
+                    setSelectedResort(null);
+                }}
+                onClose={() => {
+                    setShowOverlappingModal(false);
+                }}
+            />
             {selectedResort && (
                 <ResortDetailPanel
                     resort={selectedResort}
@@ -2039,6 +2168,7 @@ export default function InteractiveSkiMap() {
                     currentLevel={routeSkillLevel}
                     onClose={() => {
                         setActiveRoute(null);
+                        setSelectedRouteLegIndex(null);
                         setRouteDestination(null);
                         setRouteOriginCoord(null);
                         setRouteOrigin(null);
@@ -2050,6 +2180,7 @@ export default function InteractiveSkiMap() {
                     }}
                     onLevelChange={handleLevelChange}
                     onSelectLeg={handleSelectRouteLeg}
+                    selectedLegIndex={selectedRouteLegIndex}
                     fastLifts={fastLifts}
                     onToggleFastLifts={() => {
                         const next = !fastLifts;
@@ -2125,7 +2256,7 @@ export default function InteractiveSkiMap() {
                         setIsLoadingResorts(false);
                     }
                 }}
-                interactiveLayerIds={['piste-lines', 'lift-lines']}
+                interactiveLayerIds={['piste-lines', 'lift-lines', 'piste-areas-fill']}
                 style={{ width: '100%', height: '100%' }}
                 mapStyle={getMapStyleValue(mapStyleId) as any}
                 mapLib={maplibregl}
@@ -2305,6 +2436,11 @@ export default function InteractiveSkiMap() {
 
                 {!searchParams.sessionId && isSnowLayer && viewState.zoom >= 10 && (
                     <>
+                        <Source id="piste-areas-source" type="geojson" data={pisteAreasGeoJSON as any}>
+                            <Layer {...pisteAreaFillStyle} />
+                            <Layer {...pisteAreaOutlineStyle} />
+                        </Source>
+
                         <Source id="pistes-source" type="geojson" data={pistesGeoJSON as any}>
                             <Layer {...pisteCasingStyle} />
                             <Layer {...pisteLineStyle} />
@@ -2500,6 +2636,19 @@ export default function InteractiveSkiMap() {
 
                 {routeGeoJSON && (
                     <Source id="active-route-source" type="geojson" data={routeGeoJSON as any}>
+                        {selectedRouteLegIndex !== null && (
+                            <Layer
+                                id="active-route-selected-leg"
+                                type="line"
+                                filter={['==', ['get', 'id'], `leg-${selectedRouteLegIndex}`]}
+                                layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                                paint={{
+                                    'line-color': '#facc15',
+                                    'line-width': 13,
+                                    'line-opacity': 0.9,
+                                }}
+                            />
+                        )}
                         <Layer
                             id="active-route-casing"
                             type="line"
@@ -2507,17 +2656,25 @@ export default function InteractiveSkiMap() {
                             paint={{
                                 'line-color': '#ffffff',
                                 'line-width': 10,
-                                'line-opacity': 0.88,
+                                'line-opacity': 0.9,
                             }}
                         />
-                        {/* Downhill pistes */}
+                        {/* Downhill pistes (difficulty-aware colors matching step-by-step panel) */}
                         <Layer
                             id="active-route-run"
                             type="line"
                             filter={['==', ['get', 'kind'], 'run']}
                             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
                             paint={{
-                                'line-color': '#2563eb',
+                                'line-color': [
+                                    'match', ['get', 'difficulty'],
+                                    'novice', '#16a34a',
+                                    'easy', '#2563eb',
+                                    'intermediate', '#dc2626',
+                                    'advanced', '#1e293b',
+                                    'expert', '#1e293b',
+                                    '#2563eb'
+                                ],
                                 'line-width': 6,
                                 'line-opacity': 1,
                             }}
@@ -2530,7 +2687,7 @@ export default function InteractiveSkiMap() {
                             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
                             paint={{
                                 'line-color': '#f59e0b',
-                                'line-width': 4,
+                                'line-width': 5,
                                 'line-dasharray': [2, 2],
                                 'line-opacity': 0.95,
                             }}
@@ -2549,6 +2706,25 @@ export default function InteractiveSkiMap() {
                                 'line-width': 5,
                                 'line-dasharray': [2, 2],
                                 'line-opacity': 1,
+                            }}
+                        />
+                        {/* Direction arrows along active route to follow step-by-step path */}
+                        <Layer
+                            id="active-route-arrows"
+                            type="symbol"
+                            layout={{
+                                'symbol-placement': 'line',
+                                'symbol-spacing': 140,
+                                'text-field': '▶',
+                                'text-size': 11,
+                                'text-keep-upright': false,
+                                'text-allow-overlap': true,
+                                'text-ignore-placement': true,
+                            }}
+                            paint={{
+                                'text-color': '#ffffff',
+                                'text-halo-color': '#0f172a',
+                                'text-halo-width': 1.5,
                             }}
                         />
                     </Source>

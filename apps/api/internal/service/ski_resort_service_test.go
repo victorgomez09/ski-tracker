@@ -223,3 +223,96 @@ func TestOfflinePackBBox(t *testing.T) {
 		t.Errorf("expected minLat < maxLat, got %v >= %v", pack.BBox[1], pack.BBox[3])
 	}
 }
+
+func TestMergeContiguousPistesValdelinares(t *testing.T) {
+	// Scenario:
+	// Tajera (Intermediate, Red) has an upper section
+	// A shared trunk section tagged "Tajera, La Mina" (Intermediate)
+	// La Mina (Easy, Blue) has a lower section
+	pistes := []models.SkiPiste{
+		{
+			ID:         "piste-tajera-top",
+			Name:       "Tajera",
+			Difficulty: "intermediate",
+			PisteType:  "downhill",
+			GeometryGeoJSON: map[string]interface{}{
+				"type": "LineString",
+				"coordinates": []interface{}{
+					[]interface{}{-0.6300, 40.3800},
+					[]interface{}{-0.6320, 40.3820},
+				},
+			},
+		},
+		{
+			ID:         "piste-shared-trunk",
+			Name:       "Tajera, La Mina",
+			Difficulty: "intermediate",
+			PisteType:  "downhill",
+			GeometryGeoJSON: map[string]interface{}{
+				"type": "LineString",
+				"coordinates": []interface{}{
+					[]interface{}{-0.6320, 40.3820},
+					[]interface{}{-0.6340, 40.3840},
+				},
+			},
+		},
+		{
+			ID:         "piste-mina-bottom",
+			Name:       "La Mina",
+			Difficulty: "easy",
+			PisteType:  "downhill",
+			GeometryGeoJSON: map[string]interface{}{
+				"type": "LineString",
+				"coordinates": []interface{}{
+					[]interface{}{-0.6340, 40.3840},
+					[]interface{}{-0.6360, 40.3860},
+				},
+			},
+		},
+	}
+
+	merged := mergeContiguousPistes(pistes)
+	// Must produce 2 separate pistes: Tajera (red) and La Mina (blue)
+	// Both must be clean linear lines without zigzagging back and forth!
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 distinct pistes, got %d", len(merged))
+	}
+
+	var tajera, mina *models.SkiPiste
+	for i := range merged {
+		if merged[i].Name == "Tajera" {
+			tajera = &merged[i]
+		} else if merged[i].Name == "La Mina" {
+			mina = &merged[i]
+		}
+	}
+
+	if tajera == nil {
+		t.Fatalf("missing Tajera in merged pistes")
+	}
+	if mina == nil {
+		t.Fatalf("missing La Mina in merged pistes")
+	}
+
+	// Tajera should merge top + shared trunk = 3 points
+	coordsT := tajera.GeometryGeoJSON["coordinates"].([]interface{})
+	if len(coordsT) != 3 {
+		t.Errorf("expected Tajera to have 3 coords, got %d", len(coordsT))
+	}
+
+	// La Mina should merge shared trunk + bottom = 3 points
+	coordsM := mina.GeometryGeoJSON["coordinates"].([]interface{})
+	if len(coordsM) != 3 {
+		t.Errorf("expected La Mina to have 3 coords, got %d", len(coordsM))
+	}
+
+	// Tajera must retain intermediate difficulty
+	if tajera.Difficulty != "intermediate" {
+		t.Errorf("expected Tajera to be intermediate, got %s", tajera.Difficulty)
+	}
+
+	// La Mina must retain intermediate or easy
+	if mina.Difficulty != "intermediate" && mina.Difficulty != "easy" {
+		t.Errorf("unexpected La Mina difficulty: %s", mina.Difficulty)
+	}
+}
