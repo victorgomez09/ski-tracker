@@ -85,3 +85,30 @@ func (h *WeatherHandler) GetSnowReport(c *gin.Context) {
 
 	handler(c)
 }
+
+func (h *WeatherHandler) GetSnowForecast(c *gin.Context) {
+	if c.Query("nocache") == "true" || c.Query("refresh") == "true" {
+		forecasts, err := h.svc.GetSpainAndAndorraSnowForecast(c.Request.Context())
+		if err != nil {
+			httputil.RespondError(c, fmt.Errorf("could not get snow forecasts: %w", err))
+			return
+		}
+		httputil.RespondOK(c, forecasts)
+		return
+	}
+
+	c.Request.Header.Del("Cache-Control")
+	c.Request.Header.Del("Pragma")
+
+	handler := cache.CachePage(h.store, 30*time.Minute, func(c *gin.Context) {
+		fmt.Println("[NO-CACHE] Fetching Spain & Andorra snow forecast from Open-Meteo...")
+		forecasts, err := h.svc.GetSpainAndAndorraSnowForecast(c.Request.Context())
+		if err != nil {
+			httputil.RespondError(c, fmt.Errorf("could not get snow forecasts: %w", err))
+			return
+		}
+		httputil.RespondOK(c, forecasts)
+	})
+
+	handler(c)
+}

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -196,5 +197,42 @@ func TestExtractResortElevations(t *testing.T) {
 	minE, maxE := extractResortElevations(resort)
 	if minE != 1503.1 || maxE != 2617.6 {
 		t.Errorf("expected 1503.1 and 2617.6, got %.1f and %.1f", minE, maxE)
+	}
+}
+
+func TestGetSpainAndAndorraSnowForecast(t *testing.T) {
+	svc := NewWeatherService(nil, nil)
+	forecasts, err := svc.GetSpainAndAndorraSnowForecast(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error fetching snow forecast: %v", err)
+	}
+
+	if len(forecasts) == 0 {
+		t.Fatal("expected at least 1 resort forecast")
+	}
+
+	foundSierraNevada := false
+	foundGrandvalira := false
+
+	for _, f := range forecasts {
+		if f.ID == "sierra-nevada" {
+			foundSierraNevada = true
+			if f.Country != "Spain" {
+				t.Errorf("expected Spain for Sierra Nevada, got %s", f.Country)
+			}
+		}
+		if f.ID == "grandvalira" {
+			foundGrandvalira = true
+			if f.Country != "Andorra" {
+				t.Errorf("expected Andorra for Grandvalira, got %s", f.Country)
+			}
+		}
+	}
+
+	if !foundSierraNevada {
+		t.Error("expected Sierra Nevada in forecasts")
+	}
+	if !foundGrandvalira {
+		t.Error("expected Grandvalira in forecasts")
 	}
 }

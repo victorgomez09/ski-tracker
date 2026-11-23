@@ -179,6 +179,7 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			// Weather and Snow routes
 			weatherHandler := v1.NewWeatherHandler(deps.Services.Weather, deps.Cache)
 			protected.GET("/weather", weatherHandler.GetWeather)
+			protected.GET("/weather/snow-forecast", weatherHandler.GetSnowForecast)
 			protected.GET("/resorts/by-id/:id/snow-report", weatherHandler.GetSnowReport)
 			protected.GET("/resorts/:id/snow-report", weatherHandler.GetSnowReport)
 

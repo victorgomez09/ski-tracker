@@ -13,6 +13,7 @@ import {
   MapPin,
   Navigation,
   Search,
+  Snowflake,
   Star,
   Unlock,
   X
@@ -37,6 +38,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
 import { WeatherForecastDetails } from 'components/resorts/weather-forecast';
 import { ResortLogo } from 'components/resorts/resort-logo';
+import { SnowForecastView } from 'components/snow/snow-forecast-view';
 import { API_BASE_URL } from 'constants/constants';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from 'constants/theme';
 import { useAuth } from 'context/auth.context';
@@ -82,6 +84,7 @@ export default function ResortsView() {
   );
 
   const [showOfflineModal, setShowOfflineModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'resorts' | 'snow_forecast'>('resorts');
   const [favoritesExpanded, setFavoritesExpanded] = useState(true);
   const [resorts, setResorts] = useState<Resort[]>(cachedResorts);
   const [searchTerm, setSearchTerm] = useState(cachedSearchTerm);
@@ -650,13 +653,77 @@ export default function ResortsView() {
       )}
 
       <View style={styles.container}>
-        <Text style={styles.title}>{t('ski_resorts')}</Text>
+        {/* Top Tab Switcher */}
+        <View style={styles.tabSwitcher}>
+          <TouchableOpacity
+            style={[styles.tabSwitcherBtn, activeTab === 'resorts' && styles.tabSwitcherBtnActive]}
+            onPress={() => setActiveTab('resorts')}>
+            <Text
+              style={[
+                styles.tabSwitcherText,
+                activeTab === 'resorts' && styles.tabSwitcherTextActive,
+              ]}>
+              {t('tab_all_resorts', '🏔️ Estaciones')}
+            </Text>
+          </TouchableOpacity>
 
-        <ScrollView
-          style={styles.resortList}
-          contentContainerStyle={{ paddingBottom: SPACING.xl }}
-          showsVerticalScrollIndicator={false}>
-          {/* Favorites Accordion */}
+          <TouchableOpacity
+            style={[
+              styles.tabSwitcherBtn,
+              activeTab === 'snow_forecast' && styles.tabSwitcherBtnActive,
+            ]}
+            onPress={() => setActiveTab('snow_forecast')}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Snowflake
+                size={15}
+                color={activeTab === 'snow_forecast' ? '#ffffff' : colors.primary}
+              />
+              <Text
+                style={[
+                  styles.tabSwitcherText,
+                  activeTab === 'snow_forecast' && styles.tabSwitcherTextActive,
+                ]}>
+                {t('tab_snow_forecast', 'Previsión Nevadas')}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {activeTab === 'snow_forecast' ? (
+          <SnowForecastView
+            showHeader={true}
+            onSelectResort={(r) => handleResortSelect(r as any)}
+          />
+        ) : (
+          <ScrollView
+            style={styles.resortList}
+            contentContainerStyle={{ paddingBottom: SPACING.xl }}
+            showsVerticalScrollIndicator={false}>
+            {/* Quick Snow Banner */}
+            <TouchableOpacity
+              style={styles.snowBanner}
+              onPress={() => setActiveTab('snow_forecast')}
+              activeOpacity={0.85}>
+              <View style={styles.snowBannerLeft}>
+                <View style={styles.snowBannerIcon}>
+                  <Snowflake size={20} color="#38bdf8" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.snowBannerTitle}>
+                    {t('snow_banner_title', '¿Dónde va a nevar pronto? ❄️')}
+                  </Text>
+                  <Text style={styles.snowBannerSubtitle}>
+                    {t(
+                      'snow_banner_subtitle',
+                      'Consulta las nevadas previstas en España y Andorra'
+                    )}
+                  </Text>
+                </View>
+              </View>
+              <ChevronRight size={18} color="#94a3b8" />
+            </TouchableOpacity>
+
+            {/* Favorites Accordion */}
           <View style={styles.favoritesAccordion}>
             <TouchableOpacity
               style={styles.favoritesAccordionHeader}
@@ -762,6 +829,7 @@ export default function ResortsView() {
             </View>
           )}
         </ScrollView>
+        )}
 
         {/* Modal Detail View for Selected Resort */}
         <Modal
@@ -782,6 +850,71 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
       flex: 1,
       backgroundColor: colors.background,
       padding: SPACING.md,
+    },
+    tabSwitcher: {
+      flexDirection: 'row',
+      backgroundColor: colors.card,
+      borderRadius: BORDER_RADIUS.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 4,
+      marginBottom: SPACING.md,
+      ...SHADOWS.sm,
+    },
+    tabSwitcherBtn: {
+      flex: 1,
+      paddingVertical: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: BORDER_RADIUS.sm,
+    },
+    tabSwitcherBtnActive: {
+      backgroundColor: colors.primary,
+    },
+    tabSwitcherText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    tabSwitcherTextActive: {
+      color: '#ffffff',
+      fontWeight: '700',
+    },
+    snowBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: '#0f172a',
+      padding: SPACING.md,
+      borderRadius: BORDER_RADIUS.md,
+      marginBottom: SPACING.md,
+      borderWidth: 1,
+      borderColor: '#1e293b',
+      ...SHADOWS.md,
+    },
+    snowBannerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      flex: 1,
+    },
+    snowBannerIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: BORDER_RADIUS.round,
+      backgroundColor: '#1e293b',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    snowBannerTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: '#ffffff',
+    },
+    snowBannerSubtitle: {
+      fontSize: 11,
+      color: '#94a3b8',
+      marginTop: 2,
     },
     modalContainer: {
       flex: 1,
