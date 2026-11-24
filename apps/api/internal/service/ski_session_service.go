@@ -412,9 +412,18 @@ func parsePointGeom(geom string) (lon float64, lat float64, ok bool) {
 		return 0, 0, false
 	}
 
+	clean := geom
+	if idx := strings.Index(clean, "POINT("); idx != -1 {
+		clean = clean[idx:]
+	} else if idx := strings.Index(clean, "point("); idx != -1 {
+		clean = clean[idx:]
+	}
+
 	var parsedLon, parsedLat float64
-	if _, err := fmt.Sscanf(geom, "POINT(%f %f)", &parsedLon, &parsedLat); err != nil {
-		return 0, 0, false
+	if _, err := fmt.Sscanf(clean, "POINT(%f %f)", &parsedLon, &parsedLat); err != nil {
+		if _, err2 := fmt.Sscanf(clean, "point(%f %f)", &parsedLon, &parsedLat); err2 != nil {
+			return 0, 0, false
+		}
 	}
 
 	return parsedLon, parsedLat, true
@@ -773,20 +782,23 @@ func (s *SkiSessionService) calculatePhysicalMetrics(points []models.SessionPoin
 
 // Map Matching adapted to read geometry from `geometry_geojson` (jsonb)
 func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []models.SessionPoint) (*string, string, error) {
-	// 1. Build WKT LineString with the points of the detected run
-	wktLine := "LINESTRING("
-	for i, p := range points {
-		// Assuming you can extract the lon/lat coordinates from your Geom field (WKT type "POINT(lon lat)")
-		// Or you can pass them directly. Simulated example extracting from the WKT string of the point:
-		var lon, lat float64
-		fmt.Sscanf(p.Geom, "POINT(%f %f)", &lon, &lat)
+	if len(points) == 0 {
+		return nil, "unknown", nil
+	}
 
-		wktLine += fmt.Sprintf("%f %f", lon, lat)
-		if i < len(points)-1 {
-			wktLine += ", "
+	// 1. Build WKT LineString with the points of the detected run
+	var validPoints []string
+	for _, p := range points {
+		lon, lat, ok := parsePointGeom(p.Geom)
+		if ok {
+			validPoints = append(validPoints, fmt.Sprintf("%f %f", lon, lat))
 		}
 	}
-	wktLine += ")"
+	if len(validPoints) < 2 {
+		return nil, "unknown", nil
+	}
+
+	wktLine := fmt.Sprintf("LINESTRING(%s)", strings.Join(validPoints, ", "))
 
 	var result struct {
 		ID         string
@@ -795,13 +807,20 @@ func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []model
 
 	// 2. PostGIS Query: Parse jsonb (geometry_geojson) to geometry with ST_GeomFromGeoJSON
 	// and calculate the minimum distance respect to the user's run line.
+	// We prioritize named pistes and restrict matching to pistes within 250m.
 	query := `
-		SELECT id, difficulty 
-		FROM ski_pistes
-		ORDER BY ST_Distance(
-			ST_SetSRID(ST_GeomFromGeoJSON(geometry_geojson::text), 4326), 
-			ST_GeomFromText(?, 4326)
-		) ASC
+		WITH track AS (
+			SELECT ST_SetSRID(ST_GeomFromText(?, 4326), 4326) AS geom
+		)
+		SELECT p.id, p.difficulty 
+		FROM ski_pistes p, track t
+		WHERE p.geometry_geojson IS NOT NULL
+		ORDER BY 
+			CASE WHEN p.name IS NOT NULL AND p.name != '' AND NOT (p.name ~* '^[a-f0-9]{16,64}$') THEN 0 ELSE 1 END,
+			ST_Distance(
+				ST_SetSRID(ST_GeomFromGeoJSON(p.geometry_geojson::text), 4326), 
+				t.geom
+			) ASC
 		LIMIT 1;
 	`
 

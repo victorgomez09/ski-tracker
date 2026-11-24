@@ -36,6 +36,16 @@ export interface SessionPhoto {
     created_at: string;
 }
 
+export interface MatchedPisteSummary {
+    id: string;
+    resort_id?: string;
+    name?: string;
+    piste_type?: string;
+    difficulty?: string;
+    lit?: boolean;
+    tags?: Record<string, any>;
+}
+
 export interface SessionRun {
     id: string;
     session_id: string;
@@ -46,9 +56,10 @@ export interface SessionRun {
     elevation_gain: number;
     elevation_loss: number;
     total_points: number;
-    matched_piste_id: string;
-    predominant_diff: string;
+    matched_piste_id?: string;
+    predominant_diff?: string;
     created_at: string;
-    Session: any;
-    MatchedPiste: any;
+    matched_piste?: MatchedPisteSummary | null;
+    MatchedPiste?: MatchedPisteSummary | null;
+    Session?: any;
 }

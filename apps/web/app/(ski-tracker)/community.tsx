@@ -15,7 +15,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Image } from 'expo-image';
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Activity, Calendar, ChevronDown, ChevronUp, MapIcon, Ruler, TrendingDown, Users, Zap } from "lucide-react-native";
+import { Activity, Award, Calendar, CheckCircle2, ChevronDown, ChevronUp, Compass, MapIcon, Mountain, Ruler, TrendingDown, Users, Zap } from "lucide-react-native";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
@@ -232,6 +232,19 @@ const getDifficultyMeta = (diff: string, colors: typeof LIGHT_COLORS) => {
         borderColor: colors.border
       };
   }
+};
+
+const getPisteDisplayName = (run: any): string | null => {
+  const piste = run.matched_piste || run.MatchedPiste;
+  if (!piste) return null;
+  let name = piste.name;
+  if (!name && piste.tags) {
+    name = piste.tags['name'] || piste.tags['name:es'] || piste.tags['piste:name'];
+  }
+  if (!name) return null;
+  const clean = String(name).trim().replace(/^pista\s*#?/i, '').trim();
+  if (!clean || /^[a-f0-9]{16,64}$/i.test(clean)) return null;
+  return clean;
 };
 
 const formatDate = (dateString: string): string => {
@@ -715,17 +728,134 @@ const SkiSessionCard = ({ session }: { session: Session }) => {
                   </View>
                 </View>
               )}
+              {/* Resort Exploration & Pistes Summary Banner */}
+              {(() => {
+                const runsList = session.runs || [];
+                if (runsList.length === 0) return null;
+
+                const diffCounts: Record<string, number> = {};
+                const uniqueNamesSet = new Set<string>();
+
+                runsList.forEach((r) => {
+                  const d = (r.predominant_diff || r.matched_piste?.difficulty || r.MatchedPiste?.difficulty || 'other').toLowerCase();
+                  diffCounts[d] = (diffCounts[d] || 0) + 1;
+                  const pName = getPisteDisplayName(r);
+                  if (pName) uniqueNamesSet.add(pName);
+                });
+
+                const uniquePistes = Array.from(uniqueNamesSet);
+                const resortTotal = session.resort?.total_pistes || (session.resort as any)?.Tags?.statistics?.runs?.count || 0;
+                const explorationPct = resortTotal > 0 && uniquePistes.length > 0
+                  ? Math.min(100, Math.round((uniquePistes.length / resortTotal) * 100))
+                  : null;
+
+                return (
+                  <View style={styles.explorationCard}>
+                    {/* Header: Exploration Title and Percentage */}
+                    <View style={styles.explorationHeader}>
+                      <View style={styles.explorationTitleGroup}>
+                        <Compass size={14} color={colors.primary} />
+                        <Text style={styles.explorationTitle}>
+                          {session.resort?.Name || (session.resort as any)?.name ? `Exploración de ${session.resort?.Name || (session.resort as any)?.name}` : 'Pistas de la jornada'}
+                        </Text>
+                      </View>
+                      {explorationPct !== null ? (
+                        <View style={styles.explorationPercentBadge}>
+                          <Text style={styles.explorationPercentText}>{explorationPct}% completado</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.explorationPercentBadge}>
+                          <Text style={styles.explorationPercentText}>{runsList.length} bajadas</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Progress Bar if resortTotal is known */}
+                    {explorationPct !== null && (
+                      <View style={styles.explorationBarTrack}>
+                        <View style={[styles.explorationBarFill, { width: `${Math.max(6, explorationPct)}%` }]} />
+                      </View>
+                    )}
+
+                    {/* Difficulty Pills Breakdown */}
+                    <View style={styles.diffPillsRow}>
+                      {diffCounts.novice ? (
+                        <View style={styles.diffPill}>
+                          <View style={[styles.diffPillDot, { backgroundColor: '#00a859' }]} />
+                          <Text style={styles.diffPillText}>{diffCounts.novice} Verde{diffCounts.novice > 1 ? 's' : ''}</Text>
+                        </View>
+                      ) : null}
+                      {diffCounts.easy ? (
+                        <View style={styles.diffPill}>
+                          <View style={[styles.diffPillDot, { backgroundColor: '#0072bc' }]} />
+                          <Text style={styles.diffPillText}>{diffCounts.easy} Azul{diffCounts.easy > 1 ? 'es' : ''}</Text>
+                        </View>
+                      ) : null}
+                      {diffCounts.intermediate ? (
+                        <View style={styles.diffPill}>
+                          <View style={[styles.diffPillDot, { backgroundColor: '#f0141e' }]} />
+                          <Text style={styles.diffPillText}>{diffCounts.intermediate} Roja{diffCounts.intermediate > 1 ? 's' : ''}</Text>
+                        </View>
+                      ) : null}
+                      {(diffCounts.advanced || diffCounts.expert) ? (
+                        <View style={styles.diffPill}>
+                          <View style={[styles.diffPillDot, { backgroundColor: '#000000' }]} />
+                          <Text style={styles.diffPillText}>{(diffCounts.advanced || 0) + (diffCounts.expert || 0)} Negra{((diffCounts.advanced || 0) + (diffCounts.expert || 0)) > 1 ? 's' : ''}</Text>
+                        </View>
+                      ) : null}
+                      {diffCounts.freeride ? (
+                        <View style={styles.diffPill}>
+                          <View style={[styles.diffPillDot, { backgroundColor: '#ea580c' }]} />
+                          <Text style={styles.diffPillText}>{diffCounts.freeride} Freeride</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    {/* Unique Pistes Skied Tags */}
+                    {uniquePistes.length > 0 && (
+                      <View style={styles.uniquePistesWrap}>
+                        <Text style={styles.uniquePistesLabel}>
+                          Pistas recorridas ({uniquePistes.length}{resortTotal > 0 ? `/${resortTotal}` : ''}):
+                        </Text>
+                        <View style={styles.uniquePistesList}>
+                          {uniquePistes.map((pName) => (
+                            <View key={pName} style={styles.uniquePisteTag}>
+                              <Mountain size={10} color={colors.primary} />
+                              <Text style={styles.uniquePisteTagText}>{pName}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
+
               {session.runs?.map((run, index) => {
-                const diffMeta = getDifficultyMeta(run.predominant_diff, colors);
+                const diffMeta = getDifficultyMeta(run.predominant_diff || run.matched_piste?.difficulty || run.MatchedPiste?.difficulty || '', colors);
+                const pisteName = getPisteDisplayName(run);
+
                 return (
                   <View
                     key={run.id || index}
                     style={styles.runCard}
                   >
                     <View style={styles.runCardHeader}>
-                      <Text style={styles.runTitle}>
-                        {t('down_number', { index: index + 1 })}
-                      </Text>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          {pisteName ? (
+                            <Mountain size={13} color={diffMeta.dotBgColor || colors.primary} />
+                          ) : null}
+                          <Text style={styles.runTitle} numberOfLines={1}>
+                            {pisteName ? `Pista ${pisteName}` : t('down_number', { index: index + 1 })}
+                          </Text>
+                        </View>
+                        {pisteName ? (
+                          <Text style={styles.runSubtitle}>
+                            {t('down_number', { index: index + 1 })}
+                          </Text>
+                        ) : null}
+                      </View>
 
                       <View style={[styles.diffBadge, { backgroundColor: diffMeta.badgeBgColor, borderColor: diffMeta.borderColor }]}>
                         <View style={[styles.diffDot, { backgroundColor: diffMeta.dotBgColor }]} />
@@ -1149,8 +1279,115 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     marginBottom: 8,
   },
   runTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  runSubtitle: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  explorationCard: {
+    backgroundColor: colors.card,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+    gap: 8,
+    marginBottom: 6,
+  },
+  explorationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  explorationTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  explorationTitle: {
     fontSize: 12,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  explorationPercentBadge: {
+    backgroundColor: colors.primary + '18',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  explorationPercentText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  explorationBarTrack: {
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  explorationBarFill: {
+    height: '100%',
+    borderRadius: 2.5,
+    backgroundColor: colors.primary,
+  },
+  diffPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  diffPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: BORDER_RADIUS.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  diffPillDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  diffPillText: {
+    fontSize: 10.5,
     fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  uniquePistesWrap: {
+    gap: 4,
+    paddingTop: 2,
+  },
+  uniquePistesLabel: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  uniquePistesList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  uniquePisteTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  uniquePisteTagText: {
+    fontSize: 10,
+    fontWeight: '600',
     color: colors.textPrimary,
   },
   diffBadge: {

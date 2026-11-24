@@ -48,6 +48,29 @@ import { SkiRoutingEngine, RouteResult, SkillLevel, RouteLeg, calculateDistanceM
 import api from 'interceptor/api';
 
 const PREF_3D_STORAGE_KEY = 'PREF_MAP_3D';
+
+const getPisteDifficultyColor = (diff?: string | null) => {
+    if (!diff) return '#6b7280';
+    const d = diff.toLowerCase();
+    if (d.includes('green') || d.includes('novice')) return '#22c55e';
+    if (d.includes('blue') || d.includes('easy')) return '#3b82f6';
+    if (d.includes('red') || d.includes('intermediate')) return '#ef4444';
+    if (d.includes('black') || d.includes('expert')) return '#0f172a';
+    if (d.includes('freeride')) return '#f97316';
+    return '#6b7280';
+};
+
+const getPisteDifficultyLabel = (diff?: string | null) => {
+    if (!diff) return '';
+    const d = diff.toLowerCase();
+    if (d.includes('green') || d.includes('novice')) return 'Verde';
+    if (d.includes('blue') || d.includes('easy')) return 'Azul';
+    if (d.includes('red') || d.includes('intermediate')) return 'Roja';
+    if (d.includes('black') || d.includes('expert')) return 'Negra';
+    if (d.includes('freeride')) return 'Freeride';
+    return diff;
+};
+
 const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371; // km
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -770,6 +793,16 @@ export default function InteractiveSkiMap() {
                 const endAlt = r.points[r.points.length - 1].altitude;
                 const drop = Math.max(0, startAlt - endAlt);
                 const maxSpd = Math.max(...r.points.map(p => p.speed)) * 3.6; // km/h
+                const matchedSessionRun = sessionDetails?.runs?.[idx];
+                let pisteName: string | null = null;
+                let difficulty: string | null = null;
+                if (matchedSessionRun) {
+                    const raw = matchedSessionRun.matched_piste?.name || matchedSessionRun.MatchedPiste?.name || matchedSessionRun.matched_piste?.tags?.['name:es'] || matchedSessionRun.matched_piste?.tags?.['piste:name'] || matchedSessionRun.MatchedPiste?.tags?.['piste:name'];
+                    if (raw && !/^[a-f0-9]{16,64}$/i.test(raw.trim())) {
+                        pisteName = raw.trim();
+                    }
+                    difficulty = matchedSessionRun.predominant_diff || matchedSessionRun.matched_piste?.difficulty || matchedSessionRun.MatchedPiste?.difficulty || null;
+                }
                 return {
                     id: `run-${idx}`,
                     index: idx + 1,
@@ -777,9 +810,11 @@ export default function InteractiveSkiMap() {
                     verticalDrop: drop,
                     maxSpeed: maxSpd,
                     pointsCount: r.points.length,
+                    pisteName,
+                    difficulty,
                 };
             });
-    }, [trackPoints, sessionDetails?.activity_type]);
+    }, [trackPoints, sessionDetails?.activity_type, sessionDetails?.runs]);
 
     const lastFetchedCenterRef = useRef<{ lat: number; lon: number } | null>(null);
     const lastFetchedZoomRef = useRef<number | null>(null);
@@ -804,11 +839,9 @@ export default function InteractiveSkiMap() {
         zoom: number,
         bounds?: { minLon: number; minLat: number; maxLon: number; maxLat: number }
     ) => {
-        if (searchParams.sessionId || mapStyleId !== 'outdoor') {
+        if (mapStyleId !== 'outdoor') {
             setIsLoadingResorts(false);
-            if (mapStyleId !== 'outdoor') {
-                setResorts([]);
-            }
+            setResorts([]);
             return;
         }
 
@@ -1019,6 +1052,31 @@ export default function InteractiveSkiMap() {
                                         zoom: 14
                                     }));
                                 }
+                            }
+                        }
+
+                        // Load resort details for this session so pistes, lifts and slopes display on map
+                        const targetResortId = session.resort_id || session.resort?.id || session.resort?.ID;
+                        if (targetResortId) {
+                            try {
+                                const resortRes = await api.get(`${API_BASE_URL}/resorts/by-id/${targetResortId}`);
+                                if (resortRes.status === 200 && resortRes.data) {
+                                    const rData = resortRes.data.data || resortRes.data;
+                                    if (rData) {
+                                        setResorts([rData]);
+                                        setSelectedResort(rData);
+                                    }
+                                }
+                            } catch (err) {
+                                console.warn("Could not load resort for session by ID:", err);
+                            }
+                        } else if (session.resort && (session.resort.pistes || session.resort.Pistes)) {
+                            setResorts([session.resort]);
+                            setSelectedResort(session.resort);
+                        } else if (session.points && session.points.length > 0) {
+                            const firstPt = parsePoint(session.points[0]);
+                            if (firstPt) {
+                                fetchResortsData(firstPt.lat, firstPt.lon, 14);
                             }
                         }
                         if (session.runs && Array.isArray(session.runs)) {
@@ -2385,7 +2443,7 @@ export default function InteractiveSkiMap() {
                         <Flag size={16} color={meetingPoints.length > 0 ? '#d97706' : '#333333'} />
                     </button>
                 </MapCustomControlGroup>
-                {!searchParams.sessionId && isSnowLayer && resorts?.map(resort => (
+                {isSnowLayer && resorts?.map(resort => (
                     <Marker
                         key={resort.ID}
                         longitude={resort.Longitude}
@@ -2434,7 +2492,7 @@ export default function InteractiveSkiMap() {
                     </Marker>
                 ))}
 
-                {!searchParams.sessionId && isSnowLayer && viewState.zoom >= 10 && (
+                {isSnowLayer && viewState.zoom >= 10 && (
                     <>
                         <Source id="piste-areas-source" type="geojson" data={pisteAreasGeoJSON as any}>
                             <Layer {...pisteAreaFillStyle} />
@@ -2958,7 +3016,28 @@ export default function InteractiveSkiMap() {
                                     {t('back_to_runs')}
                                 </button>
                                 <div style={styles.runDetailsCard}>
-                                    <h4 style={styles.runDetailsTitle}>{t('run_details', { index: selectedRun.index })}</h4>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                                        <h4 style={{ ...styles.runDetailsTitle, margin: 0 }}>
+                                            {selectedRun.pisteName ? `🏔️ Pista ${selectedRun.pisteName}` : t('run_details', { index: selectedRun.index })}
+                                        </h4>
+                                        {selectedRun.difficulty && (
+                                            <span style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                padding: '2px 8px',
+                                                borderRadius: '12px',
+                                                backgroundColor: `${getPisteDifficultyColor(selectedRun.difficulty)}20`,
+                                                color: getPisteDifficultyColor(selectedRun.difficulty),
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                border: `1px solid ${getPisteDifficultyColor(selectedRun.difficulty)}40`
+                                            }}>
+                                                <span style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: getPisteDifficultyColor(selectedRun.difficulty) }} />
+                                                {getPisteDifficultyLabel(selectedRun.difficulty)}
+                                            </span>
+                                        )}
+                                    </div>
                                     <div style={styles.runDetailsGrid}>
                                         <div>{t('drop')}: {selectedRun.verticalDrop.toFixed(1)} m</div>
                                         <div>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</div>
@@ -3032,8 +3111,29 @@ export default function InteractiveSkiMap() {
                                                     }
                                                 }}
                                             >
-                                                <div>
-                                                    <div style={styles.runItemTitle}>{t('run_title', { index: run.index })}</div>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                        <span style={styles.runItemTitle}>
+                                                            {run.pisteName ? `🏔️ Pista ${run.pisteName}` : t('run_title', { index: run.index })}
+                                                        </span>
+                                                        {run.difficulty && (
+                                                            <span style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px',
+                                                                padding: '1px 6px',
+                                                                borderRadius: '10px',
+                                                                backgroundColor: `${getPisteDifficultyColor(run.difficulty)}20`,
+                                                                color: getPisteDifficultyColor(run.difficulty),
+                                                                fontSize: '10px',
+                                                                fontWeight: 600,
+                                                                border: `1px solid ${getPisteDifficultyColor(run.difficulty)}40`
+                                                            }}>
+                                                                <span style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: getPisteDifficultyColor(run.difficulty) }} />
+                                                                {getPisteDifficultyLabel(run.difficulty)}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div style={styles.runItemSubtitle}>
                                                         {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
                                                     </div>

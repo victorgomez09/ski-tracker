@@ -47,6 +47,16 @@ pipeline {
             defaultValue: 'adminadmin',
             description: 'Contraseña del usuario seed'
         )
+        choice(
+            name: 'SIMULATE_RIDER',
+            choices: ['both', 'ski', 'snowboard'],
+            description: 'Perfil a simular: esquiador, snowboarder o ambos'
+        )
+        string(
+            name: 'SIMULATED_RUNS',
+            defaultValue: '8',
+            description: 'Número de bajadas por usuario'
+        )
     }
 
     environment {
@@ -96,6 +106,8 @@ pipeline {
                         -e DB_PASSWORD="\${DB_PASSWORD}" \
                         -e SEED_USER_EMAIL="${params.SEED_USER_EMAIL}" \
                         -e SEED_USER_PASSWORD="${params.SEED_USER_PASSWORD}" \
+                        -e SIMULATE_RIDER="${params.SIMULATE_RIDER}" \
+                        -e SIMULATED_RUNS="${params.SIMULATED_RUNS}" \
                         -e PYTHONUNBUFFERED="1" \
                         python:3.11-slim \
                         bash -c "pip install -q psycopg2-binary requests && python3 seed/seed-database.py"

@@ -55,6 +55,28 @@ if (Platform.OS !== 'web') {
 
 const mapStyleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
+const getPisteDifficultyColor = (diff?: string | null) => {
+    if (!diff) return '#6b7280';
+    const d = diff.toLowerCase();
+    if (d.includes('green') || d.includes('novice')) return '#22c55e';
+    if (d.includes('blue') || d.includes('easy')) return '#3b82f6';
+    if (d.includes('red') || d.includes('intermediate')) return '#ef4444';
+    if (d.includes('black') || d.includes('expert')) return '#0f172a';
+    if (d.includes('freeride')) return '#f97316';
+    return '#6b7280';
+};
+
+const getPisteDifficultyLabel = (diff?: string | null) => {
+    if (!diff) return '';
+    const d = diff.toLowerCase();
+    if (d.includes('green') || d.includes('novice')) return 'Verde';
+    if (d.includes('blue') || d.includes('easy')) return 'Azul';
+    if (d.includes('red') || d.includes('intermediate')) return 'Roja';
+    if (d.includes('black') || d.includes('expert')) return 'Negra';
+    if (d.includes('freeride')) return 'Freeride';
+    return diff;
+};
+
 const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371; // km
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -661,6 +683,16 @@ export default function InteractiveSkiMapNative() {
                 const endAlt = r.points[r.points.length - 1].altitude;
                 const drop = Math.max(0, startAlt - endAlt);
                 const maxSpd = Math.max(...r.points.map(p => p.speed)) * 3.6;
+                const matchedSessionRun = sessionDetails?.runs?.[idx];
+                let pisteName: string | null = null;
+                let difficulty: string | null = null;
+                if (matchedSessionRun) {
+                    const raw = matchedSessionRun.matched_piste?.name || matchedSessionRun.MatchedPiste?.name || matchedSessionRun.matched_piste?.tags?.['name:es'] || matchedSessionRun.matched_piste?.tags?.['piste:name'] || matchedSessionRun.MatchedPiste?.tags?.['piste:name'];
+                    if (raw && !/^[a-f0-9]{16,64}$/i.test(raw.trim())) {
+                        pisteName = raw.trim();
+                    }
+                    difficulty = matchedSessionRun.predominant_diff || matchedSessionRun.matched_piste?.difficulty || matchedSessionRun.MatchedPiste?.difficulty || null;
+                }
                 return {
                     id: `run-${idx}`,
                     index: idx + 1,
@@ -668,9 +700,11 @@ export default function InteractiveSkiMapNative() {
                     verticalDrop: drop,
                     maxSpeed: maxSpd,
                     pointsCount: r.points.length,
+                    pisteName,
+                    difficulty,
                 };
             });
-    }, [trackPoints, sessionDetails?.activity_type]);
+    }, [trackPoints, sessionDetails?.activity_type, sessionDetails?.runs]);
 
     const { token } = useAuth();
 
@@ -712,11 +746,9 @@ export default function InteractiveSkiMapNative() {
         zoom: number,
         bounds?: { minLon: number; minLat: number; maxLon: number; maxLat: number }
     ) => {
-        if (searchParams.sessionId || mapStyleId !== 'outdoor') {
+        if (mapStyleId !== 'outdoor') {
             setIsLoadingResorts(false);
-            if (mapStyleId !== 'outdoor') {
-                setResorts([]);
-            }
+            setResorts([]);
             return;
         }
 
@@ -976,6 +1008,31 @@ export default function InteractiveSkiMapNative() {
                                 if (!isNaN(targetLon) && !isNaN(targetLat)) {
                                     applyExternalCameraMove(targetLon, targetLat, 14, 400);
                                 }
+                            }
+                        }
+
+                        // Load resort details for this session so pistes and lifts display on map
+                        const targetResortId = session.resort_id || session.resort?.id || session.resort?.ID;
+                        if (targetResortId) {
+                            try {
+                                const resortRes = await api.get(`${API_BASE_URL}/resorts/by-id/${targetResortId}`);
+                                if (resortRes.status === 200 && resortRes.data) {
+                                    const rData = resortRes.data.data || resortRes.data;
+                                    if (rData) {
+                                        setResorts([rData]);
+                                        setSelectedResort(rData);
+                                    }
+                                }
+                            } catch (err) {
+                                console.warn("Could not load resort for session by ID:", err);
+                            }
+                        } else if (session.resort && (session.resort.pistes || session.resort.Pistes)) {
+                            setResorts([session.resort]);
+                            setSelectedResort(session.resort);
+                        } else if (session.points && session.points.length > 0) {
+                            const firstPt = parsePoint(session.points[0]);
+                            if (firstPt) {
+                                fetchResortsData(firstPt.lat, firstPt.lon, 14);
                             }
                         }
                         if (session.runs && Array.isArray(session.runs)) {
@@ -2050,7 +2107,7 @@ export default function InteractiveSkiMapNative() {
                     </NativeMarker>
                 ))}
 
-                {!searchParams.sessionId && isSnowLayer && viewState.zoom >= 10 && (
+                {isSnowLayer && viewState.zoom >= 10 && (
                     <>
                         <NativeGeoJSONSource id="piste-areas-source" data={pisteAreasGeoJSON} onPress={handleNativeFeaturePress}>
                             <NativeLayer {...pisteAreaFillStyle} onPress={handleNativeFeaturePress} />
@@ -2621,7 +2678,29 @@ export default function InteractiveSkiMapNative() {
                                 </TouchableOpacity>
 
                                 <View style={styles.runDetailsCard}>
-                                    <Text style={styles.runDetailsTitle}>{t('run_details', { index: selectedRun.index })}</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                                        <Text style={styles.runDetailsTitle}>
+                                            {selectedRun.pisteName ? `🏔️ Pista ${selectedRun.pisteName}` : t('run_details', { index: selectedRun.index })}
+                                        </Text>
+                                        {selectedRun.difficulty ? (
+                                            <View style={{
+                                                flexDirection: 'row',
+                                                alignItems: 'center',
+                                                gap: 4,
+                                                paddingHorizontal: 8,
+                                                paddingVertical: 2,
+                                                borderRadius: 12,
+                                                backgroundColor: `${getPisteDifficultyColor(selectedRun.difficulty)}20`,
+                                                borderWidth: 1,
+                                                borderColor: `${getPisteDifficultyColor(selectedRun.difficulty)}40`,
+                                            }}>
+                                                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: getPisteDifficultyColor(selectedRun.difficulty) }} />
+                                                <Text style={{ fontSize: 11, fontWeight: '600', color: getPisteDifficultyColor(selectedRun.difficulty) }}>
+                                                    {getPisteDifficultyLabel(selectedRun.difficulty)}
+                                                </Text>
+                                            </View>
+                                        ) : null}
+                                    </View>
                                     <View style={styles.rowBetween}>
                                         <Text style={styles.textMuted}>{t('drop')}: {selectedRun.verticalDrop.toFixed(0)}m</Text>
                                         <Text style={styles.textMuted}>{t('max_speed')}: {selectedRun.maxSpeed.toFixed(1)} km/h</Text>
@@ -2675,8 +2754,30 @@ export default function InteractiveSkiMapNative() {
                                                 style={styles.runItem}
                                                 onPress={() => setSelectedRun(run)}
                                             >
-                                                <View>
-                                                    <Text style={styles.runDetailsTitle}>{t('run_title', { index: run.index })}</Text>
+                                                <View style={{ flex: 1 }}>
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                        <Text style={styles.runDetailsTitle}>
+                                                            {run.pisteName ? `🏔️ Pista ${run.pisteName}` : t('run_title', { index: run.index })}
+                                                        </Text>
+                                                        {run.difficulty ? (
+                                                            <View style={{
+                                                                flexDirection: 'row',
+                                                                alignItems: 'center',
+                                                                gap: 4,
+                                                                paddingHorizontal: 6,
+                                                                paddingVertical: 1,
+                                                                borderRadius: 10,
+                                                                backgroundColor: `${getPisteDifficultyColor(run.difficulty)}20`,
+                                                                borderWidth: 1,
+                                                                borderColor: `${getPisteDifficultyColor(run.difficulty)}40`,
+                                                            }}>
+                                                                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: getPisteDifficultyColor(run.difficulty) }} />
+                                                                <Text style={{ fontSize: 10, fontWeight: '600', color: getPisteDifficultyColor(run.difficulty) }}>
+                                                                    {getPisteDifficultyLabel(run.difficulty)}
+                                                                </Text>
+                                                            </View>
+                                                        ) : null}
+                                                    </View>
                                                     <Text style={styles.runItemText}>
                                                         {t('drop')}: {run.verticalDrop.toFixed(0)}m | {t('max_speed')}: {run.maxSpeed.toFixed(1)} km/h
                                                     </Text>
