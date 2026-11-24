@@ -24,10 +24,11 @@ type SkiRun struct {
 
 	// Map Matching enrichment
 	MatchedPisteID  *string `bun:"matched_piste_id" json:"matched_piste_id"`
+	PisteName       *string `bun:"piste_name" json:"piste_name,omitempty"`
 	PredominantDiff string  `bun:"predominant_diff" json:"predominant_diff"`
 
 	CreatedAt time.Time `bun:"created_at,default:current_timestamp" json:"created_at"`
 
-	Session      *SkiSession `bun:"rel:belongs-to,join:session_id=id"`
-	MatchedPiste *SkiPiste   `bun:"rel:belongs-to,join:matched_piste_id=id"`
+	Session      *SkiSession `bun:"rel:belongs-to,join:session_id=id" json:"-"`
+	MatchedPiste *SkiPiste   `bun:"rel:belongs-to,join:matched_piste_id=id" json:"matched_piste,omitempty"`
 }

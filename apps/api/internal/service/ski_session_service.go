@@ -369,7 +369,7 @@ func (s *SkiSessionService) processRunEnrichment(ctx context.Context, sessionID 
 	metrics := s.calculatePhysicalMetrics(runPoints)
 
 	// 2. Perform spatial Map Matching using PostGIS and the geometry_geojson (jsonb) columns
-	matchedPisteID, difficulty, err := s.findMatchedPiste(ctx, runPoints)
+	matchedPisteID, difficulty, pisteName, err := s.findMatchedPiste(ctx, runPoints)
 	if err != nil {
 		s.logger.Warn("could not match run to any piste", "error", err)
 	}
@@ -386,6 +386,7 @@ func (s *SkiSessionService) processRunEnrichment(ctx context.Context, sessionID 
 		ElevationGain:   metrics.ElevationGain,
 		ElevationLoss:   metrics.ElevationLoss,
 		MatchedPisteID:  metrics.MatchedPisteID,
+		PisteName:       pisteName,
 		PredominantDiff: metrics.PredominantDiff,
 		TotalPoints:     len(runPoints),
 	}
@@ -394,9 +395,15 @@ func (s *SkiSessionService) processRunEnrichment(ctx context.Context, sessionID 
 		return fmt.Errorf("failed to save enriched ski run: %w", err)
 	}
 
+	pName := "none"
+	if pisteName != nil {
+		pName = *pisteName
+	}
+
 	s.logger.Info("run successfully matched and enriched",
 		"session_id", sessionID,
 		"piste_id", metrics.MatchedPisteID,
+		"piste_name", pName,
 		"difficulty", metrics.PredominantDiff,
 		"distance_m", metrics.TotalDistance,
 	)
@@ -780,10 +787,22 @@ func (s *SkiSessionService) calculatePhysicalMetrics(points []models.SessionPoin
 	}
 }
 
+func isHexHash(s string) bool {
+	if len(s) < 16 || len(s) > 64 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
 // Map Matching adapted to read geometry from `geometry_geojson` (jsonb)
-func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []models.SessionPoint) (*string, string, error) {
+func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []models.SessionPoint) (pisteID *string, difficulty string, pisteName *string, err error) {
 	if len(points) == 0 {
-		return nil, "unknown", nil
+		return nil, "unknown", nil, nil
 	}
 
 	// 1. Build WKT LineString with the points of the detected run
@@ -795,7 +814,7 @@ func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []model
 		}
 	}
 	if len(validPoints) < 2 {
-		return nil, "unknown", nil
+		return nil, "unknown", nil, nil
 	}
 
 	wktLine := fmt.Sprintf("LINESTRING(%s)", strings.Join(validPoints, ", "))
@@ -803,16 +822,17 @@ func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []model
 	var result struct {
 		ID         string
 		Difficulty string
+		Name       string
 	}
 
 	// 2. PostGIS Query: Parse jsonb (geometry_geojson) to geometry with ST_GeomFromGeoJSON
 	// and calculate the minimum distance respect to the user's run line.
-	// We prioritize named pistes and restrict matching to pistes within 250m.
+	// We prioritize named pistes and order by distance.
 	query := `
 		WITH track AS (
 			SELECT ST_SetSRID(ST_GeomFromText(?, 4326), 4326) AS geom
 		)
-		SELECT p.id, p.difficulty 
+		SELECT p.id, p.difficulty, p.name 
 		FROM ski_pistes p, track t
 		WHERE p.geometry_geojson IS NOT NULL
 		ORDER BY 
@@ -824,19 +844,25 @@ func (s *SkiSessionService) findMatchedPiste(ctx context.Context, points []model
 		LIMIT 1;
 	`
 
-	err := s.store.SkiSession().Raw(ctx, query, wktLine, &result)
+	err = s.store.SkiSession().Raw(ctx, query, wktLine, &result)
 	if err != nil {
-		return nil, "unknown", err
+		return nil, "unknown", nil, err
 	}
 
 	if result.ID == "" {
-		return nil, "unknown", nil
+		return nil, "unknown", nil, nil
 	}
 	if result.Difficulty == "" {
 		result.Difficulty = "unknown"
 	}
 
-	return &result.ID, result.Difficulty, nil
+	var matchedName *string
+	cleanName := strings.TrimSpace(result.Name)
+	if cleanName != "" && !isHexHash(cleanName) {
+		matchedName = &cleanName
+	}
+
+	return &result.ID, result.Difficulty, matchedName, nil
 }
 
 // uploadPhotosWithRollback uploads photos to MinIO and rolls back in case of any failure.

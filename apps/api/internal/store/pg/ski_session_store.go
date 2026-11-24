@@ -156,6 +156,7 @@ func (u *skiSessionStore) ListFriendsSessions(ctx context.Context, userID uuid.U
 	err := u.db.NewSelect().
 		Model(&sessions).
 		Relation("Runs").
+		Relation("Runs.MatchedPiste").
 		Relation("User").
 		Relation("Resort").
 		Relation("Photos").

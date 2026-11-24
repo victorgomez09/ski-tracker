@@ -57,6 +57,7 @@ export interface SessionRun {
     elevation_loss: number;
     total_points: number;
     matched_piste_id?: string;
+    piste_name?: string | null;
     predominant_diff?: string;
     created_at: string;
     matched_piste?: MatchedPisteSummary | null;

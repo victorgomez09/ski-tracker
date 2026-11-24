@@ -235,6 +235,10 @@ const getDifficultyMeta = (diff: string, colors: typeof LIGHT_COLORS) => {
 };
 
 const getPisteDisplayName = (run: any): string | null => {
+  if (run?.piste_name && !/^[a-f0-9]{16,64}$/i.test(String(run.piste_name).trim())) {
+    const clean = String(run.piste_name).trim().replace(/^pista\s*#?/i, '').trim();
+    if (clean && !/^[a-f0-9]{16,64}$/i.test(clean)) return clean;
+  }
   const piste = run.matched_piste || run.MatchedPiste;
   if (!piste) return null;
   let name = piste.name;

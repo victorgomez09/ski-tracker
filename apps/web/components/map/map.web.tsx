@@ -797,7 +797,7 @@ export default function InteractiveSkiMap() {
                 let pisteName: string | null = null;
                 let difficulty: string | null = null;
                 if (matchedSessionRun) {
-                    const raw = matchedSessionRun.matched_piste?.name || matchedSessionRun.MatchedPiste?.name || matchedSessionRun.matched_piste?.tags?.['name:es'] || matchedSessionRun.matched_piste?.tags?.['piste:name'] || matchedSessionRun.MatchedPiste?.tags?.['piste:name'];
+                    const raw = matchedSessionRun.piste_name || matchedSessionRun.matched_piste?.name || matchedSessionRun.MatchedPiste?.name || matchedSessionRun.matched_piste?.tags?.['name:es'] || matchedSessionRun.matched_piste?.tags?.['piste:name'] || matchedSessionRun.MatchedPiste?.tags?.['piste:name'];
                     if (raw && !/^[a-f0-9]{16,64}$/i.test(raw.trim())) {
                         pisteName = raw.trim();
                     }
@@ -1064,7 +1064,6 @@ export default function InteractiveSkiMap() {
                                     const rData = resortRes.data.data || resortRes.data;
                                     if (rData) {
                                         setResorts([rData]);
-                                        setSelectedResort(rData);
                                     }
                                 }
                             } catch (err) {
@@ -1072,7 +1071,6 @@ export default function InteractiveSkiMap() {
                             }
                         } else if (session.resort && (session.resort.pistes || session.resort.Pistes)) {
                             setResorts([session.resort]);
-                            setSelectedResort(session.resort);
                         } else if (session.points && session.points.length > 0) {
                             const firstPt = parsePoint(session.points[0]);
                             if (firstPt) {
@@ -2200,7 +2198,7 @@ export default function InteractiveSkiMap() {
                     setShowOverlappingModal(false);
                 }}
             />
-            {selectedResort && (
+            {!searchParams.sessionId && selectedResort && (
                 <ResortDetailPanel
                     resort={selectedResort}
                     onClose={() => setSelectedResort(null)}
