@@ -18,20 +18,30 @@ import (
 )
 
 type WeatherForecast struct {
-	Latitude         float64        `json:"latitude"`
-	Longitude        float64        `json:"longitude"`
-	GenerationtimeMs float64        `json:"generationtime_ms"`
-	UtcOffsetSeconds int            `json:"utc_offset_seconds"`
-	Timezone         string         `json:"timezone"`
-	TimezoneAbbr     string         `json:"timezone_abbreviation"`
-	Elevation        float64        `json:"elevation"`
-	CurrentUnits     CurrentUnits   `json:"current_units"`
-	Current          CurrentWeather `json:"current"`
-	HourlyUnits      HourlyUnits    `json:"hourly_units"`
-	Hourly           HourlyData     `json:"hourly"`
-	DailyUnits       DailyUnits     `json:"daily_units,omitempty"`
-	Daily            DailyData      `json:"daily,omitempty"`
-	SnowReport       *SnowReport    `json:"snow_report,omitempty"`
+	Latitude         float64                  `json:"latitude"`
+	Longitude        float64                  `json:"longitude"`
+	GenerationtimeMs float64                  `json:"generationtime_ms"`
+	UtcOffsetSeconds int                      `json:"utc_offset_seconds"`
+	Timezone         string                   `json:"timezone"`
+	TimezoneAbbr     string                   `json:"timezone_abbreviation"`
+	Elevation        float64                  `json:"elevation"`
+	ForecastModel    string                   `json:"forecast_model,omitempty"`
+	ModelComparisons []WeatherModelComparison `json:"model_comparisons,omitempty"`
+	CurrentUnits     CurrentUnits             `json:"current_units"`
+	Current          CurrentWeather           `json:"current"`
+	HourlyUnits      HourlyUnits              `json:"hourly_units"`
+	Hourly           HourlyData               `json:"hourly"`
+	DailyUnits       DailyUnits               `json:"daily_units,omitempty"`
+	Daily            DailyData                `json:"daily,omitempty"`
+	SnowReport       *SnowReport              `json:"snow_report,omitempty"`
+}
+
+type WeatherModelComparison struct {
+	ModelID      string    `json:"model_id"`
+	Name         string    `json:"name"`
+	Provider     string    `json:"provider"`
+	Snowfall7dCM float64   `json:"snowfall_7d_cm"`
+	DailySnowCM  []float64 `json:"daily_snow_cm"`
 }
 
 type CurrentUnits struct {
@@ -188,7 +198,16 @@ func NewWeatherService(s store.Store, logger *slog.Logger) *WeatherService {
 	}
 }
 
-func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID string) (WeatherForecast, error) {
+func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID string, model ...string) (WeatherForecast, error) {
+	chosenModel := "best_match"
+	if len(model) > 0 && model[0] != "" {
+		chosenModel = model[0]
+	}
+	modelParam := ""
+	if chosenModel != "" && chosenModel != "best_match" {
+		modelParam = "&models=" + chosenModel
+	}
+
 	var resort *models.SkiResort
 	baseElev := 0.0
 	summitElev := 0.0
@@ -230,8 +249,8 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 				"&current=temperature_2m,apparent_temperature,precipitation,rain,showers,snowfall,snow_depth,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,surface_pressure,cloud_cover,visibility,is_day"+
 				"&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,freezing_level_height,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m,wind_direction_10m,weather_code"+
 				"&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum,snowfall_sum,precipitation_probability_max"+
-				"&past_days=7&wind_speed_unit=kmh&timezone=auto",
-			lat, lat, lon, lon, baseElev, summitElev,
+				"&past_days=7&wind_speed_unit=kmh&timezone=auto%s",
+			lat, lat, lon, lon, baseElev, summitElev, modelParam,
 		)
 	} else {
 		openMeteoURL = fmt.Sprintf(
@@ -240,8 +259,8 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 				"&current=temperature_2m,apparent_temperature,precipitation,rain,showers,snowfall,snow_depth,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,surface_pressure,cloud_cover,visibility,is_day"+
 				"&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,freezing_level_height,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m,wind_direction_10m,weather_code"+
 				"&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum,snowfall_sum,precipitation_probability_max"+
-				"&past_days=7&wind_speed_unit=kmh&timezone=auto",
-			lat, lon,
+				"&past_days=7&wind_speed_unit=kmh&timezone=auto%s",
+			lat, lon, modelParam,
 		)
 	}
 
@@ -407,6 +426,39 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 		}
 	}
 
+	// Ensure FreezingLevelHeight has realistic values if model (e.g. ECMWF) returns 0/null
+	if len(baseForecast.Hourly.FreezingLevelHeight) < len(baseForecast.Hourly.Time) {
+		extended := make([]float64, len(baseForecast.Hourly.Time))
+		copy(extended, baseForecast.Hourly.FreezingLevelHeight)
+		baseForecast.Hourly.FreezingLevelHeight = extended
+	}
+	for i := range baseForecast.Hourly.Time {
+		if baseForecast.Hourly.FreezingLevelHeight[i] <= 0 && i < len(baseForecast.Hourly.Temperature2m) {
+			t := baseForecast.Hourly.Temperature2m[i]
+			fl := baseElev + (t / 0.0065)
+			if fl < 0 {
+				fl = 0
+			}
+			baseForecast.Hourly.FreezingLevelHeight[i] = math.Round(fl)
+		}
+	}
+
+	if len(summitForecast.Hourly.FreezingLevelHeight) < len(summitForecast.Hourly.Time) {
+		extended := make([]float64, len(summitForecast.Hourly.Time))
+		copy(extended, summitForecast.Hourly.FreezingLevelHeight)
+		summitForecast.Hourly.FreezingLevelHeight = extended
+	}
+	for i := range summitForecast.Hourly.Time {
+		if summitForecast.Hourly.FreezingLevelHeight[i] <= 0 && i < len(summitForecast.Hourly.Temperature2m) {
+			t := summitForecast.Hourly.Temperature2m[i]
+			fl := summitElev + (t / 0.0065)
+			if fl < 0 {
+				fl = 0
+			}
+			summitForecast.Hourly.FreezingLevelHeight[i] = math.Round(fl)
+		}
+	}
+
 	// 5. Compute Snow Forecast Report using calibrated, distinct base & summit timelines
 	snowReport := computeSnowReport(
 		resortID,
@@ -418,6 +470,7 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 		todayIndex,
 		currentHourIdx,
 	)
+	snowReport.DataSource = fmt.Sprintf("open-meteo (%s)", chosenModel)
 
 	// 5b. For the general daily/hourly overview returned to the client, represent resort peak snowfall
 	// so the user sees when storms affect the mountain slopes.
@@ -533,7 +586,85 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 	}
 
 	baseForecast.SnowReport = &snowReport
+	baseForecast.ForecastModel = chosenModel
+
+	// Fetch multi-model 7-day snow comparisons for this mountain location
+	compElev := summitElev
+	if compElev <= 0 {
+		compElev = baseElev
+	}
+	baseForecast.ModelComparisons = s.fetchModelComparisons(ctx, lat, lon, compElev)
+
 	return baseForecast, nil
+}
+
+type multiModelDailyResponse struct {
+	Daily struct {
+		Time                 []string   `json:"time"`
+		SnowfallSumBestMatch []*float64 `json:"snowfall_sum_best_match"`
+		SnowfallSumECMWF     []*float64 `json:"snowfall_sum_ecmwf_ifs025"`
+		SnowfallSumICON      []*float64 `json:"snowfall_sum_icon_eu"`
+		SnowfallSumGFS       []*float64 `json:"snowfall_sum_gfs_seamless"`
+	} `json:"daily"`
+}
+
+func (s *WeatherService) fetchModelComparisons(ctx context.Context, lat, lon string, elevation float64) []WeatherModelComparison {
+	elev := elevation
+	if elev <= 0 {
+		elev = 1800.0
+	}
+	url := fmt.Sprintf(
+		"https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&elevation=%.0f&models=best_match,ecmwf_ifs025,icon_eu,gfs_seamless&daily=snowfall_sum&timezone=auto",
+		lat, lon, elev,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil
+	}
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var data multiModelDailyResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil
+	}
+
+	calcModel := func(modelID, name, provider string, values []*float64) WeatherModelComparison {
+		var daily []float64
+		total := 0.0
+		for _, ptr := range values {
+			v := 0.0
+			if ptr != nil && *ptr > 0 {
+				v = math.Round((*ptr)*1.35*10) / 10
+			}
+			daily = append(daily, v)
+			total += v
+		}
+		return WeatherModelComparison{
+			ModelID:      modelID,
+			Name:         name,
+			Provider:     provider,
+			Snowfall7dCM: math.Round(total*10) / 10,
+			DailySnowCM:  daily,
+		}
+	}
+
+	comparisons := []WeatherModelComparison{
+		calcModel("ecmwf_ifs025", "Europeo (ECMWF)", "ECMWF IFS (Infonieve)", data.Daily.SnowfallSumECMWF),
+		calcModel("best_match", "Consenso (Auto)", "Open-Meteo", data.Daily.SnowfallSumBestMatch),
+		calcModel("icon_eu", "Alemán (ICON)", "DWD Alemania", data.Daily.SnowfallSumICON),
+		calcModel("gfs_seamless", "Americano (GFS)", "NOAA Estados Unidos", data.Daily.SnowfallSumGFS),
+	}
+
+	return comparisons
 }
 
 func (s *WeatherService) GetSnowReport(ctx context.Context, resortID string) (SnowReport, error) {
@@ -562,11 +693,11 @@ func (s *WeatherService) GetSnowReport(ctx context.Context, resortID string) (Sn
 
 func getAlpineSnowRatio(temp float64) float64 {
 	if temp <= -3.0 {
-		return 1.72 // Cold dry alpine powder expansion
+		return 1.65 // Cold dry alpine powder expansion
 	} else if temp <= 0.5 {
-		return 1.68 // Standard alpine fresh snow
+		return 1.55 // Standard alpine fresh snow
 	} else if temp <= 2.0 {
-		return 1.25 // Heavy wet snow
+		return 1.15 // Heavy wet snow
 	}
 	return 1.0
 }
@@ -577,19 +708,26 @@ func calibrateAlpineSnow(rawSnow, precip, tMin, tMax float64, isLateStorm bool) 
 	if rawSnow > 0 || (avgT <= 0.5 && precip > 0) {
 		snowRatio = getAlpineSnowRatio(avgT)
 	}
-	calibrated := rawSnow * snowRatio
+
+	effectiveSnow := rawSnow
+	// Only if the model predicted 0 snow despite sub-zero summit temperatures and positive precipitation:
+	if rawSnow == 0 && avgT <= 0.0 && precip > 0 {
+		effectiveSnow = precip * 0.85
+	}
+
+	calibrated := effectiveSnow * snowRatio
 
 	if precip > 0 {
 		if avgT <= 0.5 {
-			ceiling := precip * 0.80
+			ceiling := precip * 1.35
 			if isLateStorm && precip < 25.0 {
-				ceiling = precip * 0.62
+				ceiling = precip * 1.10
 			}
 			if calibrated > ceiling {
 				calibrated = ceiling
 			}
 		} else if avgT <= 2.0 {
-			ceiling := precip * 0.40
+			ceiling := precip * 0.65
 			if calibrated > ceiling {
 				calibrated = ceiling
 			}

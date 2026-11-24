@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -37,6 +38,7 @@ import {
   Mountain,
   Navigation,
   RefreshCw,
+  Search,
   ShieldAlert,
   Snowflake,
   Sparkles,
@@ -52,22 +54,252 @@ import { useTranslation } from 'react-i18next';
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from '../../constants/theme';
 import { useFavorites } from '../../context/favorites.context';
 import { ACTIVITY_CONFIGS, ActivityType } from '../../models/activity.model';
-import { Resort, ResortDetail } from '../../models/ski-resort.model';
-import { WeatherForecast } from '../../models/weather.model';
+import { Piste, Resort, ResortDetail } from '../../models/ski-resort.model';
+import { WeatherForecast, WeatherModelId, WEATHER_MODELS } from '../../models/weather.model';
 import { getWindDirectionInfo, SPAIN_ANDORRA_RESORTS } from '../../services/snow-forecast.service';
 import { ResortLogo } from './resort-logo';
 
 export type SkiinfoTab = 'snow' | 'pistes' | 'weather' | 'community';
+export type DifficultyFilterKey = 'all' | 'novice' | 'easy' | 'intermediate' | 'advanced';
+
+export const DIFFICULTY_MAP: Record<
+  string,
+  {
+    key: DifficultyFilterKey;
+    label: string;
+    sublabel: string;
+    color: string;
+    badgeBg: string;
+    badgeText: string;
+  }
+> = {
+  novice: {
+    key: 'novice',
+    label: 'Verde',
+    sublabel: 'Muy fácil',
+    color: '#00a859',
+    badgeBg: '#e8f5e9',
+    badgeText: '#00a859',
+  },
+  easy: {
+    key: 'easy',
+    label: 'Azul',
+    sublabel: 'Fácil',
+    color: '#0072bc',
+    badgeBg: '#e0f2fe',
+    badgeText: '#0072bc',
+  },
+  intermediate: {
+    key: 'intermediate',
+    label: 'Roja',
+    sublabel: 'Intermedia',
+    color: '#ef4444',
+    badgeBg: '#fee2e2',
+    badgeText: '#dc2626',
+  },
+  advanced: {
+    key: 'advanced',
+    label: 'Negra',
+    sublabel: 'Difícil',
+    color: '#0f172a',
+    badgeBg: '#f1f5f9',
+    badgeText: '#0f172a',
+  },
+};
+
+export const getPisteDifficultyMeta = (difficulty?: string) => {
+  const d = (difficulty || '').toLowerCase().trim();
+  if (d === 'novice' || d === 'green' || d === 'verde') return DIFFICULTY_MAP.novice;
+  if (d === 'easy' || d === 'blue' || d === 'azul') return DIFFICULTY_MAP.easy;
+  if (d === 'intermediate' || d === 'red' || d === 'roja') return DIFFICULTY_MAP.intermediate;
+  if (d === 'advanced' || d === 'expert' || d === 'black' || d === 'negra') return DIFFICULTY_MAP.advanced;
+  if (d === 'freeride' || d === 'orange' || d === 'naranja') {
+    return {
+      key: 'advanced' as DifficultyFilterKey,
+      label: 'Freeride',
+      sublabel: 'Itinerario',
+      color: '#ea580c',
+      badgeBg: '#ffedd5',
+      badgeText: '#ea580c',
+    };
+  }
+  return {
+    key: 'easy' as DifficultyFilterKey,
+    label: 'Pista',
+    sublabel: 'General',
+    color: '#64748b',
+    badgeBg: '#f1f5f9',
+    badgeText: '#475569',
+  };
+};
+
+export const isLikelyHash = (str?: string): boolean => {
+  if (!str) return false;
+  const clean = str.trim().replace(/^pista\s*#?/i, '').trim();
+  return /^[a-f0-9]{16,64}$/i.test(clean);
+};
+
+export const hasNamedPiste = (piste: Piste): boolean => {
+  if (piste.Name && piste.Name.trim() !== '' && !isLikelyHash(piste.Name)) return true;
+  const tags = piste.Tags || {};
+  for (const k of ['piste:name', 'name', 'name:es', 'name:en', 'name:fr']) {
+    if (tags[k] && typeof tags[k] === 'string' && tags[k].trim() !== '' && !isLikelyHash(tags[k])) {
+      return true;
+    }
+  }
+  if (tags['piste:ref'] || tags.ref) return true;
+  if (tags.description || tags['description:es'] || tags.destination) return true;
+  const nested = tags.tags;
+  if (nested && typeof nested === 'object') {
+    for (const k of ['piste:name', 'name', 'name:es', 'name:en']) {
+      if (nested[k] && typeof nested[k] === 'string' && nested[k].trim() !== '' && !isLikelyHash(nested[k])) {
+        return true;
+      }
+    }
+    if (nested['piste:ref'] || nested.ref) return true;
+  }
+  return false;
+};
+
+export const getPisteName = (piste: Piste): string => {
+  // 1. Direct Name from model
+  if (piste.Name && piste.Name.trim() !== '' && !isLikelyHash(piste.Name)) {
+    return piste.Name.trim();
+  }
+
+  // 2. Direct Tags
+  const tags = piste.Tags || {};
+  for (const k of ['piste:name', 'name', 'name:es', 'name:en', 'name:fr']) {
+    if (tags[k] && typeof tags[k] === 'string' && tags[k].trim() !== '' && !isLikelyHash(tags[k])) {
+      return tags[k].trim();
+    }
+  }
+
+  // 3. Reference number / code (e.g. "12" or "A")
+  const ref = tags['piste:ref'] || tags.ref;
+  if (ref !== undefined && ref !== null && String(ref).trim() !== '' && !isLikelyHash(String(ref))) {
+    return `Pista ${String(ref).trim()}`;
+  }
+
+  // 4. Description or destination
+  const desc = tags.description || tags['description:es'] || tags.destination || tags.to;
+  if (desc && typeof desc === 'string' && desc.trim() !== '' && !isLikelyHash(desc)) {
+    return desc.trim();
+  }
+
+  // 5. Nested tags in Tags.tags
+  const nested = tags.tags;
+  if (nested && typeof nested === 'object') {
+    for (const k of ['piste:name', 'name', 'name:es', 'name:en']) {
+      if (nested[k] && typeof nested[k] === 'string' && nested[k].trim() !== '' && !isLikelyHash(nested[k])) {
+        return nested[k].trim();
+      }
+    }
+    const nestedRef = nested['piste:ref'] || nested.ref;
+    if (nestedRef !== undefined && nestedRef !== null && String(nestedRef).trim() !== '' && !isLikelyHash(String(nestedRef))) {
+      return `Pista ${String(nestedRef).trim()}`;
+    }
+  }
+
+  // 6. Friendly, readable fallback for unnamed connectors / tracks (NEVER raw database hash IDs)
+  const meta = getPisteDifficultyMeta(piste.Difficulty);
+  const isConnection =
+    (piste.PisteType as string) === 'connection' ||
+    tags['piste:type'] === 'connection' ||
+    tags.route === 'connection';
+
+  return isConnection ? `Enlace ${meta.label}` : `Variante ${meta.label}`;
+};
+
+export const getPisteDistanceMeters = (piste: Piste): number => {
+  const heights = piste.Tags?.elevationProfile?.heights || [];
+  const resolution = piste.Tags?.elevationProfile?.resolution || 25;
+  if (heights.length > 1) {
+    return Math.round((heights.length - 1) * resolution);
+  }
+  const coords = piste.GeometryGeoJSON?.coordinates || [];
+  if (coords.length < 2) return 0;
+  let dist = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+    const R = 6371e3;
+    const phi1 = (p1[1] * Math.PI) / 180;
+    const phi2 = (p2[1] * Math.PI) / 180;
+    const deltaPhi = ((p2[1] - p1[1]) * Math.PI) / 180;
+    const deltaLambda = ((p2[0] - p1[0]) * Math.PI) / 180;
+
+    const a =
+      Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+      Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    dist += R * c;
+  }
+  return Math.round(dist);
+};
+
+export const getPisteElevationStats = (piste: Piste) => {
+  const heights = piste.Tags?.elevationProfile?.heights;
+  if (Array.isArray(heights) && heights.length > 0) {
+    const minElev = Math.round(Math.min(...heights));
+    const maxElev = Math.round(Math.max(...heights));
+    return {
+      minElev,
+      maxElev,
+      drop: maxElev > minElev ? maxElev - minElev : 0,
+    };
+  }
+  const coords = piste.GeometryGeoJSON?.coordinates;
+  if (Array.isArray(coords) && coords.length > 0) {
+    const elevs = coords
+      .map((c) => c[2])
+      .filter((e) => typeof e === 'number' && !isNaN(e) && e > 200 && e < 5000);
+    if (elevs.length > 0) {
+      const minElev = Math.round(Math.min(...elevs));
+      const maxElev = Math.round(Math.max(...elevs));
+      return {
+        minElev,
+        maxElev,
+        drop: maxElev > minElev ? maxElev - minElev : 0,
+      };
+    }
+  }
+  return null;
+};
+
+export const getPisteTypeLabel = (type?: string) => {
+  switch ((type || '').toLowerCase()) {
+    case 'downhill':
+      return 'Descenso';
+    case 'snowpark':
+      return 'Snowpark';
+    case 'freeride':
+      return 'Freeride';
+    case 'freestyle':
+      return 'Freestyle';
+    case 'cross_country':
+      return 'Esquí de fondo';
+    case 'touring':
+      return 'Travesía';
+    case 'sledding':
+      return 'Trineos';
+    default:
+      return 'Pista alpina';
+  }
+};
 
 interface SkiinfoResortDetailProps {
   resort: Resort | ResortDetail;
   weatherData: WeatherForecast | null;
+  selectedModel?: WeatherModelId;
+  onSelectModel?: (model: WeatherModelId) => void;
   sessions?: any[];
   isLoadingSessions?: boolean;
   isRefreshingWeather?: boolean;
   onRefreshWeather?: () => void;
   onClose: () => void;
   onOpenMap?: () => void;
+  onOpenPiste?: (piste: Piste) => void;
   onStartTracking?: () => void;
   onDownloadOffline?: () => void;
 }
@@ -216,12 +448,15 @@ const getVisibilityInfo = (visibilityMeters?: number) => {
 export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
   resort,
   weatherData,
+  selectedModel,
+  onSelectModel,
   sessions = [],
   isLoadingSessions = false,
   isRefreshingWeather = false,
   onRefreshWeather,
   onClose,
   onOpenMap,
+  onOpenPiste,
   onStartTracking,
   onDownloadOffline,
 }) => {
@@ -231,7 +466,82 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
   const { isFavorite, toggleFavorite } = useFavorites();
   const isWeb = Platform.OS === 'web';
 
+  const currentModelKey: WeatherModelId = (selectedModel || (weatherData?.forecast_model as WeatherModelId) || 'ecmwf_ifs025');
+  const activeModelInfo = WEATHER_MODELS[currentModelKey] || WEATHER_MODELS.ecmwf_ifs025;
+
+  const todayFormattedDate = useMemo(() => {
+    const d = new Date();
+    const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const weekday = days[d.getDay()];
+    const day = d.getDate();
+    const month = d.getMonth() + 1;
+    const year = d.getFullYear();
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    return `${weekday} ${pad(day)}/${pad(month)}/${year}`;
+  }, []);
+
+  const stationStatus = useMemo(() => {
+    const raw = ((resort as any).status || '').toUpperCase();
+    if (raw === 'OPEN' || raw === 'ABIERTA') {
+      return { label: 'ABIERTA', color: '#16a34a', bg: '#dcfce7', text: '#15803d' };
+    }
+    return { label: 'CERRADA', color: '#dc2626', bg: '#fee2e2', text: '#b91c1c' };
+  }, [resort]);
+
   const [activeTab, setActiveTab] = useState<SkiinfoTab>('snow');
+  const [selectedDifficultyFilter, setSelectedDifficultyFilter] = useState<DifficultyFilterKey>('all');
+  const [pisteSearchQuery, setPisteSearchQuery] = useState('');
+  const [showUnnamedLinks, setShowUnnamedLinks] = useState(false);
+  const [sevenDayCardWidth, setSevenDayCardWidth] = useState<number>(0);
+  const [selectedSevenDayIdx, setSelectedSevenDayIdx] = useState<number>(0);
+
+  const allPistes = useMemo(() => {
+    const raw = resort.pistes || [];
+    return raw.filter((p) => p && !('category' in p));
+  }, [resort.pistes]);
+
+  const namedPistes = useMemo(() => {
+    return allPistes.filter(hasNamedPiste);
+  }, [allPistes]);
+
+  const unnamedPistes = useMemo(() => {
+    return allPistes.filter((p) => !hasNamedPiste(p));
+  }, [allPistes]);
+
+  // Display base: prefer official/named pistes unless user chooses to include links or resort has only unnamed pistes
+  const displayBasePistes = useMemo(() => {
+    if (showUnnamedLinks || namedPistes.length === 0) {
+      return allPistes;
+    }
+    return namedPistes;
+  }, [allPistes, namedPistes, showUnnamedLinks]);
+
+  const filteredPistes = useMemo(() => {
+    // When actively searching with text, search across all pistes so nothing is missed
+    const source = pisteSearchQuery.trim() ? allPistes : displayBasePistes;
+
+    return source.filter((piste) => {
+      // 1. Difficulty filter
+      if (selectedDifficultyFilter !== 'all') {
+        const meta = getPisteDifficultyMeta(piste.Difficulty);
+        if (meta.key !== selectedDifficultyFilter) {
+          return false;
+        }
+      }
+
+      // 2. Search query filter
+      if (pisteSearchQuery.trim()) {
+        const q = pisteSearchQuery.toLowerCase().trim();
+        const name = getPisteName(piste).toLowerCase();
+        const ref = (piste.Tags?.ref || piste.Tags?.['piste:ref'] || '').toLowerCase();
+        if (!name.includes(q) && !ref.includes(q)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [allPistes, displayBasePistes, selectedDifficultyFilter, pisteSearchQuery]);
 
   // Horizontal scroll references & handlers (wheel, drag & buttons on Web & Mobile)
   const hourlyScrollRef = useRef<ScrollView>(null);
@@ -257,6 +567,61 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
       // @ts-ignore
       scrollRef.current.scrollTo?.({ x: Math.max(0, offset), animated: true });
     }
+  };
+
+  const touchStartXRef = useRef<number | null>(null);
+
+  const handleDayTouchStart = (e: any) => {
+    touchStartXRef.current = e?.nativeEvent?.pageX ?? e?.nativeEvent?.clientX ?? 0;
+  };
+
+  const handleDayTouchEnd = (e: any) => {
+    if (touchStartXRef.current === null) return;
+    const endX = e?.nativeEvent?.pageX ?? e?.nativeEvent?.clientX ?? 0;
+    const deltaX = endX - touchStartXRef.current;
+    touchStartXRef.current = null;
+    const maxIdx = Math.min(6, (weatherData?.daily?.time?.length ?? 1) - 1);
+    if (deltaX < -45) {
+      // Swiped left -> next day
+      if (selectedSevenDayIdx < maxIdx) {
+        setSelectedSevenDayIdx(selectedSevenDayIdx + 1);
+      }
+    } else if (deltaX > 45) {
+      // Swiped right -> prev day
+      if (selectedSevenDayIdx > 0) {
+        setSelectedSevenDayIdx(selectedSevenDayIdx - 1);
+      }
+    }
+  };
+
+  const selectedDayHours = useMemo(() => {
+    if (!weatherData?.hourly?.time || !weatherData?.daily?.time?.[selectedSevenDayIdx]) return [];
+    const datePrefix = weatherData.daily.time[selectedSevenDayIdx].split('T')[0];
+    const items: Array<{
+      timeLabel: string;
+      temp: number;
+      weatherCode: number;
+      snow: number;
+      precip: number;
+    }> = [];
+    for (let i = 0; i < weatherData.hourly.time.length; i++) {
+      const t = weatherData.hourly.time[i];
+      if (t.startsWith(datePrefix)) {
+        const hour = t.substring(11, 16);
+        items.push({
+          timeLabel: hour,
+          temp: Math.round(weatherData.hourly.temperature_2m?.[i] ?? 0),
+          weatherCode: weatherData.hourly.weather_code?.[i] ?? 0,
+          snow: weatherData.hourly.snowfall?.[i] ?? 0,
+          precip: weatherData.hourly.precipitation?.[i] ?? 0,
+        });
+      }
+    }
+    return items;
+  }, [weatherData?.hourly, weatherData?.daily?.time, selectedSevenDayIdx]);
+
+  const scrollToSevenDay = (idx: number) => {
+    setSelectedSevenDayIdx(idx);
   };
 
   const handleWheel = (scrollRef: React.RefObject<ScrollView | null>, e: any) => {
@@ -342,14 +707,17 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
       if (!maxElev) maxElev = seedMatch.summit_elevation_m;
     }
 
+    minElev = Math.round(minElev);
+    maxElev = Math.round(maxElev);
+
     if (minElev && maxElev && maxElev < minElev) {
       const temp = minElev;
       minElev = maxElev;
       maxElev = temp;
     }
 
-    const verticalDrop = maxElev > minElev ? maxElev - minElev : 0;
-    let midElev = weatherData?.snow_report?.mid_elevation_m;
+    const verticalDrop = maxElev > minElev ? Math.round(maxElev - minElev) : 0;
+    let midElev = weatherData?.snow_report?.mid_elevation_m ? Math.round(weatherData.snow_report.mid_elevation_m) : undefined;
     if (!midElev && minElev && maxElev) {
       midElev = Math.round((minElev + maxElev) / 2);
     }
@@ -617,7 +985,7 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
             <View>
               <Text style={styles.mountainStatLabel}>{t('vertical_drop', 'Desnivel')}</Text>
               <Text style={[styles.mountainStatValue, { color: '#0284c7' }]}>
-                {stats.verticalDrop > 0 ? `${stats.verticalDrop} m` : '--'}
+                {stats.verticalDrop > 0 ? `${Math.round(stats.verticalDrop)} m` : '--'}
               </Text>
             </View>
           </View>
@@ -720,6 +1088,83 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
         {/* ========================================================================= */}
         {activeTab === 'snow' && (
           <View style={styles.tabSection}>
+            {/* 1. Infonieve Snow Report Header */}
+            <View style={styles.infonieveStatusCard}>
+              <View style={styles.infonieveStatusTopRow}>
+                <View style={[styles.infonieveStatusBadge, { backgroundColor: colors.primary + '18' }]}>
+                  <Snowflake size={14} color={colors.primary} />
+                  <Text style={[styles.infonieveStatusBadgeText, { color: colors.primary }]}>
+                    {t('snow_forecast_bulletin', 'PARTE DE NIEVE')}
+                  </Text>
+                </View>
+                <View style={styles.infonieveStatusDateBox}>
+                  <Text style={styles.infonieveStatusDateText}>{todayFormattedDate}</Text>
+                  <Text style={styles.infonieveStatusUpdatedText}>
+                    {t('updated_today', 'Actualizado hoy')} · {currentModelKey === 'ecmwf_ifs025' ? 'Modelo ECMWF (Infonieve)' : activeModelInfo.name}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* 2. ESTADO DE LA NIEVE (Infonieve 4 Bloques: box_est_partedet_datosnieve) */}
+            <View style={styles.infonieveCard}>
+              <View style={styles.infonieveHeaderRow}>
+                <Text style={styles.infonieveSectionTitle}>
+                  {t('snow_conditions_title', 'ESTADO DE LA NIEVE')}
+                </Text>
+                <Text style={styles.infonieveSectionSub}>Parte oficial de espesores</Text>
+              </View>
+              <View style={styles.infonieveGrid4}>
+                {/* Espesor Mínimo */}
+                <View style={styles.infonieveBox}>
+                  <Text style={styles.infonieveBoxLabel}>{t('min_depth', 'Espesor Mínimo')}</Text>
+                  <View style={styles.infonieveBoxValRow}>
+                    <Text style={styles.infonieveBoxValue}>{baseDepth !== undefined ? Math.round(baseDepth) : 0}</Text>
+                    <Text style={styles.infonieveBoxUnit}>cm</Text>
+                  </View>
+                  <Text style={styles.infonieveBoxSub}>
+                    {stats.minElev ? `Cota baja (${stats.minElev} m)` : 'Cota baja'}
+                  </Text>
+                </View>
+
+                {/* Espesor Máximo */}
+                <View style={styles.infonieveBox}>
+                  <Text style={styles.infonieveBoxLabel}>{t('max_depth', 'Espesor Máximo')}</Text>
+                  <View style={styles.infonieveBoxValRow}>
+                    <Text style={styles.infonieveBoxValue}>{summitDepth !== undefined ? Math.round(summitDepth) : 0}</Text>
+                    <Text style={styles.infonieveBoxUnit}>cm</Text>
+                  </View>
+                  <Text style={styles.infonieveBoxSub}>
+                    {stats.maxElev ? `Cota alta (${stats.maxElev} m)` : 'Cumbre'}
+                  </Text>
+                </View>
+
+                {/* Calidad de Nieve */}
+                <View style={styles.infonieveBox}>
+                  <Text style={styles.infonieveBoxLabel}>{t('snow_quality', 'Calidad')}</Text>
+                  <Text style={styles.infonieveBoxValueText} numberOfLines={1}>
+                    {snowConditionLabel}
+                  </Text>
+                  <Text style={styles.infonieveBoxSub}>Tipo de nieve</Text>
+                </View>
+
+                {/* Peligro de Aludes */}
+                <View style={styles.infonieveBox}>
+                  <Text style={styles.infonieveBoxLabel}>{t('avalanche_risk', 'Peligro Aludes')}</Text>
+                  <View
+                    style={[
+                      styles.infonieveDangerBadge,
+                      { backgroundColor: snowReport?.avalanche_report?.danger_color || '#16a34a' },
+                    ]}>
+                    <Text style={styles.infonieveDangerBadgeText}>
+                      Nivel {snowReport?.avalanche_report?.danger_level ?? 1} · {snowReport?.avalanche_report?.danger_level_title ?? 'Débil'}
+                    </Text>
+                  </View>
+                  <Text style={styles.infonieveBoxSub}>Escala 1 a 5</Text>
+                </View>
+              </View>
+            </View>
+
             {/* Today's Snowfall by Elevation Hero Card (Cota Baja / Intermedia / Máxima) */}
             <View style={styles.snowDepthCard}>
               <View style={styles.snowDepthHeader}>
@@ -732,85 +1177,89 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
                 </View>
               </View>
 
-              <View style={styles.depthColumnsRow}>
-                {/* 1. Cota Baja / Base */}
-                <View style={styles.depthCol}>
-                  <View style={styles.depthMeterTrack}>
-                    <View
-                      style={[
-                        styles.depthMeterFill,
-                        {
-                          height: `${Math.min(
-                            100,
-                            Math.max(
-                              todaySnowBase > 0 ? 15 : 6,
-                              Math.round((todaySnowBase / Math.max(todaySnowSummit, todaySnowBase, 1)) * 90)
-                            )
-                          )}%`,
-                        },
-                      ]}
-                    />
+              <View style={styles.cotasVerticalList}>
+                {/* 1. Cota Máxima / Cumbre */}
+                <View style={styles.cotaVerticalRow}>
+                  <View style={styles.cotaVerticalLeft}>
+                    <View style={[styles.cotaDot, { backgroundColor: '#0284c7' }]} />
+                    <View>
+                      <Text style={styles.cotaVerticalTitle}>Cota Máxima (Cumbre)</Text>
+                      <Text style={styles.cotaVerticalAlt}>{stats.maxElev ? `${stats.maxElev} m` : 'Cumbre'}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.depthColAmount}>
-                    {todaySnowBase > 0 ? `+${todaySnowBase}` : '0'}{' '}
-                    <Text style={styles.depthUnit}>cm</Text>
+                  <View style={styles.cotaVerticalCenter}>
+                    <View style={styles.cotaBarTrack}>
+                      <View
+                        style={[
+                          styles.cotaBarFill,
+                          {
+                            width: `${Math.min(100, Math.max(todaySnowSummit > 0 ? 12 : 0, (todaySnowSummit / Math.max(todaySnowSummit, todaySnowBase, 1)) * 100))}%`,
+                            backgroundColor: '#0284c7',
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                  <Text style={[styles.cotaVerticalVal, { color: '#0284c7' }]}>
+                    {todaySnowSummit > 0 ? `+${todaySnowSummit}` : '0'}{' '}
+                    <Text style={styles.cotaVerticalUnit}>cm</Text>
                   </Text>
-                  <Text style={styles.depthColTitle}>Cota Baja</Text>
-                  <Text style={styles.depthColAlt}>{stats.minElev ? `${stats.minElev} m` : 'Base'}</Text>
                 </View>
 
                 {/* 2. Cota Intermedia */}
-                <View style={styles.depthCol}>
-                  <View style={[styles.depthMeterTrack, styles.depthMeterTrackMid]}>
-                    <View
-                      style={[
-                        styles.depthMeterFill,
-                        styles.depthMeterFillMid,
-                        {
-                          height: `${Math.min(
-                            100,
-                            Math.max(
-                              todaySnowMid > 0 ? 15 : 6,
-                              Math.round((todaySnowMid / Math.max(todaySnowSummit, todaySnowBase, 1)) * 90)
-                            )
-                          )}%`,
-                        },
-                      ]}
-                    />
+                <View style={styles.cotaVerticalRow}>
+                  <View style={styles.cotaVerticalLeft}>
+                    <View style={[styles.cotaDot, { backgroundColor: '#0ea5e9' }]} />
+                    <View>
+                      <Text style={styles.cotaVerticalTitle}>Cota Intermedia</Text>
+                      <Text style={styles.cotaVerticalAlt}>{stats.midElev ? `${stats.midElev} m` : 'Media'}</Text>
+                    </View>
                   </View>
-                  <Text style={[styles.depthColAmount, { color: '#0ea5e9' }]}>
+                  <View style={styles.cotaVerticalCenter}>
+                    <View style={styles.cotaBarTrack}>
+                      <View
+                        style={[
+                          styles.cotaBarFill,
+                          {
+                            width: `${Math.min(100, Math.max(todaySnowMid > 0 ? 12 : 0, (todaySnowMid / Math.max(todaySnowSummit, todaySnowBase, 1)) * 100))}%`,
+                            backgroundColor: '#0ea5e9',
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                  <Text style={[styles.cotaVerticalVal, { color: '#0ea5e9' }]}>
                     {todaySnowMid > 0 ? `+${todaySnowMid}` : '0'}{' '}
-                    <Text style={styles.depthUnit}>cm</Text>
+                    <Text style={styles.cotaVerticalUnit}>cm</Text>
                   </Text>
-                  <Text style={styles.depthColTitle}>Cota Intermedia</Text>
-                  <Text style={styles.depthColAlt}>{stats.midElev ? `${stats.midElev} m` : 'Media'}</Text>
                 </View>
 
-                {/* 3. Cota Máxima / Cumbre */}
-                <View style={styles.depthCol}>
-                  <View style={[styles.depthMeterTrack, styles.depthMeterTrackSummit]}>
-                    <View
-                      style={[
-                        styles.depthMeterFill,
-                        styles.depthMeterFillSummit,
-                        {
-                          height: `${Math.min(
-                            100,
-                            Math.max(
-                              todaySnowSummit > 0 ? 15 : 6,
-                              Math.round((todaySnowSummit / Math.max(todaySnowSummit, todaySnowBase, 1)) * 90)
-                            )
-                          )}%`,
-                        },
-                      ]}
-                    />
+                {/* 3. Cota Baja / Base */}
+                <View style={styles.cotaVerticalRow}>
+                  <View style={styles.cotaVerticalLeft}>
+                    <View style={[styles.cotaDot, { backgroundColor: colors.textSecondary }]} />
+                    <View>
+                      <Text style={styles.cotaVerticalTitle}>Cota Baja (Base)</Text>
+                      <Text style={styles.cotaVerticalAlt}>{stats.minElev ? `${stats.minElev} m` : 'Base'}</Text>
+                    </View>
                   </View>
-                  <Text style={[styles.depthColAmount, { color: '#0284c7' }]}>
-                    {todaySnowSummit > 0 ? `+${todaySnowSummit}` : '0'}{' '}
-                    <Text style={styles.depthUnit}>cm</Text>
+                  <View style={styles.cotaVerticalCenter}>
+                    <View style={styles.cotaBarTrack}>
+                      <View
+                        style={[
+                          styles.cotaBarFill,
+                          {
+                            width: `${Math.min(100, Math.max(todaySnowBase > 0 ? 12 : 0, (todaySnowBase / Math.max(todaySnowSummit, todaySnowBase, 1)) * 100))}%`,
+                            backgroundColor: colors.textSecondary,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                  <Text style={[styles.cotaVerticalVal, { color: colors.textPrimary }]}>
+                    {todaySnowBase > 0 ? `+${todaySnowBase}` : '0'}{' '}
+                    <Text style={styles.cotaVerticalUnit}>cm</Text>
                   </Text>
-                  <Text style={styles.depthColTitle}>Cota Máxima</Text>
-                  <Text style={styles.depthColAlt}>{stats.maxElev ? `${stats.maxElev} m` : 'Cumbre'}</Text>
                 </View>
               </View>
             </View>
@@ -875,28 +1324,85 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sectionTitle}>{t('snow_forecast_7d_title', 'Previsión de Nevadas a 7 días')}</Text>
                   <Text style={styles.forecastSubtitle}>
-                    {t('total_expected_7d', 'Acumulación estimada en cumbre:')}{' '}
+                    {t('total_expected_7d', 'Acumulación estimada en cumbre (cota máx.):')}{' '}
                     <Text style={{ fontWeight: '800', color: '#0284c7' }}>
                       {snowReport?.forecast_snow_7d_cm ?? 0} cm
+                    </Text>
+                    {' · '}
+                    <Text style={{ fontWeight: '600', color: colors.textSecondary }}>
+                      {activeModelInfo.flag} {activeModelInfo.shortName}
                     </Text>
                   </Text>
                 </View>
                 <View style={styles.hourlyScrollNav}>
                   <TouchableOpacity
                     style={styles.hourlyNavBtn}
-                    onPress={() => scrollHorizontal(snowForecastScrollRef, -180)}
+                    onPress={() => scrollHorizontal(snowForecastScrollRef, -190)}
                     accessibilityLabel="Ver días anteriores">
                     <ChevronLeft size={16} color={colors.textPrimary} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.hourlyNavBtn}
-                    onPress={() => scrollHorizontal(snowForecastScrollRef, 180)}
+                    onPress={() => scrollHorizontal(snowForecastScrollRef, 190)}
                     accessibilityLabel="Ver siguientes días">
                     <ChevronRight size={16} color={colors.textPrimary} />
                   </TouchableOpacity>
                 </View>
               </View>
 
+              {/* Weather Model Selector Chips */}
+              <View style={styles.modelSelectorContainer}>
+                <View style={styles.modelSelectorHeaderRow}>
+                  <Text style={styles.modelSelectorLabel}>
+                    {t('weather_model', 'Modelo de predicción:')}
+                  </Text>
+                  {isRefreshingWeather && (
+                    <View style={styles.modelUpdatingRow}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      <Text style={styles.modelUpdatingText}>{t('updating', 'Cargando modelo...')}</Text>
+                    </View>
+                  )}
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.modelChipsScroll}>
+                  {(Object.keys(WEATHER_MODELS) as WeatherModelId[]).map((mKey) => {
+                    const mInfo = WEATHER_MODELS[mKey];
+                    const isSelected = currentModelKey === mKey;
+                    return (
+                      <TouchableOpacity
+                        key={mKey}
+                        style={[
+                          styles.modelChip,
+                          isSelected && styles.modelChipActive,
+                        ]}
+                        onPress={() => onSelectModel?.(mKey)}
+                        activeOpacity={0.75}>
+                        <Text style={styles.modelChipFlag}>{mInfo.flag}</Text>
+                        <View>
+                          <Text
+                            style={[
+                              styles.modelChipTitle,
+                              isSelected && styles.modelChipTitleActive,
+                            ]}>
+                            {mInfo.shortName}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.modelChipSub,
+                              isSelected && styles.modelChipSubActive,
+                            ]}>
+                            {mInfo.tag}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* Side-by-Side 7-Day Snowfall Forecast (Horizontal Scroll of Vertical Day Cards) */}
               {weatherData?.daily && weatherData.daily.time?.length > 0 ? (
                 <View
                   style={styles.hourlyScrollWrapper}
@@ -917,42 +1423,122 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
                     directionalLockEnabled={true}
                     showsHorizontalScrollIndicator={isWeb}
                     style={styles.hourlyScrollView}
-                    contentContainerStyle={styles.dailyBarsScroll}>
-                    {weatherData.daily.time.slice(0, 10).map((timeStr, idx) => {
+                    contentContainerStyle={styles.forecastDaysScroll}>
+                    {weatherData.daily.time.slice(0, 7).map((timeStr, idx) => {
                       const dateObj = new Date(timeStr);
                       const isToday = idx === 0;
                       const dayLabel = isToday
                         ? 'Hoy'
                         : dateObj.toLocaleDateString(i18n.language, { weekday: 'short' });
+                      const capitalizedDay = dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1);
                       const dateLabel = `${dateObj.getDate()}/${dateObj.getMonth() + 1}`;
                       const snowCm = weatherData.daily?.snowfall_sum?.[idx] ?? 0;
-                      const maxT = weatherData.daily?.temperature_2m_max?.[idx] ?? 0;
-                      const minT = weatherData.daily?.temperature_2m_min?.[idx] ?? 0;
+                      const precipMm = weatherData.daily?.precipitation_sum?.[idx] ?? 0;
+                      const maxT = Math.round(weatherData.daily?.temperature_2m_max?.[idx] ?? 0);
+                      const minT = Math.round(weatherData.daily?.temperature_2m_min?.[idx] ?? 0);
                       const hasSnow = snowCm > 0;
 
+                      const snowSummit = hasSnow ? (snowCm >= 1 ? Math.round(snowCm) : Math.round(snowCm * 10) / 10) : 0;
+                      const snowMid = hasSnow ? (snowCm >= 1 ? Math.round(snowCm * 0.90) : Math.round(snowCm * 0.85 * 10) / 10) : 0;
+                      const snowBase = hasSnow ? (snowCm >= 1 ? Math.round(snowCm * 0.80) : Math.round(snowCm * 0.70 * 10) / 10) : 0;
+
+                      const maxWeekSnow = Math.max(...(weatherData.daily?.snowfall_sum || [1]), 1);
+
                       return (
-                        <View key={timeStr || idx} style={[styles.dailyBarCol, isToday && styles.dailyBarColToday]}>
-                          <Text style={[styles.dailyBarSnow, hasSnow && styles.dailyBarSnowActive]}>
-                            {hasSnow ? `${snowCm >= 1 ? Math.round(snowCm) : Math.round(snowCm * 10) / 10} cm` : '-'}
-                          </Text>
-                          <View style={styles.barTrack}>
+                        <View
+                          key={timeStr || idx}
+                          style={[styles.forecastDayColCard, isToday && styles.forecastDayColCardToday]}>
+                          {/* Day Header Row: Day name, Date & Today Badge */}
+                          <View style={styles.forecastDayColHeader}>
+                            <View style={styles.forecastDayColTitleGroup}>
+                              <Text
+                                style={[
+                                  styles.forecastDayColTitle,
+                                  isToday && { color: colors.primary },
+                                ]}>
+                                {capitalizedDay}
+                              </Text>
+                              <Text style={styles.forecastDayColDate}>{dateLabel}</Text>
+                            </View>
+                            {isToday && (
+                              <View style={styles.forecastTodayBadge}>
+                                <Text style={styles.forecastTodayBadgeText}>Hoy</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {/* Snow badge pill & Min/Max Temp */}
+                          <View style={styles.forecastDayColMetrics}>
                             <View
                               style={[
-                                styles.barFill,
-                                {
-                                  height: Math.min(50, Math.max(4, snowCm * 2.5)),
-                                  backgroundColor: hasSnow ? '#0284c7' : colors.border,
-                                },
-                              ]}
-                            />
+                                styles.forecastDaySnowPill,
+                                hasSnow ? styles.forecastDaySnowPillActive : styles.forecastDaySnowPillEmpty,
+                              ]}>
+                              <Snowflake size={13} color={hasSnow ? '#ffffff' : colors.textSecondary} />
+                              <Text
+                                style={[
+                                  styles.forecastDaySnowPillText,
+                                  hasSnow && styles.forecastDaySnowPillTextActive,
+                                ]}>
+                                {hasSnow ? `${snowSummit} cm` : '0 cm'}
+                              </Text>
+                            </View>
+                            <Text style={styles.forecastDayColTemp}>
+                              {maxT}° / {minT}°
+                            </Text>
                           </View>
-                          <Text style={[styles.dailyBarDayName, isToday && { color: colors.primary, fontWeight: '800' }]}>
-                            {dayLabel}
-                          </Text>
-                          <Text style={styles.dailyBarDateText}>{dateLabel}</Text>
-                          <Text style={styles.dailyBarTemp}>
-                            {Math.round(maxT)}°/{Math.round(minT)}°
-                          </Text>
+
+                          {/* Infonieve 3 Cotas Vertical Stack inside the card */}
+                          <View style={styles.forecastDayColCotas}>
+                            {/* Cota Cumbre */}
+                            <View style={styles.forecastDayColCotaRow}>
+                              <View style={styles.forecastDayColCotaLeft}>
+                                <View style={[styles.cotaDot, { backgroundColor: '#0284c7' }]} />
+                                <Text style={styles.forecastDayColCotaName}>Cumbre</Text>
+                                <Text style={styles.forecastDayColCotaAlt}>
+                                  ({stats.maxElev ? `${stats.maxElev}m` : 'Alta'})
+                                </Text>
+                              </View>
+                              <Text style={[styles.forecastDayColCotaVal, { color: '#0284c7' }]}>
+                                {hasSnow ? `${snowSummit} cm` : '-'}
+                              </Text>
+                            </View>
+
+                            {/* Cota Media */}
+                            <View style={styles.forecastDayColCotaRow}>
+                              <View style={styles.forecastDayColCotaLeft}>
+                                <View style={[styles.cotaDot, { backgroundColor: '#0ea5e9' }]} />
+                                <Text style={styles.forecastDayColCotaName}>Media</Text>
+                                <Text style={styles.forecastDayColCotaAlt}>
+                                  ({stats.midElev ? `${stats.midElev}m` : 'Media'})
+                                </Text>
+                              </View>
+                              <Text style={[styles.forecastDayColCotaVal, { color: '#0ea5e9' }]}>
+                                {hasSnow ? `${snowMid} cm` : '-'}
+                              </Text>
+                            </View>
+
+                            {/* Cota Base */}
+                            <View style={styles.forecastDayColCotaRow}>
+                              <View style={styles.forecastDayColCotaLeft}>
+                                <View style={[styles.cotaDot, { backgroundColor: colors.textSecondary }]} />
+                                <Text style={styles.forecastDayColCotaName}>Base</Text>
+                                <Text style={styles.forecastDayColCotaAlt}>
+                                  ({stats.minElev ? `${stats.minElev}m` : 'Baja'})
+                                </Text>
+                              </View>
+                              <Text style={[styles.forecastDayColCotaVal, { color: colors.textPrimary }]}>
+                                {hasSnow ? `${snowBase} cm` : '-'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Visual Progress Bar & Precip Summary */}
+                          <View style={styles.forecastDayColFooter}>
+                            <Text style={styles.forecastDayColPrecip}>
+                              {precipMm > 0 ? `${precipMm} mm precip.` : 'Sin precip.'}
+                            </Text>
+                          </View>
                         </View>
                       );
                     })}
@@ -1116,44 +1702,107 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
 
             {/* Pistes Breakdown by Difficulty (Colored Cards) */}
             <View style={styles.pistesBreakdownCard}>
-              <Text style={styles.sectionTitle}>{t('pistes_breakdown', 'Desglose de Pistas por Dificultad')}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={styles.sectionTitle}>{t('pistes_breakdown', 'Desglose de Pistas por Dificultad')}</Text>
+                {selectedDifficultyFilter !== 'all' && (
+                  <TouchableOpacity onPress={() => setSelectedDifficultyFilter('all')}>
+                    <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '700' }}>Ver todas</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
 
               <View style={styles.diffGrid}>
                 {/* Novice / Green */}
-                <View style={styles.diffCard}>
+                <TouchableOpacity
+                  style={[
+                    styles.diffCard,
+                    selectedDifficultyFilter === 'novice' && styles.diffCardActive,
+                  ]}
+                  onPress={() =>
+                    setSelectedDifficultyFilter(
+                      selectedDifficultyFilter === 'novice' ? 'all' : 'novice'
+                    )
+                  }
+                  activeOpacity={0.7}>
                   <View style={[styles.diffColorDot, { backgroundColor: '#00a859' }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.diffCount}>{stats.difficultyCounts.novice}</Text>
+                    <Text style={styles.diffCount}>
+                      {displayBasePistes.length > 0
+                        ? displayBasePistes.filter((p) => getPisteDifficultyMeta(p.Difficulty).key === 'novice').length
+                        : stats.difficultyCounts.novice}
+                    </Text>
                     <Text style={styles.diffName}>{t('novice', 'Verdes (Muy fácil)')}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
 
                 {/* Easy / Blue */}
-                <View style={styles.diffCard}>
+                <TouchableOpacity
+                  style={[
+                    styles.diffCard,
+                    selectedDifficultyFilter === 'easy' && styles.diffCardActive,
+                  ]}
+                  onPress={() =>
+                    setSelectedDifficultyFilter(
+                      selectedDifficultyFilter === 'easy' ? 'all' : 'easy'
+                    )
+                  }
+                  activeOpacity={0.7}>
                   <View style={[styles.diffColorDot, { backgroundColor: '#0072bc' }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.diffCount}>{stats.difficultyCounts.easy}</Text>
+                    <Text style={styles.diffCount}>
+                      {displayBasePistes.length > 0
+                        ? displayBasePistes.filter((p) => getPisteDifficultyMeta(p.Difficulty).key === 'easy').length
+                        : stats.difficultyCounts.easy}
+                    </Text>
                     <Text style={styles.diffName}>{t('easy', 'Azules (Fácil)')}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
 
                 {/* Intermediate / Red */}
-                <View style={styles.diffCard}>
+                <TouchableOpacity
+                  style={[
+                    styles.diffCard,
+                    selectedDifficultyFilter === 'intermediate' && styles.diffCardActive,
+                  ]}
+                  onPress={() =>
+                    setSelectedDifficultyFilter(
+                      selectedDifficultyFilter === 'intermediate' ? 'all' : 'intermediate'
+                    )
+                  }
+                  activeOpacity={0.7}>
                   <View style={[styles.diffColorDot, { backgroundColor: '#f0141e' }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.diffCount}>{stats.difficultyCounts.intermediate}</Text>
+                    <Text style={styles.diffCount}>
+                      {displayBasePistes.length > 0
+                        ? displayBasePistes.filter((p) => getPisteDifficultyMeta(p.Difficulty).key === 'intermediate').length
+                        : stats.difficultyCounts.intermediate}
+                    </Text>
                     <Text style={styles.diffName}>{t('intermediate', 'Rojas (Intermedia)')}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
 
                 {/* Advanced / Black */}
-                <View style={styles.diffCard}>
+                <TouchableOpacity
+                  style={[
+                    styles.diffCard,
+                    selectedDifficultyFilter === 'advanced' && styles.diffCardActive,
+                  ]}
+                  onPress={() =>
+                    setSelectedDifficultyFilter(
+                      selectedDifficultyFilter === 'advanced' ? 'all' : 'advanced'
+                    )
+                  }
+                  activeOpacity={0.7}>
                   <View style={[styles.diffColorDot, { backgroundColor: '#000000' }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.diffCount}>{stats.difficultyCounts.advanced}</Text>
+                    <Text style={styles.diffCount}>
+                      {displayBasePistes.length > 0
+                        ? displayBasePistes.filter((p) => getPisteDifficultyMeta(p.Difficulty).key === 'advanced').length
+                        : stats.difficultyCounts.advanced}
+                    </Text>
                     <Text style={styles.diffName}>{t('expert', 'Negras (Difícil)')}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -1205,6 +1854,332 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
                   </View>
                 </View>
               </View>
+            </View>
+
+            {/* Piste Directory / Listado de Pistas (Skiinfo Experience) */}
+            <View style={styles.pisteDirectoryContainer}>
+              {/* Header */}
+              <View style={styles.pisteDirectoryHeader}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Layers size={18} color={colors.primary} />
+                    <Text style={styles.sectionTitle}>{t('pistes_directory_title', 'Listado de Pistas')}</Text>
+                  </View>
+                  <Text style={styles.pisteDirectorySubtitle}>
+                    {t('pistes_directory_subtitle', 'Información detallada, longitud y cotas de cada trazado')}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                  <View style={styles.pisteCountBadge}>
+                    <Text style={styles.pisteCountBadgeText}>
+                      {filteredPistes.length} / {displayBasePistes.length}
+                    </Text>
+                  </View>
+                  {unnamedPistes.length > 0 && namedPistes.length > 0 && !pisteSearchQuery.trim() && (
+                    <TouchableOpacity
+                      style={[
+                        styles.unnamedToggleBtn,
+                        showUnnamedLinks && styles.unnamedToggleBtnActive,
+                      ]}
+                      onPress={() => setShowUnnamedLinks(!showUnnamedLinks)}>
+                      <Text
+                        style={[
+                          styles.unnamedToggleBtnText,
+                          showUnnamedLinks && styles.unnamedToggleBtnTextActive,
+                        ]}>
+                        {showUnnamedLinks ? 'Ocultar enlaces' : `+${unnamedPistes.length} enlaces`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Search Bar */}
+              <View style={styles.pisteSearchBar}>
+                <Search size={16} color={colors.textLight} />
+                <TextInput
+                  style={styles.pisteSearchInput}
+                  placeholder={t('search_piste_placeholder', 'Buscar pista por nombre o referencia...')}
+                  placeholderTextColor={colors.textLight}
+                  value={pisteSearchQuery}
+                  onChangeText={setPisteSearchQuery}
+                  clearButtonMode="while-editing"
+                />
+                {pisteSearchQuery.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setPisteSearchQuery('')}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <X size={16} color={colors.textLight} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Difficulty Filter Chips */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterChipsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedDifficultyFilter === 'all' && styles.filterChipActiveAll,
+                  ]}
+                  onPress={() => setSelectedDifficultyFilter('all')}>
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      selectedDifficultyFilter === 'all' && styles.filterChipTextActiveAll,
+                    ]}>
+                    Todas ({displayBasePistes.length})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedDifficultyFilter === 'novice' && styles.filterChipActiveGreen,
+                  ]}
+                  onPress={() =>
+                    setSelectedDifficultyFilter(
+                      selectedDifficultyFilter === 'novice' ? 'all' : 'novice'
+                    )
+                  }>
+                  <View style={[styles.filterChipDot, { backgroundColor: '#00a859' }]} />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      selectedDifficultyFilter === 'novice' && styles.filterChipTextActiveColor,
+                    ]}>
+                    Verdes ({displayBasePistes.length > 0
+                      ? displayBasePistes.filter((p) => getPisteDifficultyMeta(p.Difficulty).key === 'novice').length
+                      : stats.difficultyCounts.novice})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedDifficultyFilter === 'easy' && styles.filterChipActiveBlue,
+                  ]}
+                  onPress={() =>
+                    setSelectedDifficultyFilter(
+                      selectedDifficultyFilter === 'easy' ? 'all' : 'easy'
+                    )
+                  }>
+                  <View style={[styles.filterChipDot, { backgroundColor: '#0072bc' }]} />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      selectedDifficultyFilter === 'easy' && styles.filterChipTextActiveColor,
+                    ]}>
+                    Azules ({displayBasePistes.length > 0
+                      ? displayBasePistes.filter((p) => getPisteDifficultyMeta(p.Difficulty).key === 'easy').length
+                      : stats.difficultyCounts.easy})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedDifficultyFilter === 'intermediate' && styles.filterChipActiveRed,
+                  ]}
+                  onPress={() =>
+                    setSelectedDifficultyFilter(
+                      selectedDifficultyFilter === 'intermediate' ? 'all' : 'intermediate'
+                    )
+                  }>
+                  <View style={[styles.filterChipDot, { backgroundColor: '#ef4444' }]} />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      selectedDifficultyFilter === 'intermediate' && styles.filterChipTextActiveColor,
+                    ]}>
+                    Rojas ({displayBasePistes.length > 0
+                      ? displayBasePistes.filter((p) => getPisteDifficultyMeta(p.Difficulty).key === 'intermediate').length
+                      : stats.difficultyCounts.intermediate})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedDifficultyFilter === 'advanced' && styles.filterChipActiveBlack,
+                  ]}
+                  onPress={() =>
+                    setSelectedDifficultyFilter(
+                      selectedDifficultyFilter === 'advanced' ? 'all' : 'advanced'
+                    )
+                  }>
+                  <View style={[styles.filterChipDot, { backgroundColor: '#0f172a' }]} />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      selectedDifficultyFilter === 'advanced' && styles.filterChipTextActiveColor,
+                    ]}>
+                    Negras ({displayBasePistes.length > 0
+                      ? displayBasePistes.filter((p) => getPisteDifficultyMeta(p.Difficulty).key === 'advanced').length
+                      : stats.difficultyCounts.advanced})
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+
+              {/* Piste List Items */}
+              {filteredPistes.length > 0 ? (
+                <View style={styles.pisteListContainer}>
+                  {filteredPistes.map((piste, index) => {
+                    const meta = getPisteDifficultyMeta(piste.Difficulty);
+                    const name = getPisteName(piste);
+                    const distanceM = getPisteDistanceMeters(piste);
+                    const elevStats = getPisteElevationStats(piste);
+                    const typeLabel = getPisteTypeLabel(piste.PisteType);
+                    const ref = piste.Tags?.ref || piste.Tags?.['piste:ref'];
+                    const isLit = piste.Tags?.lit === 'yes' || piste.Tags?.['piste:lit'] === 'yes';
+                    const hasSnowmaking =
+                      piste.Tags?.['piste:snowmaking'] === 'yes' || piste.Tags?.snowmaking === 'yes';
+                    const isGroomed =
+                      piste.Grooming === 'classic' ||
+                      piste.Tags?.['piste:grooming'] === 'classic' ||
+                      piste.Tags?.['piste:grooming'] === 'scooter';
+
+                    return (
+                      <View key={piste.ID || `piste-${index}`} style={styles.pisteCard}>
+                        <View style={styles.pisteCardMain}>
+                          {/* Difficulty Stripe */}
+                          <View style={[styles.pisteDiffIndicator, { backgroundColor: meta.color }]} />
+
+                          <View style={styles.pisteCardBody}>
+                            {/* Top Row: Name, Ref Badge, Difficulty Badge */}
+                            <View style={styles.pisteCardTopRow}>
+                              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                {ref && (
+                                  <View style={styles.pisteRefBadge}>
+                                    <Text style={styles.pisteRefBadgeText}>{ref}</Text>
+                                  </View>
+                                )}
+                                {!hasNamedPiste(piste) && (
+                                  <View style={styles.pisteUnnamedBadge}>
+                                    <Text style={styles.pisteUnnamedBadgeText}>Enlace</Text>
+                                  </View>
+                                )}
+                                <Text style={styles.pisteNameText} numberOfLines={1}>
+                                  {name}
+                                </Text>
+                              </View>
+
+                              <View style={[styles.pisteDifficultyBadge, { backgroundColor: meta.badgeBg }]}>
+                                <View style={[styles.pisteDiffDotSmall, { backgroundColor: meta.color }]} />
+                                <Text style={[styles.pisteDifficultyBadgeText, { color: meta.badgeText }]}>
+                                  {meta.label}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* Metrics Row: Distance, Drop, Elevation interval */}
+                            <View style={styles.pisteMetricsRow}>
+                              {distanceM > 0 && (
+                                <View style={styles.pisteMetricChip}>
+                                  <Compass size={12} color={colors.textSecondary} />
+                                  <Text style={styles.pisteMetricText}>
+                                    {distanceM >= 1000 ? `${(distanceM / 1000).toFixed(1)} km` : `${distanceM} m`}
+                                  </Text>
+                                </View>
+                              )}
+
+                              {elevStats && elevStats.drop > 0 && (
+                                <View style={styles.pisteMetricChip}>
+                                  <ArrowDown size={12} color="#0284c7" />
+                                  <Text style={styles.pisteMetricText}>
+                                    Desnivel: {elevStats.drop} m
+                                  </Text>
+                                </View>
+                              )}
+
+                              {elevStats && (
+                                <View style={styles.pisteMetricChip}>
+                                  <Mountain size={12} color={colors.textSecondary} />
+                                  <Text style={styles.pisteMetricText}>
+                                    {elevStats.minElev} - {elevStats.maxElev} m
+                                  </Text>
+                                </View>
+                              )}
+
+                              <View style={styles.pisteMetricChip}>
+                                <Text style={styles.pisteMetricText}>{typeLabel}</Text>
+                              </View>
+                            </View>
+
+                            {/* Features & Action Footer */}
+                            <View style={styles.pisteCardFooter}>
+                              <View style={styles.pisteFeaturesRow}>
+                                {hasSnowmaking && (
+                                  <View style={styles.pisteFeatureTag}>
+                                    <Snowflake size={11} color="#0284c7" />
+                                    <Text style={styles.pisteFeatureTagText}>Nieve art.</Text>
+                                  </View>
+                                )}
+                                {isLit && (
+                                  <View style={styles.pisteFeatureTag}>
+                                    <Text style={styles.pisteFeatureTagText}>💡 Nocturna</Text>
+                                  </View>
+                                )}
+                                {isGroomed && (
+                                  <View style={styles.pisteFeatureTag}>
+                                    <Text style={styles.pisteFeatureTagText}>🚜 Pisada</Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {(onOpenPiste || onOpenMap) && (
+                                <TouchableOpacity
+                                  style={styles.pisteMapButton}
+                                  onPress={() => {
+                                    if (onOpenPiste) {
+                                      onOpenPiste(piste);
+                                    } else if (onOpenMap) {
+                                      onOpenMap();
+                                    }
+                                  }}>
+                                  <MapIcon size={12} color={colors.primary} />
+                                  <Text style={styles.pisteMapButtonText}>Ver en mapa</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                /* Empty State */
+                <View style={styles.pisteEmptyContainer}>
+                  <View style={styles.pisteEmptyIconCircle}>
+                    <Search size={24} color={colors.textLight} />
+                  </View>
+                  <Text style={styles.pisteEmptyTitle}>
+                    {allPistes.length === 0
+                      ? 'No hay pistas registradas'
+                      : 'No se encontraron pistas'}
+                  </Text>
+                  <Text style={styles.pisteEmptySubtitle}>
+                    {allPistes.length === 0
+                      ? 'La estación no tiene detalles individuales de pistas disponibles en este momento.'
+                      : pisteSearchQuery
+                      ? `Ninguna pista coincide con "${pisteSearchQuery}"`
+                      : 'No hay pistas para el filtro de dificultad seleccionado.'}
+                  </Text>
+                  {(selectedDifficultyFilter !== 'all' || pisteSearchQuery.length > 0) && (
+                    <TouchableOpacity
+                      style={styles.pisteResetFiltersBtn}
+                      onPress={() => {
+                        setSelectedDifficultyFilter('all');
+                        setPisteSearchQuery('');
+                      }}>
+                      <Text style={styles.pisteResetFiltersText}>Mostrar todas las pistas</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
             </View>
           </View>
         )}
@@ -1446,7 +2421,15 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
 
             {/* 7-Day Weather & Forecast (Skiinfo Experience) */}
             {weatherData?.daily && weatherData.daily.time?.length > 0 && (
-              <View style={styles.sevenDayForecastCard}>
+              <View
+                style={styles.sevenDayForecastCard}
+                onLayout={(e) => {
+                  const w = Math.round(e.nativeEvent.layout.width - 24);
+                  if (w > 100 && w !== sevenDayCardWidth) {
+                    setSevenDayCardWidth(w);
+                  }
+                }}>
+                {/* Header: Title and Day Navigation Buttons */}
                 <View style={styles.sevenDayHeaderRow}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Calendar size={16} color={colors.primary} />
@@ -1457,98 +2440,281 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
                   <View style={styles.hourlyScrollNav}>
                     <TouchableOpacity
                       style={styles.hourlyNavBtn}
-                      onPress={() => scrollHorizontal(sevenDayScrollRef, -240)}
-                      accessibilityLabel="Ver días anteriores">
+                      onPress={() => {
+                        const nextIdx = Math.max(0, selectedSevenDayIdx - 1);
+                        scrollToSevenDay(nextIdx);
+                      }}
+                      accessibilityLabel="Ver día anterior">
                       <ChevronLeft size={16} color={colors.textPrimary} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.hourlyNavBtn}
-                      onPress={() => scrollHorizontal(sevenDayScrollRef, 240)}
-                      accessibilityLabel="Ver siguientes días">
+                      onPress={() => {
+                        const maxIdx = Math.min(6, (weatherData?.daily?.time?.length ?? 1) - 1);
+                        const nextIdx = Math.min(maxIdx, selectedSevenDayIdx + 1);
+                        scrollToSevenDay(nextIdx);
+                      }}
+                      accessibilityLabel="Ver día siguiente">
                       <ChevronRight size={16} color={colors.textPrimary} />
                     </TouchableOpacity>
                   </View>
                 </View>
 
-                <View
-                  style={styles.hourlyScrollWrapper}
-                  // @ts-ignore
-                  onWheel={(e: any) => handleWheel(sevenDayScrollRef, e)}
-                  // @ts-ignore
-                  onMouseDown={(e: any) => handleMouseDown(sevenDayScrollRef, e)}
-                  // @ts-ignore
-                  onMouseMove={handleMouseMove}
-                  // @ts-ignore
-                  onMouseUp={handleMouseUpOrLeave}
-                  // @ts-ignore
-                  onMouseLeave={handleMouseUpOrLeave}>
-                  <ScrollView
-                    ref={sevenDayScrollRef}
-                    horizontal
-                    nestedScrollEnabled={true}
-                    directionalLockEnabled={true}
-                    showsHorizontalScrollIndicator={isWeb}
-                    style={styles.hourlyScrollView}
-                    contentContainerStyle={styles.sevenDayScroll}>
-                    {weatherData.daily.time.slice(0, 10).map((timeStr, idx) => {
-                      const dateObj = new Date(timeStr);
-                      const isToday = idx === 0;
-                      const dayName = isToday
-                        ? 'Hoy'
-                        : dateObj.toLocaleDateString(i18n.language, { weekday: 'short' });
-                      const dateFormatted = dateObj.toLocaleDateString(i18n.language, {
-                        day: 'numeric',
-                        month: 'short',
-                      });
+                {/* Day Selector Pills Bar */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.sevenDayTabsScroll}>
+                  {weatherData.daily.time.slice(0, 7).map((timeStr, idx) => {
+                    const dObj = new Date(timeStr);
+                    const isToday = idx === 0;
+                    const dName = isToday
+                      ? 'Hoy'
+                      : dObj.toLocaleDateString(i18n.language, { weekday: 'short' });
+                    const isSelected = selectedSevenDayIdx === idx;
+                    const dSnow = weatherData.daily?.snowfall_sum?.[idx] ?? 0;
+                    const dMax = Math.round(weatherData.daily?.temperature_2m_max?.[idx] ?? 0);
+                    const dMin = Math.round(weatherData.daily?.temperature_2m_min?.[idx] ?? 0);
+                    return (
+                      <TouchableOpacity
+                        key={`tab-${timeStr || idx}`}
+                        style={[styles.sevenDayTabChip, isSelected && styles.sevenDayTabChipActive]}
+                        onPress={() => scrollToSevenDay(idx)}
+                        activeOpacity={0.75}>
+                        <Text style={[styles.sevenDayTabDay, isSelected && styles.sevenDayTabDayActive]}>
+                          {dName.charAt(0).toUpperCase() + dName.slice(1)}
+                        </Text>
+                        <Text style={[styles.sevenDayTabDate, isSelected && styles.sevenDayTabDateActive]}>
+                          {dObj.getDate()}/{dObj.getMonth() + 1}
+                        </Text>
+                        <View style={styles.sevenDayTabBadgeRow}>
+                          {dSnow > 0 ? (
+                            <View style={styles.sevenDayTabSnowBadge}>
+                              <Snowflake size={9} color="#0284c7" />
+                              <Text style={styles.sevenDayTabSnowText}>{Math.round(dSnow)}c</Text>
+                            </View>
+                          ) : (
+                            <Text style={[styles.sevenDayTabTemp, isSelected && styles.sevenDayTabTempActive]}>
+                              {dMax}°/{dMin}°
+                            </Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
 
-                      const snowCm = weatherData.daily?.snowfall_sum?.[idx] ?? 0;
-                      const hasSnow = snowCm > 0;
-                      const roundedSnow = snowCm >= 1 ? Math.round(snowCm) : Math.round(snowCm * 10) / 10;
-                      const maxT = Math.round(weatherData.daily?.temperature_2m_max?.[idx] ?? 0);
-                      const minT = Math.round(weatherData.daily?.temperature_2m_min?.[idx] ?? 0);
-                      const wCode = weatherData.daily?.weather_code?.[idx] ?? (hasSnow ? 71 : 0);
-                      const precipProb = weatherData.daily?.precipitation_probability_max?.[idx] ?? 0;
+                {/* Active Day Detail Card (Full Width, Swipeable left/right) */}
+                {(() => {
+                  const safeIdx = Math.max(0, Math.min(selectedSevenDayIdx, (weatherData.daily?.time?.length ?? 1) - 1));
+                  const timeStr = weatherData.daily.time[safeIdx];
+                  const dateObj = new Date(timeStr);
+                  const isToday = safeIdx === 0;
+                  const dayName = isToday
+                    ? 'Hoy'
+                    : dateObj.toLocaleDateString(i18n.language, { weekday: 'long' });
+                  const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+                  const dateFormatted = dateObj.toLocaleDateString(i18n.language, {
+                    day: 'numeric',
+                    month: 'long',
+                  });
 
-                      return (
-                        <View key={timeStr || idx} style={[styles.sevenDayCardItem, isToday && styles.sevenDayCardItemToday]}>
-                          <Text style={[styles.sevenDayCardDay, isToday && { color: colors.primary, fontWeight: '800' }]}>
-                            {dayName}
+                  const snowCm = weatherData.daily?.snowfall_sum?.[safeIdx] ?? 0;
+                  const hasSnow = snowCm > 0;
+                  const roundedSnow = snowCm >= 1 ? Math.round(snowCm) : Math.round(snowCm * 10) / 10;
+                  const precipMm = weatherData.daily?.precipitation_sum?.[safeIdx] ?? 0;
+                  const maxT = Math.round(weatherData.daily?.temperature_2m_max?.[safeIdx] ?? 0);
+                  const minT = Math.round(weatherData.daily?.temperature_2m_min?.[safeIdx] ?? 0);
+                  const wCode = weatherData.daily?.weather_code?.[safeIdx] ?? (hasSnow ? 71 : 0);
+                  const precipProb = weatherData.daily?.precipitation_probability_max?.[safeIdx] ?? 0;
+
+                  const sunriseIso = weatherData.daily?.sunrise?.[safeIdx];
+                  const sunsetIso = weatherData.daily?.sunset?.[safeIdx];
+                  const sunriseStr = sunriseIso && typeof sunriseIso === 'string' && sunriseIso.length >= 16 ? sunriseIso.substring(11, 16) : null;
+                  const sunsetStr = sunsetIso && typeof sunsetIso === 'string' && sunsetIso.length >= 16 ? sunsetIso.substring(11, 16) : null;
+
+                  const snowSummit = hasSnow ? (snowCm >= 1 ? Math.round(snowCm) : Math.round(snowCm * 10) / 10) : 0;
+                  const snowMid = hasSnow ? (snowCm >= 1 ? Math.round(snowCm * 0.90) : Math.round(snowCm * 0.85 * 10) / 10) : 0;
+                  const snowBase = hasSnow ? (snowCm >= 1 ? Math.round(snowCm * 0.80) : Math.round(snowCm * 0.70 * 10) / 10) : 0;
+
+                  return (
+                    <View
+                      style={[styles.sevenDayFullCard, isToday && styles.sevenDayFullCardToday]}
+                      onTouchStart={handleDayTouchStart}
+                      onTouchEnd={handleDayTouchEnd}>
+                      {/* Day Header Row */}
+                      <View style={styles.sevenDayFullCardHeader}>
+                        <View style={styles.sevenDayFullCardTitleGroup}>
+                          <Text
+                            style={[
+                              styles.sevenDayFullCardTitle,
+                              isToday && { color: colors.primary },
+                            ]}>
+                            {capitalizedDay}
                           </Text>
-                          <Text style={styles.sevenDayCardDate}>{dateFormatted}</Text>
+                          <Text style={styles.sevenDayFullCardDate}>{dateFormatted}</Text>
+                          {isToday && (
+                            <View style={styles.forecastTodayBadge}>
+                              <Text style={styles.forecastTodayBadgeText}>Hoy</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.sevenDayFullCardStep}>
+                          Día {safeIdx + 1} de 7
+                        </Text>
+                      </View>
 
-                          <View style={styles.sevenDayCardIconBox}>
-                            {renderWeatherIcon(wCode, 24)}
-                          </View>
-                          <Text style={styles.sevenDayCardCondition} numberOfLines={1}>
-                            {getWeatherCodeLabel(wCode)}
-                          </Text>
-
-                          <View style={styles.sevenDayCardTempRow}>
-                            <Text style={styles.sevenDayCardMaxTemp}>{maxT}°</Text>
-                            <Text style={styles.sevenDayCardTempSlash}>/</Text>
-                            <Text style={styles.sevenDayCardMinTemp}>{minT}°</Text>
-                          </View>
-
-                          <View style={styles.sevenDayCardPrecipContainer}>
-                            {hasSnow ? (
-                              <View style={styles.sevenDaySnowBadge}>
-                                <Snowflake size={11} color="#0284c7" />
-                                <Text style={styles.sevenDaySnowBadgeText}>+{roundedSnow} cm</Text>
-                              </View>
-                            ) : precipProb > 20 ? (
-                              <View style={styles.sevenDayRainPill}>
-                                <Umbrella size={10} color="#0284c7" />
-                                <Text style={styles.sevenDayRainPillText}>{precipProb}%</Text>
-                              </View>
-                            ) : (
-                              <Text style={styles.sevenDayNoSnowText}>0 cm</Text>
-                            )}
+                      {/* Central Main Weather & Big Temp Box */}
+                      <View style={styles.sevenDayMainRow}>
+                        <View style={styles.sevenDayMainConditionGroup}>
+                          {renderWeatherIcon(wCode, 36)}
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.sevenDayConditionText}>
+                              {getWeatherCodeLabel(wCode)}
+                            </Text>
+                            <Text style={styles.sevenDayGridSub}>
+                              {hasSnow
+                                ? `Nevada prevista · ${roundedSnow} cm en cumbre`
+                                : precipProb > 40
+                                ? `Precipitaciones probables (${precipProb}%)`
+                                : 'Sin precipitaciones significativas'}
+                            </Text>
                           </View>
                         </View>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
+                        <View style={styles.sevenDayTempGroup}>
+                          <View style={styles.sevenDayTempRow}>
+                            <Text style={styles.sevenDayMaxTempText}>{maxT}°</Text>
+                            <Text style={styles.sevenDayMinTempText}>/ {minT}°</Text>
+                          </View>
+                          <Text style={styles.sevenDayTempSub}>Máx / Mín</Text>
+                        </View>
+                      </View>
+
+                      {/* 4-Stat Metrics Grid */}
+                      <View style={styles.sevenDayGrid}>
+                        {/* Snow or Rain box */}
+                        <View style={styles.sevenDayGridBox}>
+                          <View style={styles.sevenDayGridHeader}>
+                            <Snowflake size={14} color="#0284c7" />
+                            <Text style={styles.sevenDayGridLabel}>Nieve en cumbre</Text>
+                          </View>
+                          <Text style={[styles.sevenDayGridValue, hasSnow && { color: '#0284c7' }]}>
+                            {hasSnow ? `${roundedSnow} cm` : '0 cm'}
+                          </Text>
+                          <Text style={styles.sevenDayGridSub}>
+                            {precipMm > 0 ? `${precipMm} mm total` : 'Sin acumulación'}
+                          </Text>
+                        </View>
+
+                        {/* Precip Probability box */}
+                        <View style={styles.sevenDayGridBox}>
+                          <View style={styles.sevenDayGridHeader}>
+                            <Umbrella size={14} color={precipProb > 30 ? '#0284c7' : colors.textSecondary} />
+                            <Text style={styles.sevenDayGridLabel}>Prob. precipitación</Text>
+                          </View>
+                          <Text style={styles.sevenDayGridValue}>
+                            {precipProb}%
+                          </Text>
+                          <Text style={styles.sevenDayGridSub}>
+                            {precipProb > 50 ? 'Muy probable' : precipProb > 20 ? 'Moderada' : 'Baja'}
+                          </Text>
+                        </View>
+
+                        {/* Sunrise & Sunset */}
+                        {sunriseStr && sunsetStr ? (
+                          <View style={styles.sevenDayGridBox}>
+                            <View style={styles.sevenDayGridHeader}>
+                              <Sun size={14} color="#f59e0b" />
+                              <Text style={styles.sevenDayGridLabel}>Luz solar</Text>
+                            </View>
+                            <Text style={styles.sevenDayGridValue}>
+                              {sunriseStr} - {sunsetStr}
+                            </Text>
+                            <Text style={styles.sevenDayGridSub}>Salida / Puesta</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.sevenDayGridBox}>
+                            <View style={styles.sevenDayGridHeader}>
+                              <Thermometer size={14} color={minT < 0 ? '#0284c7' : '#f59e0b'} />
+                              <Text style={styles.sevenDayGridLabel}>Sensación térmica</Text>
+                            </View>
+                            <Text style={styles.sevenDayGridValue}>
+                              {minT < 0 ? 'Helada' : 'Templado'}
+                            </Text>
+                            <Text style={styles.sevenDayGridSub}>Mínima: {minT}°C</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Infonieve 3 Cotas breakdown if there is snow expected */}
+                      {hasSnow && (
+                        <View style={styles.forecastDayColCotas}>
+                          <View style={styles.forecastDayColCotaRow}>
+                            <View style={styles.forecastDayColCotaLeft}>
+                              <View style={[styles.cotaDot, { backgroundColor: '#0284c7' }]} />
+                              <Text style={styles.forecastDayColCotaName}>Cumbre</Text>
+                              <Text style={styles.forecastDayColCotaAlt}>({stats.maxElev ? `${stats.maxElev}m` : 'Alta'})</Text>
+                            </View>
+                            <Text style={[styles.forecastDayColCotaVal, { color: '#0284c7' }]}>
+                              {snowSummit} cm
+                            </Text>
+                          </View>
+                          <View style={styles.forecastDayColCotaRow}>
+                            <View style={styles.forecastDayColCotaLeft}>
+                              <View style={[styles.cotaDot, { backgroundColor: '#0ea5e9' }]} />
+                              <Text style={styles.forecastDayColCotaName}>Media</Text>
+                              <Text style={styles.forecastDayColCotaAlt}>({stats.midElev ? `${stats.midElev}m` : 'Media'})</Text>
+                            </View>
+                            <Text style={[styles.forecastDayColCotaVal, { color: '#0ea5e9' }]}>
+                              {snowMid} cm
+                            </Text>
+                          </View>
+                          <View style={styles.forecastDayColCotaRow}>
+                            <View style={styles.forecastDayColCotaLeft}>
+                              <View style={[styles.cotaDot, { backgroundColor: colors.textSecondary }]} />
+                              <Text style={styles.forecastDayColCotaName}>Base</Text>
+                              <Text style={styles.forecastDayColCotaAlt}>({stats.minElev ? `${stats.minElev}m` : 'Baja'})</Text>
+                            </View>
+                            <Text style={[styles.forecastDayColCotaVal, { color: colors.textPrimary }]}>
+                              {snowBase} cm
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Hourly Evolution for the Selected Day */}
+                      {selectedDayHours.length > 0 && (
+                        <View style={styles.sevenDayHourlyWrap}>
+                          <View style={styles.sevenDayHourlyTitleRow}>
+                            <Clock size={13} color={colors.textSecondary} />
+                            <Text style={styles.sevenDayHourlyTitle}>
+                              Evolución horaria de {capitalizedDay.toLowerCase()}
+                            </Text>
+                          </View>
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.sevenDayHourlyScroll}>
+                            {selectedDayHours.map((h, hIdx) => (
+                              <View key={h.timeLabel || hIdx} style={styles.sevenDayHourlyItem}>
+                                <Text style={styles.sevenDayHourlyTime}>{h.timeLabel}</Text>
+                                <View style={styles.sevenDayHourlyIcon}>
+                                  {renderWeatherIcon(h.weatherCode, 18)}
+                                </View>
+                                <Text style={styles.sevenDayHourlyTemp}>{h.temp}°</Text>
+                                {h.snow > 0 ? (
+                                  <Text style={styles.sevenDayHourlySnow}>❄️{Math.round(h.snow)}</Text>
+                                ) : h.precip > 0 ? (
+                                  <Text style={styles.sevenDayHourlyRain}>💧{Math.round(h.precip)}</Text>
+                                ) : null}
+                              </View>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
               </View>
             )}
           </View>
@@ -2177,6 +3343,12 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
       padding: 8,
       width: '48%',
       gap: 8,
+      borderWidth: 1.5,
+      borderColor: 'transparent',
+    },
+    diffCardActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '12',
     },
     diffColorDot: {
       width: 12,
@@ -2514,109 +3686,244 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
       alignItems: 'center',
       justifyContent: 'space-between',
     },
-    sevenDayScroll: {
-      gap: 8,
-      paddingVertical: 4,
+    sevenDayTabsScroll: {
+      flexDirection: 'row',
+      gap: 6,
+      paddingVertical: 2,
     },
-    sevenDayCardItem: {
+    sevenDayTabChip: {
       alignItems: 'center',
+      paddingVertical: 6,
+      paddingHorizontal: 9,
+      borderRadius: BORDER_RADIUS.sm,
       backgroundColor: colors.surface,
-      paddingVertical: 10,
-      paddingHorizontal: 8,
-      borderRadius: BORDER_RADIUS.md,
-      width: 104,
       borderWidth: 1,
       borderColor: colors.border,
-      gap: 5,
+      minWidth: 58,
+      gap: 2,
     },
-    sevenDayCardItemToday: {
+    sevenDayTabChipActive: {
+      backgroundColor: colors.primary,
       borderColor: colors.primary,
-      borderWidth: 1.5,
-      backgroundColor: colors.card,
     },
-    sevenDayCardDay: {
-      fontSize: 12,
+    sevenDayTabDay: {
+      fontSize: 11,
       fontWeight: '700',
-      color: colors.textPrimary,
-      textTransform: 'capitalize',
-    },
-    sevenDayCardDate: {
-      fontSize: 10,
       color: colors.textSecondary,
     },
-    sevenDayCardIconBox: {
-      height: 26,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    sevenDayCardCondition: {
-      fontSize: 9.5,
-      color: colors.textPrimary,
-      textAlign: 'center',
-      minHeight: 14,
-    },
-    sevenDayCardTempRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 3,
-    },
-    sevenDayCardMaxTemp: {
-      fontSize: 12.5,
+    sevenDayTabDayActive: {
+      color: '#ffffff',
       fontWeight: '800',
-      color: colors.textPrimary,
     },
-    sevenDayCardTempSlash: {
+    sevenDayTabDate: {
       fontSize: 10,
-      color: colors.textLight,
-    },
-    sevenDayCardMinTemp: {
-      fontSize: 11.5,
-      fontWeight: '600',
       color: colors.textSecondary,
     },
-    sevenDayCardPrecipContainer: {
-      minHeight: 20,
-      alignItems: 'center',
-      justifyContent: 'center',
+    sevenDayTabDateActive: {
+      color: 'rgba(255,255,255,0.85)',
     },
-    sevenDayRainPill: {
+    sevenDayTabBadgeRow: {
+      marginTop: 2,
+    },
+    sevenDayTabSnowBadge: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 2,
-      backgroundColor: colors.card,
-      paddingHorizontal: 5,
-      paddingVertical: 1.5,
-      borderRadius: BORDER_RADIUS.sm,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    sevenDayRainPillText: {
-      fontSize: 9,
-      fontWeight: '600',
-      color: colors.textSecondary,
-    },
-    sevenDaySnowBadgeCol: {
-      width: 68,
-      alignItems: 'center',
-    },
-    sevenDaySnowBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 3,
       backgroundColor: '#e0f2fe',
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: BORDER_RADIUS.sm,
+      paddingHorizontal: 4,
+      paddingVertical: 1,
+      borderRadius: 3,
     },
-    sevenDaySnowBadgeText: {
-      fontSize: 10,
+    sevenDayTabSnowText: {
+      fontSize: 9.5,
       fontWeight: '800',
       color: '#0284c7',
     },
-    sevenDayNoSnowText: {
+    sevenDayTabTemp: {
+      fontSize: 9.5,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    sevenDayTabTempActive: {
+      color: '#ffffff',
+    },
+    sevenDayFullWidthScroll: {
+      flexDirection: 'row',
+      gap: 12,
+      paddingVertical: 4,
+    },
+    sevenDayFullCard: {
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.md,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      padding: SPACING.md,
+      gap: 12,
+      ...SHADOWS.sm,
+    },
+    sevenDayFullCardToday: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '06',
+    },
+    sevenDayFullCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    sevenDayFullCardTitleGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    sevenDayFullCardTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: colors.textPrimary,
+    },
+    sevenDayFullCardDate: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    sevenDayFullCardStep: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    sevenDayMainRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: colors.card,
+      borderRadius: BORDER_RADIUS.sm,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 12,
+    },
+    sevenDayMainConditionGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      flex: 1,
+    },
+    sevenDayConditionText: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    sevenDayTempGroup: {
+      alignItems: 'flex-end',
+    },
+    sevenDayTempRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 4,
+    },
+    sevenDayMaxTempText: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: colors.textPrimary,
+    },
+    sevenDayMinTempText: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.textSecondary,
+    },
+    sevenDayTempSub: {
       fontSize: 10,
-      color: colors.textLight,
-      fontWeight: '500',
+      color: colors.textSecondary,
+    },
+    sevenDayGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    sevenDayGridBox: {
+      flex: 1,
+      minWidth: 125,
+      backgroundColor: colors.card,
+      borderRadius: BORDER_RADIUS.sm,
+      padding: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 4,
+    },
+    sevenDayGridHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    sevenDayGridLabel: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    sevenDayGridValue: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: colors.textPrimary,
+    },
+    sevenDayGridSub: {
+      fontSize: 10,
+      color: colors.textSecondary,
+    },
+    sevenDayHourlyWrap: {
+      gap: 6,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    sevenDayHourlyTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    sevenDayHourlyTitle: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: colors.textSecondary,
+    },
+    sevenDayHourlyScroll: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingVertical: 4,
+    },
+    sevenDayHourlyItem: {
+      alignItems: 'center',
+      backgroundColor: colors.card,
+      borderRadius: BORDER_RADIUS.sm,
+      paddingVertical: 6,
+      paddingHorizontal: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      minWidth: 50,
+      gap: 3,
+    },
+    sevenDayHourlyTime: {
+      fontSize: 10,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    sevenDayHourlyIcon: {
+      height: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sevenDayHourlyTemp: {
+      fontSize: 12,
+      fontWeight: '800',
+      color: colors.textPrimary,
+    },
+    sevenDayHourlySnow: {
+      fontSize: 9.5,
+      fontWeight: '700',
+      color: '#0284c7',
+    },
+    sevenDayHourlyRain: {
+      fontSize: 9.5,
+      fontWeight: '700',
+      color: '#0ea5e9',
     },
     sessionsHeaderRow: {
       flexDirection: 'row',
@@ -2704,6 +4011,314 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
       fontWeight: '700',
       color: '#ffffff',
     },
+    pisteDirectoryContainer: {
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: BORDER_RADIUS.md,
+      padding: 14,
+      gap: 12,
+    },
+    pisteDirectoryHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    pisteDirectorySubtitle: {
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    pisteCountBadge: {
+      backgroundColor: colors.surface,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: BORDER_RADIUS.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    pisteCountBadgeText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    unnamedToggleBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: BORDER_RADIUS.round,
+      gap: 4,
+    },
+    unnamedToggleBtnActive: {
+      backgroundColor: colors.primary + '15',
+      borderColor: colors.primary,
+    },
+    unnamedToggleBtnText: {
+      fontSize: 10.5,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    unnamedToggleBtnTextActive: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    pisteSearchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 10,
+      height: 38,
+      gap: 8,
+    },
+    pisteSearchInput: {
+      flex: 1,
+      fontSize: 12.5,
+      color: colors.textPrimary,
+      paddingVertical: 0,
+    },
+    filterChipsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingVertical: 2,
+    },
+    filterChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: BORDER_RADIUS.round,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 6,
+    },
+    filterChipActiveAll: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    filterChipTextActiveAll: {
+      color: '#ffffff',
+      fontWeight: '700',
+    },
+    filterChipActiveGreen: {
+      backgroundColor: '#e8f5e9',
+      borderColor: '#00a859',
+    },
+    filterChipActiveBlue: {
+      backgroundColor: '#e0f2fe',
+      borderColor: '#0072bc',
+    },
+    filterChipActiveRed: {
+      backgroundColor: '#fee2e2',
+      borderColor: '#ef4444',
+    },
+    filterChipActiveBlack: {
+      backgroundColor: '#f1f5f9',
+      borderColor: '#0f172a',
+    },
+    filterChipDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+    },
+    filterChipText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    filterChipTextActiveColor: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    pisteListContainer: {
+      gap: 8,
+      marginTop: 4,
+    },
+    pisteCard: {
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    pisteCardMain: {
+      flexDirection: 'row',
+    },
+    pisteDiffIndicator: {
+      width: 5,
+    },
+    pisteCardBody: {
+      flex: 1,
+      padding: 10,
+      gap: 7,
+    },
+    pisteCardTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 6,
+    },
+    pisteRefBadge: {
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+      borderRadius: 3,
+    },
+    pisteRefBadgeText: {
+      fontSize: 9.5,
+      fontWeight: '800',
+      color: colors.textSecondary,
+    },
+    pisteUnnamedBadge: {
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+      borderRadius: 3,
+    },
+    pisteUnnamedBadgeText: {
+      fontSize: 9.5,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    pisteNameText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textPrimary,
+      flexShrink: 1,
+    },
+    pisteDifficultyBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: BORDER_RADIUS.round,
+    },
+    pisteDiffDotSmall: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+    },
+    pisteDifficultyBadgeText: {
+      fontSize: 10.5,
+      fontWeight: '700',
+    },
+    pisteMetricsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      alignItems: 'center',
+    },
+    pisteMetricChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.card,
+      paddingHorizontal: 6,
+      paddingVertical: 2.5,
+      borderRadius: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    pisteMetricText: {
+      fontSize: 10.5,
+      color: colors.textSecondary,
+      fontWeight: '600',
+    },
+    pisteCardFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingTop: 6,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    pisteFeaturesRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 4,
+      alignItems: 'center',
+    },
+    pisteFeatureTag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      backgroundColor: colors.card,
+      paddingHorizontal: 5,
+      paddingVertical: 1.5,
+      borderRadius: 3,
+    },
+    pisteFeatureTagText: {
+      fontSize: 9.5,
+      color: colors.textSecondary,
+      fontWeight: '600',
+    },
+    pisteMapButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.primary + '18',
+      paddingHorizontal: 8,
+      paddingVertical: 3.5,
+      borderRadius: BORDER_RADIUS.sm,
+    },
+    pisteMapButtonText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: colors.primary,
+    },
+    pisteEmptyContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 24,
+      gap: 6,
+    },
+    pisteEmptyIconCircle: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    pisteEmptyTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    pisteEmptySubtitle: {
+      fontSize: 11.5,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      paddingHorizontal: 16,
+    },
+    pisteResetFiltersBtn: {
+      marginTop: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      backgroundColor: colors.primary,
+      borderRadius: BORDER_RADIUS.round,
+    },
+    pisteResetFiltersText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: '#ffffff',
+    },
     footerBar: {
       flexDirection: 'row',
       paddingHorizontal: SPACING.md,
@@ -2747,5 +4362,621 @@ const getStyles = (colors: typeof LIGHT_COLORS) =>
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: BORDER_RADIUS.sm,
+    },
+    modelSelectorContainer: {
+      paddingHorizontal: SPACING.md,
+      paddingTop: 8,
+      paddingBottom: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      gap: 6,
+    },
+    modelSelectorHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    modelSelectorLabel: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    modelUpdatingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    modelUpdatingText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.primary,
+    },
+    modelChipsScroll: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingVertical: 2,
+    },
+    modelChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: BORDER_RADIUS.md,
+      backgroundColor: colors.surface,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+    },
+    modelChipActive: {
+      backgroundColor: colors.primary + '14',
+      borderColor: colors.primary,
+    },
+    modelChipFlag: {
+      fontSize: 16,
+    },
+    modelChipTitle: {
+      fontSize: 11.5,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    modelChipTitleActive: {
+      color: colors.primary,
+    },
+    modelChipSub: {
+      fontSize: 9.5,
+      color: colors.textSecondary,
+    },
+    modelChipSubActive: {
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    modelComparisonCard: {
+      backgroundColor: colors.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: SPACING.md,
+      gap: SPACING.sm,
+      ...SHADOWS.sm,
+    },
+    modelComparisonHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 4,
+    },
+    modelComparisonTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 2,
+    },
+    modelComparisonList: {
+      gap: 8,
+    },
+    modelComparisonRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 10,
+      borderRadius: BORDER_RADIUS.md,
+      backgroundColor: colors.surface,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      gap: 12,
+    },
+    modelComparisonRowActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '10',
+    },
+    modelComparisonRowLeft: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    modelComparisonRowFlag: {
+      fontSize: 20,
+    },
+    modelComparisonRowNameWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    modelComparisonRowName: {
+      fontSize: 12.5,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    modelComparisonRowNameActive: {
+      color: colors.primary,
+    },
+    modelSelectedBadge: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+      borderRadius: 4,
+    },
+    modelSelectedBadgeText: {
+      fontSize: 9,
+      fontWeight: '800',
+      color: '#ffffff',
+      textTransform: 'uppercase',
+    },
+    modelComparisonRowProvider: {
+      fontSize: 10.5,
+      color: colors.textSecondary,
+      marginTop: 1,
+    },
+    modelComparisonBarTrack: {
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.border,
+      marginTop: 6,
+      overflow: 'hidden',
+    },
+    modelComparisonBarFill: {
+      height: '100%',
+      borderRadius: 2,
+    },
+    modelComparisonRowRight: {
+      alignItems: 'flex-end',
+      minWidth: 70,
+    },
+    modelComparisonSnowVal: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: colors.textPrimary,
+    },
+    modelComparisonSnowValActive: {
+      color: '#0284c7',
+    },
+    modelComparisonSnowUnit: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    modelComparisonTapHint: {
+      fontSize: 9.5,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    modelComparisonFooterNote: {
+      marginTop: 4,
+      padding: 8,
+      borderRadius: BORDER_RADIUS.sm,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    modelComparisonFooterText: {
+      fontSize: 11,
+      lineHeight: 15,
+      color: colors.textSecondary,
+    },
+    infonieveStatusCard: {
+      backgroundColor: colors.card,
+      borderRadius: BORDER_RADIUS.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: SPACING.md,
+      gap: 10,
+      ...SHADOWS.sm,
+    },
+    infonieveStatusTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    infonieveStatusBadge: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: BORDER_RADIUS.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    infonieveStatusBadgeText: {
+      fontSize: 13,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+    infonieveStatusDateBox: {
+      flex: 1,
+      gap: 2,
+    },
+    infonieveStatusDateText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    infonieveStatusUpdatedText: {
+      fontSize: 11,
+      color: colors.textSecondary,
+    },
+    infonieveStatusObsBox: {
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.sm,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    infonieveStatusObsLabel: {
+      fontSize: 11.5,
+      fontWeight: '700',
+      color: colors.textPrimary,
+      lineHeight: 16,
+    },
+    infonieveStatusObsText: {
+      fontWeight: 'normal',
+      color: colors.textSecondary,
+    },
+    infonieveCard: {
+      backgroundColor: colors.card,
+      borderRadius: BORDER_RADIUS.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: SPACING.md,
+      gap: 12,
+      ...SHADOWS.sm,
+    },
+    infonieveHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    infonieveSectionTitle: {
+      fontSize: 12.5,
+      fontWeight: '800',
+      color: '#0284c7',
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    infonieveSectionSub: {
+      fontSize: 10.5,
+      color: colors.textSecondary,
+    },
+    infonieveGrid4: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    infonieveBox: {
+      flex: 1,
+      minWidth: '45%',
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 10,
+      gap: 3,
+    },
+    infonieveBoxLabel: {
+      fontSize: 10.5,
+      fontWeight: '700',
+      color: colors.textSecondary,
+      textTransform: 'uppercase',
+    },
+    infonieveBoxValRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 2,
+    },
+    infonieveBoxValue: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: '#0284c7',
+    },
+    infonieveBoxUnit: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    infonieveBoxValueText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: '#0284c7',
+    },
+    infonieveBoxSub: {
+      fontSize: 10,
+      color: colors.textSecondary,
+    },
+    infonieveDangerBadge: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 4,
+      marginTop: 2,
+    },
+    infonieveDangerBadgeText: {
+      fontSize: 10.5,
+      fontWeight: '700',
+      color: '#ffffff',
+    },
+    infonieveGrid3: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    infonieveCircleCard: {
+      flex: 1,
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingVertical: 12,
+      paddingHorizontal: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 2,
+    },
+    infonieveFractionRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 2,
+      marginVertical: 2,
+    },
+    infonieveFractionNum: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: '#0284c7',
+    },
+    infonieveFractionDen: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    infonievePistesBreakdownRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      paddingTop: 4,
+    },
+    infonievePisteChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: BORDER_RADIUS.sm,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    infonievePisteDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 3.5,
+    },
+    infonievePisteChipText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.textPrimary,
+    },
+    infonieveDayCotasWrap: {
+      width: '100%',
+      backgroundColor: colors.card,
+      borderRadius: 4,
+      paddingHorizontal: 4,
+      paddingVertical: 3,
+      marginVertical: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 2,
+    },
+    infonieveDayCotaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    infonieveDayCotaAlt: {
+      fontSize: 8.5,
+      color: colors.textSecondary,
+    },
+    infonieveDayCotaVal: {
+      fontSize: 9.5,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    forecastDaysScroll: {
+      flexDirection: 'row',
+      gap: 12,
+      paddingVertical: 4,
+      paddingRight: 16,
+    },
+    forecastDayColCard: {
+      width: 175,
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.md,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      padding: 12,
+      gap: 10,
+      ...SHADOWS.sm,
+    },
+    forecastDayColCardToday: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '08',
+    },
+    forecastDayColHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    forecastDayColTitleGroup: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: 6,
+    },
+    forecastDayColTitle: {
+      fontSize: 15,
+      fontWeight: '800',
+      color: colors.textPrimary,
+    },
+    forecastDayColDate: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    forecastDayColMetrics: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 8,
+    },
+    forecastDayColTemp: {
+      fontSize: 12.5,
+      fontWeight: '700',
+      color: colors.textSecondary,
+    },
+    forecastDayColCotas: {
+      gap: 6,
+      backgroundColor: colors.card,
+      borderRadius: BORDER_RADIUS.sm,
+      padding: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    forecastDayColCotaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 4,
+    },
+    forecastDayColCotaLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      flex: 1,
+    },
+    forecastDayColCotaName: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    forecastDayColCotaAlt: {
+      fontSize: 9.5,
+      color: colors.textSecondary,
+    },
+    forecastDayColCotaVal: {
+      fontSize: 12,
+      fontWeight: '800',
+      textAlign: 'right',
+    },
+    forecastDayColFooter: {
+      gap: 5,
+    },
+    forecastDayColPrecip: {
+      fontSize: 10.5,
+      color: colors.textSecondary,
+      textAlign: 'right',
+      fontWeight: '600',
+    },
+    forecastTodayBadge: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+    },
+    forecastTodayBadgeText: {
+      fontSize: 9.5,
+      fontWeight: '800',
+      color: '#ffffff',
+      textTransform: 'uppercase',
+    },
+    forecastDaySnowPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3.5,
+      borderRadius: BORDER_RADIUS.sm,
+    },
+    forecastDaySnowPillActive: {
+      backgroundColor: '#0284c7',
+    },
+    forecastDaySnowPillEmpty: {
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    forecastDaySnowPillText: {
+      fontSize: 12,
+      fontWeight: '800',
+      color: colors.textSecondary,
+    },
+    forecastDaySnowPillTextActive: {
+      color: '#ffffff',
+    },
+    forecastDayBarTrack: {
+      height: 5,
+      borderRadius: 2.5,
+      backgroundColor: colors.border,
+      overflow: 'hidden',
+    },
+    forecastDayBarFill: {
+      height: '100%',
+      borderRadius: 2.5,
+    },
+    cotasVerticalList: {
+      gap: 10,
+      paddingTop: 4,
+    },
+    cotaVerticalRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: colors.surface,
+      borderRadius: BORDER_RADIUS.sm,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    cotaVerticalLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      minWidth: 160,
+    },
+    cotaDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    cotaVerticalTitle: {
+      fontSize: 12.5,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    cotaVerticalAlt: {
+      fontSize: 10.5,
+      color: colors.textSecondary,
+    },
+    cotaVerticalCenter: {
+      flex: 1,
+    },
+    cotaBarTrack: {
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: colors.border,
+      overflow: 'hidden',
+    },
+    cotaBarFill: {
+      height: '100%',
+      borderRadius: 3,
+    },
+    cotaVerticalVal: {
+      fontSize: 16,
+      fontWeight: '800',
+      minWidth: 65,
+      textAlign: 'right',
+    },
+    cotaVerticalUnit: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.textSecondary,
     },
   });

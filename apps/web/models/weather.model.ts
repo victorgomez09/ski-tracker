@@ -1,3 +1,62 @@
+export type WeatherModelId = 'best_match' | 'ecmwf_ifs025' | 'icon_eu' | 'gfs_seamless';
+
+export interface WeatherModelInfo {
+  id: WeatherModelId;
+  name: string;
+  shortName: string;
+  provider: string;
+  flag: string;
+  tag: string;
+  description: string;
+}
+
+export interface WeatherModelComparison {
+  model_id: WeatherModelId | string;
+  name: string;
+  provider: string;
+  snowfall_7d_cm: number;
+  daily_snow_cm: number[];
+}
+
+export const WEATHER_MODELS: Record<WeatherModelId, WeatherModelInfo> = {
+  ecmwf_ifs025: {
+    id: 'ecmwf_ifs025',
+    name: 'Europeo (ECMWF)',
+    shortName: 'ECMWF',
+    provider: 'Infonieve / Snow-Forecast',
+    flag: '🇪🇺',
+    tag: 'Referencia',
+    description: 'IFS 0.25° · Modelo líder europeo para orografía y cota alpina',
+  },
+  best_match: {
+    id: 'best_match',
+    name: 'Consenso (Auto)',
+    shortName: 'Consenso',
+    provider: 'Open-Meteo',
+    flag: '⚡',
+    tag: 'Automático',
+    description: 'Consenso que combina los mejores modelos locales por cuadrícula',
+  },
+  icon_eu: {
+    id: 'icon_eu',
+    name: 'Alemán (ICON)',
+    shortName: 'ICON-EU',
+    provider: 'DWD Alemania',
+    flag: '🇩🇪',
+    tag: 'Alta Resolución',
+    description: 'Modelo de 7 km del Servicio Meteorológico Alemán (DWD)',
+  },
+  gfs_seamless: {
+    id: 'gfs_seamless',
+    name: 'Americano (GFS)',
+    shortName: 'GFS',
+    provider: 'NOAA Estados Unidos',
+    flag: '🇺🇸',
+    tag: 'Global',
+    description: 'Modelo global de la NOAA para tendencias a medio y largo plazo',
+  },
+};
+
 export interface AvalancheReport {
   danger_level: number; // 1 to 5
   danger_level_title: string;
@@ -142,5 +201,7 @@ export interface WeatherForecast {
     snowfall_sum: number[];
     precipitation_probability_max: number[];
   };
+  forecast_model?: WeatherModelId | string;
+  model_comparisons?: WeatherModelComparison[];
   snow_report?: SnowReport;
 }

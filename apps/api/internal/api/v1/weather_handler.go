@@ -24,9 +24,17 @@ func (h *WeatherHandler) GetWeather(c *gin.Context) {
 	lat := c.DefaultQuery("lat", "40.4168")
 	lon := c.DefaultQuery("lon", "-3.7038")
 	resortID := c.Query("resort_id")
+	model := c.DefaultQuery("model", "best_match")
+
+	switch model {
+	case "best_match", "ecmwf_ifs025", "icon_eu", "gfs_seamless":
+		// valid model
+	default:
+		model = "best_match"
+	}
 
 	if c.Query("nocache") == "true" || c.Query("refresh") == "true" {
-		weatherData, err := h.svc.GetWeather(c, lat, lon, resortID)
+		weatherData, err := h.svc.GetWeather(c, lat, lon, resortID, model)
 		if err != nil {
 			httputil.RespondError(c, fmt.Errorf("could not get weather forecast: %w", err))
 			return
@@ -39,8 +47,8 @@ func (h *WeatherHandler) GetWeather(c *gin.Context) {
 	c.Request.Header.Del("Pragma")
 
 	handler := cache.CachePage(h.store, 15*time.Minute, func(c *gin.Context) {
-		fmt.Printf("[NO-CACHE] Fetching weather data from API (lat=%s, lon=%s, resort_id=%s)...\n", lat, lon, resortID)
-		weatherData, err := h.svc.GetWeather(c, lat, lon, resortID)
+		fmt.Printf("[NO-CACHE] Fetching weather data from API (lat=%s, lon=%s, resort_id=%s, model=%s)...\n", lat, lon, resortID, model)
+		weatherData, err := h.svc.GetWeather(c, lat, lon, resortID, model)
 		if err != nil {
 			httputil.RespondError(c, fmt.Errorf("could not get weather forecast: %w", err))
 			return

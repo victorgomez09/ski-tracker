@@ -564,16 +564,16 @@ export class SnowForecastService {
 
       if (rawPrecip > 0) {
         if (avgTemp <= 0.5) {
-          let ceiling = rawPrecip * 0.80;
+          let ceiling = rawPrecip * 1.35;
           // Days following peak where storm subsides & cuts off early
           if (todayIdx >= 0 && i >= todayIdx + 2 && rawPrecip < 25.0) {
-            ceiling = rawPrecip * 0.62;
+            ceiling = rawPrecip * 1.10;
           }
           if (calibratedAmount > ceiling) {
             calibratedAmount = ceiling;
           }
         } else if (avgTemp <= 2) {
-          const ceiling = rawPrecip * 0.40;
+          const ceiling = rawPrecip * 0.65;
           if (calibratedAmount > ceiling) {
             calibratedAmount = ceiling;
           }
@@ -593,19 +593,21 @@ export class SnowForecastService {
 
       let snowBase = 0;
       if (snowSummit > 0) {
-        if (tempBase <= 0.5) {
-          snowBase = Math.round(snowSummit * 0.75 * 10) / 10;
+        if (tempBase <= 0.0) {
+          snowBase = Math.round(snowSummit * 0.81 * 10) / 10;
+        } else if (tempBase <= 0.8) {
+          snowBase = Math.round(snowSummit * 0.70 * 10) / 10;
         } else if (tempBase <= 1.8) {
-          snowBase = Math.round(snowSummit * 0.35 * 10) / 10;
+          snowBase = Math.round(snowSummit * 0.50 * 10) / 10;
         }
       }
 
       let snowMid = 0;
       if (snowSummit > 0) {
         if (tempMid <= 0.5) {
-          snowMid = snowBase > 0 ? Math.round(((snowBase + snowSummit) / 2) * 10) / 10 : Math.round(snowSummit * 0.65 * 10) / 10;
+          snowMid = snowBase > 0 ? Math.round(((snowBase + snowSummit) / 2) * 10) / 10 : Math.round(snowSummit * 0.70 * 10) / 10;
         } else if (tempMid <= 1.8) {
-          snowMid = Math.round(snowSummit * 0.35 * 10) / 10;
+          snowMid = Math.round(snowSummit * 0.40 * 10) / 10;
         }
       }
 

@@ -36,7 +36,7 @@ import { useFavorites } from 'context/favorites.context';
 import { useToast } from 'context/toast.context';
 import api from 'interceptor/api';
 import { Resort } from 'models/ski-resort.model';
-import { WeatherForecast } from 'models/weather.model';
+import { WeatherForecast, WeatherModelId } from 'models/weather.model';
 
 // Cache state to survive tab navigation / component remounting
 let cachedResorts: Resort[] = [];
@@ -82,6 +82,7 @@ export default function ResortsView() {
   const [isLoadingResorts, setIsLoadingResorts] = useState(false);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherForecast | null>(null);
+  const [selectedWeatherModel, setSelectedWeatherModel] = useState<WeatherModelId>('ecmwf_ifs025');
   const [isRefreshingWeather, setIsRefreshingWeather] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
 
@@ -158,17 +159,38 @@ export default function ResortsView() {
     setIsLoadingSessions(true);
 
     try {
-      const sessionsRequest = await api.get(`${API_BASE_URL}/ski-sessions/by-resort`, {
-        params: { resort_id: resort.ID },
-      });
+      const needsFullDetails = !resort.pistes || resort.pistes.length === 0;
 
-      const weatherRequest = await api.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
-        params: { lat: resort.Latitude, lon: resort.Longitude, resort_id: resort.ID },
-      });
+      const [sessionsRequest, weatherRequest, detailRequest] = await Promise.allSettled([
+        api.get(`${API_BASE_URL}/ski-sessions/by-resort`, {
+          params: { resort_id: resort.ID },
+        }),
+        api.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
+          params: {
+            lat: resort.Latitude,
+            lon: resort.Longitude,
+            resort_id: resort.ID,
+            model: selectedWeatherModel,
+          },
+        }),
+        needsFullDetails
+          ? api.get(`${API_BASE_URL}/resorts/by-id/${resort.ID}`)
+          : Promise.resolve(null),
+      ]);
 
-      if (sessionsRequest.status === 200 && weatherRequest.status === 200) {
-        setSessionsWithCache(sessionsRequest.data.sessions || []);
-        setWeatherData(weatherRequest.data);
+      if (sessionsRequest.status === 'fulfilled' && sessionsRequest.value?.status === 200) {
+        setSessionsWithCache(sessionsRequest.value.data.sessions || []);
+      }
+      if (weatherRequest.status === 'fulfilled' && weatherRequest.value?.status === 200) {
+        setWeatherData(weatherRequest.value.data);
+      }
+      if (
+        detailRequest.status === 'fulfilled' &&
+        detailRequest.value &&
+        detailRequest.value.status === 200 &&
+        detailRequest.value.data
+      ) {
+        setSelectedResortWithCache(detailRequest.value.data);
       }
     } catch (err) {
       console.error('Error fetching sessions:', err);
@@ -248,15 +270,17 @@ export default function ResortsView() {
     };
   }, [selectedResort]);
 
-  const handleRefreshWeather = async () => {
+  const handleRefreshWeather = async (overrideModel?: WeatherModelId) => {
     if (!selectedResort) return;
     setIsRefreshingWeather(true);
+    const modelToUse = overrideModel || selectedWeatherModel;
     try {
       const weatherRequest = await api.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
         params: {
           lat: selectedResort.Latitude,
           lon: selectedResort.Longitude,
           resort_id: selectedResort.ID,
+          model: modelToUse,
           refresh: 'true',
         },
       });
@@ -270,6 +294,29 @@ export default function ResortsView() {
     }
   };
 
+  const handleSelectWeatherModel = async (model: WeatherModelId) => {
+    setSelectedWeatherModel(model);
+    if (!selectedResort) return;
+    setIsRefreshingWeather(true);
+    try {
+      const weatherRequest = await api.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
+        params: {
+          lat: selectedResort.Latitude,
+          lon: selectedResort.Longitude,
+          resort_id: selectedResort.ID,
+          model,
+        },
+      });
+      if (weatherRequest.status === 200) {
+        setWeatherData(weatherRequest.data);
+      }
+    } catch (err) {
+      console.error('Error switching weather model:', err);
+    } finally {
+      setIsRefreshingWeather(false);
+    }
+  };
+
   const renderDetailsContent = () => {
     if (!selectedResort) return null;
 
@@ -278,6 +325,8 @@ export default function ResortsView() {
         <SkiinfoResortDetail
           resort={selectedResort}
           weatherData={weatherData}
+          selectedModel={selectedWeatherModel}
+          onSelectModel={handleSelectWeatherModel}
           sessions={sessions}
           isLoadingSessions={isLoadingSessions}
           isRefreshingWeather={isRefreshingWeather}
@@ -287,6 +336,25 @@ export default function ResortsView() {
             router.navigate({
               pathname: '/map',
               params: { lat: selectedResort.Latitude, lon: selectedResort.Longitude, zoom: 12 },
+            });
+            setTimeout(() => setSelectedResortWithCache(null), 100);
+          }}
+          onOpenPiste={(piste) => {
+            let lat = selectedResort.Latitude;
+            let lon = selectedResort.Longitude;
+            const coords = piste.GeometryGeoJSON?.coordinates;
+            if (coords && coords.length > 0) {
+              lon = coords[0][0];
+              lat = coords[0][1];
+            }
+            router.navigate({
+              pathname: '/map',
+              params: {
+                lat,
+                lon,
+                zoom: 14,
+                pisteId: piste.ID,
+              },
             });
             setTimeout(() => setSelectedResortWithCache(null), 100);
           }}

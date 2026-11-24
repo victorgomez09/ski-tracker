@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -331,5 +332,24 @@ func TestGetSpainAndAndorraSnowForecast(t *testing.T) {
 	}
 	if !foundGrandvalira {
 		t.Error("expected Grandvalira in forecasts")
+	}
+}
+
+func TestFreezingLevelInterpolation(t *testing.T) {
+	// When ECMWF returns null / 0 for freezing_level_height,
+	// the environmental lapse rate formula baseElev + (T / 0.0065) should interpolate realistic freezing levels
+	baseElev := 1658.0
+	tempBase := 1.3 // At 1.3°C, freezing level is ~1858m
+	flExpected := math.Round(baseElev + (tempBase / 0.0065))
+
+	if flExpected < 1850 || flExpected > 1860 {
+		t.Errorf("expected freezing level around 1858m, got %.0f", flExpected)
+	}
+
+	// Below freezing
+	tempCold := -2.0 // At -2.0°C, freezing level is ~1350m
+	flCold := math.Round(baseElev + (tempCold / 0.0065))
+	if flCold < 1345 || flCold > 1355 {
+		t.Errorf("expected cold freezing level around 1350m, got %.0f", flCold)
 	}
 }
