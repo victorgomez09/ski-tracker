@@ -38,7 +38,7 @@ func (h *WeatherHandler) GetWeather(c *gin.Context) {
 	c.Request.Header.Del("Cache-Control")
 	c.Request.Header.Del("Pragma")
 
-	handler := cache.CachePage(h.store, 1*time.Hour, func(c *gin.Context) {
+	handler := cache.CachePage(h.store, 15*time.Minute, func(c *gin.Context) {
 		fmt.Printf("[NO-CACHE] Fetching weather data from API (lat=%s, lon=%s, resort_id=%s)...\n", lat, lon, resortID)
 		weatherData, err := h.svc.GetWeather(c, lat, lon, resortID)
 		if err != nil {
@@ -72,7 +72,7 @@ func (h *WeatherHandler) GetSnowReport(c *gin.Context) {
 	c.Request.Header.Del("Cache-Control")
 	c.Request.Header.Del("Pragma")
 
-	handler := cache.CachePage(h.store, 1*time.Hour, func(c *gin.Context) {
+	handler := cache.CachePage(h.store, 15*time.Minute, func(c *gin.Context) {
 		fmt.Printf("[NO-CACHE] Fetching snow report from API (resort_id=%s)...\n", resortID)
 		report, err := h.svc.GetSnowReport(c, resortID)
 		if err != nil {
@@ -100,7 +100,7 @@ func (h *WeatherHandler) GetSnowForecast(c *gin.Context) {
 	c.Request.Header.Del("Cache-Control")
 	c.Request.Header.Del("Pragma")
 
-	handler := cache.CachePage(h.store, 30*time.Minute, func(c *gin.Context) {
+	handler := cache.CachePage(h.store, 15*time.Minute, func(c *gin.Context) {
 		fmt.Println("[NO-CACHE] Fetching Spain & Andorra snow forecast from Open-Meteo...")
 		forecasts, err := h.svc.GetSpainAndAndorraSnowForecast(c.Request.Context())
 		if err != nil {

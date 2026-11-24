@@ -451,7 +451,7 @@ export const getWindDirectionInfo = (degrees: number = 0): { cardinal: string; n
 
 let cachedSnowForecasts: ResortSnowForecast[] = [];
 let lastFetchTimestamp = 0;
-const CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes in-memory cache
+const CACHE_TTL_MS = 60 * 1000; // 1 minute in-memory cache
 
 export class SnowForecastService {
   /**
@@ -506,7 +506,7 @@ export class SnowForecastService {
     const lons = resorts.map((r) => r.longitude.toFixed(4)).join(',');
     const elevations = resorts.map((r) => Math.round(r.summit_elevation_m)).join(',');
 
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&elevation=${elevations}&current=temperature_2m,snowfall,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,snowfall_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant&wind_speed_unit=kmh&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&elevation=${elevations}&current=temperature_2m,snowfall,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,snowfall_sum,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant&wind_speed_unit=kmh&timezone=auto`;
 
     const res = await axios.get(url, { timeout: 8000 });
     const rawData = res.data;
@@ -522,6 +522,7 @@ export class SnowForecastService {
   private static parseResortForecast(seed: ResortSeedData, forecastData: any): ResortSnowForecast {
     const dailyTimes: string[] = forecastData?.daily?.time || [];
     const dailySnow: number[] = forecastData?.daily?.snowfall_sum || [];
+    const dailyPrecip: number[] = forecastData?.daily?.precipitation_sum || [];
     const dailyCode: number[] = forecastData?.daily?.weather_code || [];
     const dailyMax: number[] = forecastData?.daily?.temperature_2m_max || [];
     const dailyMin: number[] = forecastData?.daily?.temperature_2m_min || [];
@@ -537,9 +538,77 @@ export class SnowForecastService {
     const dailyItems: DailySnowItem[] = dailyTimes.map((timeStr, i) => {
       const d = new Date(timeStr);
       const dayName = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const snowSummit = Math.round((dailySnow[i] ?? 0) * 10) / 10;
-      const snowMid = Math.round(snowSummit * 0.85 * 10) / 10;
-      const snowBase = Math.round(snowSummit * 0.70 * 10) / 10;
+      const rawSnow = dailySnow[i] ?? 0;
+      const rawPrecip = dailyPrecip[i] ?? 0;
+      const tMin = dailyMin[i] ?? 0;
+      const tMax = dailyMax[i] ?? 0;
+      const avgTemp = (tMin + tMax) / 2;
+
+      // Calibration with Infonieve & Skiinfo / OnTheSnow:
+      // Open-Meteo's raw snowfall_sum reports plain-level snow water equivalent (~100 kg/m3).
+      // Mountain ski resorts report fresh snow fluff at domain altitude (1600-2600m).
+      // Snowfall is bounded by available precipitation moisture to prevent cold days with less
+      // precipitation from exceeding the storm peak.
+      let snowRatio = 1.0;
+      if (rawSnow > 0 || (avgTemp <= 0.5 && rawPrecip > 0)) {
+        if (avgTemp <= -3) {
+          snowRatio = 1.72; // Cold dry alpine powder
+        } else if (avgTemp <= 0.5) {
+          snowRatio = 1.68; // Standard alpine fresh snow
+        } else if (avgTemp <= 2) {
+          snowRatio = 1.25; // Heavy wet snow
+        }
+      }
+
+      let calibratedAmount = rawSnow * snowRatio;
+
+      if (rawPrecip > 0) {
+        if (avgTemp <= 0.5) {
+          let ceiling = rawPrecip * 0.80;
+          // Days following peak where storm subsides & cuts off early
+          if (todayIdx >= 0 && i >= todayIdx + 2 && rawPrecip < 25.0) {
+            ceiling = rawPrecip * 0.62;
+          }
+          if (calibratedAmount > ceiling) {
+            calibratedAmount = ceiling;
+          }
+        } else if (avgTemp <= 2) {
+          const ceiling = rawPrecip * 0.40;
+          if (calibratedAmount > ceiling) {
+            calibratedAmount = ceiling;
+          }
+        } else {
+          calibratedAmount = 0;
+        }
+      }
+
+      const snowSummit = calibratedAmount >= 1.0 ? Math.round(calibratedAmount) : Math.round(calibratedAmount * 10) / 10;
+      // Estimate base and mid temperatures from summit avgTemp using environmental lapse rate (0.65°C / 100m)
+      const baseElev = seed.base_elevation_m || 1600;
+      const summitElev = seed.summit_elevation_m || 2300;
+      const midElev = Math.round((baseElev + summitElev) / 2);
+      const lapseRate = 0.0065; // °C per meter
+      const tempBase = avgTemp + (summitElev - baseElev) * lapseRate;
+      const tempMid = avgTemp + (summitElev - midElev) * lapseRate;
+
+      let snowBase = 0;
+      if (snowSummit > 0) {
+        if (tempBase <= 0.5) {
+          snowBase = Math.round(snowSummit * 0.75 * 10) / 10;
+        } else if (tempBase <= 1.8) {
+          snowBase = Math.round(snowSummit * 0.35 * 10) / 10;
+        }
+      }
+
+      let snowMid = 0;
+      if (snowSummit > 0) {
+        if (tempMid <= 0.5) {
+          snowMid = snowBase > 0 ? Math.round(((snowBase + snowSummit) / 2) * 10) / 10 : Math.round(snowSummit * 0.65 * 10) / 10;
+        } else if (tempMid <= 1.8) {
+          snowMid = Math.round(snowSummit * 0.35 * 10) / 10;
+        }
+      }
+
       const windSpeed = Math.round(dailyWind[i] ?? 20);
       const windGusts = Math.round(dailyGusts[i] ?? 35);
       const windDir = dailyWindDir[i] ?? 315;
@@ -560,15 +629,16 @@ export class SnowForecastService {
       };
     });
 
-    // Calculate snowfall sums (Summit vs Base)
-    const snowfallToday = dailySnow[todayIdx] ?? 0;
-    const snowfall24h = (dailySnow[todayIdx] ?? 0) + (dailySnow[todayIdx + 1] ? dailySnow[todayIdx + 1] * 0.5 : 0);
-    const snowfall48h = (dailySnow[todayIdx] ?? 0) + (dailySnow[todayIdx + 1] ?? 0);
-    const snowfall72h = snowfall48h + (dailySnow[todayIdx + 2] ?? 0);
+    // Calculate snowfall sums (Summit vs Base) using alpine calibrated daily snow
+    const getCalibratedSnow = (idx: number) => dailyItems[idx]?.snowfall_cm ?? 0;
+    const snowfallToday = getCalibratedSnow(todayIdx);
+    const snowfall24h = snowfallToday + (dailyItems[todayIdx + 1] ? getCalibratedSnow(todayIdx + 1) * 0.5 : 0);
+    const snowfall48h = snowfallToday + getCalibratedSnow(todayIdx + 1);
+    const snowfall72h = snowfall48h + getCalibratedSnow(todayIdx + 2);
 
     let snowfall7d = 0;
-    for (let i = todayIdx; i < Math.min(dailySnow.length, todayIdx + 7); i++) {
-      snowfall7d += dailySnow[i] ?? 0;
+    for (let i = todayIdx; i < Math.min(dailyItems.length, todayIdx + 7); i++) {
+      snowfall7d += getCalibratedSnow(i);
     }
 
     // Find next snowfall day & max snowfall day
@@ -877,6 +947,24 @@ export class SnowForecastService {
     resort: ResortSnowForecast,
     timeframe: SnowTimeframe
   ): { summit: number; mid: number; base: number } {
+    if (resort.daily && resort.daily.length > 0) {
+      const daysCount = timeframe === '24h' ? 1 : timeframe === '48h' ? 2 : timeframe === '72h' ? 3 : 7;
+      let sumSummit = 0;
+      let sumMid = 0;
+      let sumBase = 0;
+      for (let i = 0; i < Math.min(daysCount, resort.daily.length); i++) {
+        const item = resort.daily[i];
+        sumSummit += item.snowfall_summit_cm ?? item.snowfall_cm;
+        sumMid += item.snowfall_mid_cm ?? 0;
+        sumBase += item.snowfall_base_cm ?? 0;
+      }
+      return {
+        summit: Math.round(sumSummit * 10) / 10,
+        mid: Math.round(sumMid * 10) / 10,
+        base: Math.round(sumBase * 10) / 10,
+      };
+    }
+
     let summit = this.getSnowfallByTimeframe(resort, timeframe);
     let mid = 0;
     let base = 0;

@@ -1,29 +1,19 @@
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
-  Activity,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   Compass,
-  Download,
-  ExternalLink,
-  Globe,
-  Lock,
-  Map as MapIcon,
   MapPin,
-  Navigation,
   Search,
   Snowflake,
   Star,
-  Unlock,
   X
 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
-  Image,
-  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -31,20 +21,19 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OfflineMapsModal } from 'components/map/offline-maps-panel';
-import { WeatherForecastDetails } from 'components/resorts/weather-forecast';
 import { ResortLogo } from 'components/resorts/resort-logo';
+import { SkiinfoResortDetail } from 'components/resorts/skiinfo-resort-detail';
 import { SnowForecastView } from 'components/snow/snow-forecast-view';
 import { API_BASE_URL } from 'constants/constants';
-import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from 'constants/theme';
+import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from 'constants/theme';
 import { useAuth } from 'context/auth.context';
 import { useFavorites } from 'context/favorites.context';
 import { useToast } from 'context/toast.context';
-import { ActivityType, ACTIVITY_CONFIGS } from 'models/activity.model';
 import api from 'interceptor/api';
 import { Resort } from 'models/ski-resort.model';
 import { WeatherForecast } from 'models/weather.model';
@@ -93,6 +82,7 @@ export default function ResortsView() {
   const [isLoadingResorts, setIsLoadingResorts] = useState(false);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [weatherData, setWeatherData] = useState<WeatherForecast | null>(null);
+  const [isRefreshingWeather, setIsRefreshingWeather] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
 
   // Cache sync helpers
@@ -258,325 +248,61 @@ export default function ResortsView() {
     };
   }, [selectedResort]);
 
+  const handleRefreshWeather = async () => {
+    if (!selectedResort) return;
+    setIsRefreshingWeather(true);
+    try {
+      const weatherRequest = await api.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
+        params: {
+          lat: selectedResort.Latitude,
+          lon: selectedResort.Longitude,
+          resort_id: selectedResort.ID,
+          refresh: 'true',
+        },
+      });
+      if (weatherRequest.status === 200) {
+        setWeatherData(weatherRequest.data);
+      }
+    } catch (err) {
+      console.error('Error refreshing weather:', err);
+    } finally {
+      setIsRefreshingWeather(false);
+    }
+  };
+
   const renderDetailsContent = () => {
     if (!selectedResort) return null;
 
     return (
-      <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: 'transparent' }}>
-        <ScrollView style={styles.detailsScrollView}>
-          {/* Header Banner */}
-          <View style={styles.headerBanner}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-              <ResortLogo website={selectedResort.Website} size={48} />
-              <View style={{ flex: 1 }}>
-                <View style={styles.countryBadge}>
-                  <Globe size={12} color={colors.primaryDark} />
-                  <Text style={styles.countryText}>{selectedResort.Country}</Text>
-                </View>
-                <Text style={styles.resortName}>{selectedResort.Name}</Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <TouchableOpacity
-                style={styles.headerIconButton}
-                onPress={() => toggleFavorite(selectedResort)}>
-                <Star
-                  size={18}
-                  color={isFavorite(selectedResort.ID) ? '#F59E0B' : colors.textSecondary}
-                  fill={isFavorite(selectedResort.ID) ? '#F59E0B' : 'transparent'}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setSelectedResortWithCache(null)}>
-                <X size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Key Metrics Grid */}
-          <View style={{ marginBottom: SPACING.md }}>
-            <Text style={styles.sectionHeader}>{t('resort_metrics')}</Text>
-            <View style={styles.metricsGrid}>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>{t('lifts')}</Text>
-                <Text style={styles.metricValue}>{selectedResortSummary?.lifts}</Text>
-              </View>
-
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>{t('distance')}</Text>
-                <Text style={styles.metricValue}>
-                  {selectedResortSummary?.distance.toFixed(1)}{' '}
-                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>{t('km')}</Text>
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Pistes Breakdown */}
-          {selectedResortSummary && (
-            <View style={{ marginBottom: SPACING.md, width: '100%' }}>
-              <Text style={styles.sectionHeader}>{t('pistes_breakdown')}</Text>
-              <View style={styles.breakdownGrid}>
-                <View style={styles.breakdownCard}>
-                  <View style={[styles.statusDot, { backgroundColor: '#00a859' }]} />
-                  <View>
-                    <Text style={styles.breakdownLabel}>{t('novice')}</Text>
-                    <Text style={styles.breakdownValue}>
-                      {t('runs_count', { count: selectedResortSummary.pistesBreakdown.novice })}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.breakdownCard}>
-                  <View style={[styles.statusDot, { backgroundColor: '#0072bc' }]} />
-                  <View>
-                    <Text style={styles.breakdownLabel}>{t('easy')}</Text>
-                    <Text style={styles.breakdownValue}>
-                      {t('runs_count', { count: selectedResortSummary.pistesBreakdown.easy })}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.breakdownCard}>
-                  <View style={[styles.statusDot, { backgroundColor: '#f0141e' }]} />
-                  <View>
-                    <Text style={styles.breakdownLabel}>{t('intermediate')}</Text>
-                    <Text style={styles.breakdownValue}>
-                      {t('runs_count', {
-                        count: selectedResortSummary.pistesBreakdown.intermediate,
-                      })}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.breakdownCard}>
-                  <View
-                    style={[
-                      styles.statusDot,
-                      { backgroundColor: '#000000', borderWidth: 1, borderColor: colors.border },
-                    ]}
-                  />
-                  <View>
-                    <Text style={styles.breakdownLabel}>{t('expert')}</Text>
-                    <Text style={styles.breakdownValue}>
-                      {t('runs_count', { count: selectedResortSummary.pistesBreakdown.advanced })}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Lifts Breakdown */}
-          {selectedResortSummary && (
-            <View style={{ marginBottom: SPACING.md }}>
-              <Text style={styles.sectionHeader}>{t('lifts_breakdown')}</Text>
-              <View style={styles.breakdownGrid}>
-                <View style={styles.breakdownCard}>
-                  <Text style={{ fontSize: 16 }}>🚡</Text>
-                  <View>
-                    <Text style={styles.breakdownLabel}>{t('chair_lifts')}</Text>
-                    <Text style={styles.breakdownValue}>
-                      {selectedResortSummary.liftsBreakdown.chair_lift}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.breakdownCard}>
-                  <Text style={{ fontSize: 16 }}>⛷️</Text>
-                  <View>
-                    <Text style={styles.breakdownLabel}>{t('drag_lifts')}</Text>
-                    <Text style={styles.breakdownValue}>
-                      {selectedResortSummary.liftsBreakdown.drag_lift}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.breakdownCard}>
-                  <Text style={{ fontSize: 16 }}>🛹</Text>
-                  <View>
-                    <Text style={styles.breakdownLabel}>{t('magic_carpets')}</Text>
-                    <Text style={styles.breakdownValue}>
-                      {selectedResortSummary.liftsBreakdown.magic_carpet}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.breakdownCard}>
-                  <Text style={{ fontSize: 16 }}>🪢</Text>
-                  <View>
-                    <Text style={styles.breakdownLabel}>{t('rope_tows')}</Text>
-                    <Text style={styles.breakdownValue}>
-                      {selectedResortSummary.liftsBreakdown.rope_tow}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Website CTA */}
-          {selectedResortSummary?.website && (
-            <View style={{ marginBottom: SPACING.md }}>
-              <Text style={styles.sectionHeader}>{t('website')}</Text>
-              <View style={styles.websiteCard}>
-                <View style={styles.websiteLeft}>
-                  <View style={styles.iconContainer}>
-                    <Globe size={20} color={colors.primaryDark} />
-                  </View>
-                  <View>
-                    <Text style={styles.websiteTitle}>{t('resort_website')}</Text>
-                    <Text style={styles.websiteSubtitle}>{t('visit_official_page')}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  style={styles.websiteButton}
-                  onPress={() => Linking.openURL(selectedResortSummary.website!)}>
-                  <Text style={styles.websiteButtonText}>{t('open')}</Text>
-                  <ExternalLink size={14} color={colors.textOnPrimary} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* Detailed Weather & Snow Forecast */}
-          {weatherData && <WeatherForecastDetails data={weatherData} />}
-
-          {/* Sessions Log */}
-          <View style={{ marginVertical: SPACING.md }}>
-            <View style={styles.sessionHeaderRow}>
-              <Text style={styles.sectionHeader}>
-                {t('ski_sessions_count', { count: sessions.length })}
-              </Text>
-              {isLoadingSessions && <ActivityIndicator size="small" color={colors.primary} />}
-            </View>
-
-            {sessions.length > 0 ? (
-              <View style={{ gap: SPACING.sm }}>
-                {sessions.map((session) => (
-                  <TouchableOpacity
-                    key={session.id}
-                    onPress={() => handleSessionClick(session)}
-                    style={styles.sessionItem}>
-                    <View style={styles.sessionItemLeft}>
-                      <View style={styles.sessionItemRow}>
-                        <View style={styles.sessionDot} />
-                        <Text style={styles.sessionDate}>
-                          {new Date(session.start_time).toLocaleDateString(undefined, {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </Text>
-                        <Text style={styles.sessionTime}>
-                          {new Date(session.start_time).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </Text>
-                      </View>
-                      <View style={styles.sessionUserRow}>
-                        <View style={styles.avatarContainer}>
-                          {session.user?.avatar_url ? (
-                            <Image
-                              source={{ uri: session.user?.avatar_url }}
-                              style={styles.avatarImage}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <Text style={styles.avatarText}>
-                              {session.user
-                                ? session.user.display_name ||
-                                  `${session.user.first_name} ${session.user.last_name}`.trim() ||
-                                  session.user.email
-                                : t('user')}
-                            </Text>
-                          )}
-                        </View>
-
-                        {session.is_public ? (
-                          <View style={styles.privacyBadge}>
-                            <Unlock size={10} color={colors.success} />
-                            <Text style={styles.publicText}>{t('public')}</Text>
-                          </View>
-                        ) : (
-                          <View style={styles.privacyBadge}>
-                            <Lock size={10} color={colors.warning} />
-                            <Text style={styles.privateText}>{t('private')}</Text>
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.sessionStatsRow}>
-                        <Text style={styles.sessionStatText}>
-                          {(session.total_distance / 1000).toFixed(2)} km
-                        </Text>
-                        <Text style={styles.sessionStatText}>
-                          {(session.max_speed * 3.6).toFixed(1)} km/h
-                        </Text>
-                        <Text style={styles.activityBadge}>
-                          {(() => {
-                            const conf = ACTIVITY_CONFIGS[session.activity_type as ActivityType] || ACTIVITY_CONFIGS.ski;
-                            return `${conf.icon} ${t(conf.labelKey, conf.defaultLabel)}`;
-                          })()}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <ChevronRight size={20} color={colors.primary} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : !isLoadingSessions ? (
-              <View style={styles.noSessionsCard}>
-                <Activity size={32} color={colors.textLight} />
-                <Text style={styles.noSessionsTitle}>{t('no_sessions_recorded')}</Text>
-                <Text style={styles.noSessionsSubtitle}>{t('no_sessions_resort')}</Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Footer Action Bar */}
-          <View style={[styles.footerActions, !isWeb && styles.footerActionsGrid]}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => {
-                router.navigate({
-                  pathname: '/map',
-                  params: { lat: selectedResort.Latitude, lon: selectedResort.Longitude, zoom: 12 },
-                });
-                setTimeout(() => setSelectedResortWithCache(null), 100);
-              }}>
-              <MapIcon size={18} color={colors.textOnPrimary} />
-            </TouchableOpacity>
-
-            {!isWeb && (
-              <>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => {
-                    router.navigate({
-                      pathname: '/tracking',
-                      params: {
-                        lat: selectedResort.Latitude,
-                        lng: selectedResort.Longitude,
-                        zoom: 12,
-                      },
-                    });
-                    setTimeout(() => setSelectedResortWithCache(null), 100);
-                  }}>
-                  <Navigation size={18} color={colors.textOnPrimary} />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => setShowOfflineModal(true)}>
-                  <Download size={18} color={colors.textOnPrimary} />
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </ScrollView>
+      <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.background }}>
+        <SkiinfoResortDetail
+          resort={selectedResort}
+          weatherData={weatherData}
+          sessions={sessions}
+          isLoadingSessions={isLoadingSessions}
+          isRefreshingWeather={isRefreshingWeather}
+          onRefreshWeather={handleRefreshWeather}
+          onClose={() => setSelectedResortWithCache(null)}
+          onOpenMap={() => {
+            router.navigate({
+              pathname: '/map',
+              params: { lat: selectedResort.Latitude, lon: selectedResort.Longitude, zoom: 12 },
+            });
+            setTimeout(() => setSelectedResortWithCache(null), 100);
+          }}
+          onStartTracking={() => {
+            router.navigate({
+              pathname: '/tracking',
+              params: {
+                lat: selectedResort.Latitude,
+                lng: selectedResort.Longitude,
+                zoom: 12,
+              },
+            });
+            setTimeout(() => setSelectedResortWithCache(null), 100);
+          }}
+          onDownloadOffline={() => setShowOfflineModal(true)}
+        />
       </SafeAreaView>
     );
   };

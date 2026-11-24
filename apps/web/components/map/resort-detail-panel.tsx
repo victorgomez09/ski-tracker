@@ -1,11 +1,14 @@
 import { Resort, ResortDetail, Piste } from 'models/ski-resort.model';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Linking, Platform, StyleSheet } from 'react-native';
-import { Star, X } from 'lucide-react-native';
+import { Snowflake, Sparkles, Star, X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { useFavorites } from '../../context/favorites.context';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 import { ResortLogo } from '../resorts/resort-logo';
+import api from '../../interceptor/api';
+import { API_BASE_URL } from '../../constants/constants';
+import { WeatherForecast } from '../../models/weather.model';
 
 interface ResortDetailPanelProps {
     resort: Resort | ResortDetail;
@@ -73,6 +76,22 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
     const isWeb = Platform.OS === 'web';
     const colors = useThemeColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
+
+    const [weatherData, setWeatherData] = useState<WeatherForecast | null>(null);
+
+    useEffect(() => {
+        if (!resort) return;
+        let isMounted = true;
+        api.get<WeatherForecast>(`${API_BASE_URL}/weather`, {
+            params: { lat: resort.Latitude, lon: resort.Longitude, resort_id: resort.ID },
+            timeout: 5000,
+        }).then((res) => {
+            if (isMounted && res.status === 200) {
+                setWeatherData(res.data);
+            }
+        }).catch(() => {});
+        return () => { isMounted = false; };
+    }, [resort]);
 
     const stats = useMemo(() => {
         const pistes = resort?.pistes || [];
@@ -304,6 +323,58 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                             </Text>
                         </View>
                     </View>
+
+                    {/* Skiinfo Snow Report Mini Card */}
+                    {weatherData?.snow_report && (
+                        <View style={styles.snowCard}>
+                            <View style={styles.snowCardHeader}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                    <Snowflake size={14} color="#0284c7" />
+                                    <Text style={styles.snowCardTitle}>Parte de Nieve</Text>
+                                </View>
+                                {weatherData.snow_report.fresh_snow_24h_cm >= 15 && (
+                                    <View style={styles.powderPill}>
+                                        <Sparkles size={10} color="#ffffff" />
+                                        <Text style={styles.powderPillText}>POWDER</Text>
+                                    </View>
+                                )}
+                            </View>
+
+                            <View style={styles.snowDepthsRow}>
+                                <View style={styles.snowDepthItem}>
+                                    <Text style={styles.snowDepthLabel}>Cota Base</Text>
+                                    <Text style={styles.snowDepthValue}>
+                                        {weatherData.snow_report.snow_depth_base_cm} cm
+                                    </Text>
+                                </View>
+                                <View style={styles.snowDivider} />
+                                <View style={styles.snowDepthItem}>
+                                    <Text style={styles.snowDepthLabel}>Cota Cumbre</Text>
+                                    <Text style={[styles.snowDepthValue, { color: '#0284c7' }]}>
+                                        {weatherData.snow_report.snow_depth_summit_cm} cm
+                                    </Text>
+                                </View>
+                                <View style={styles.snowDivider} />
+                                <View style={styles.snowDepthItem}>
+                                    <Text style={styles.snowDepthLabel}>Nieve 24h</Text>
+                                    <Text style={[styles.snowDepthValue, { color: '#0284c7' }]}>
+                                        {weatherData.snow_report.fresh_snow_24h_cm} cm
+                                    </Text>
+                                </View>
+                            </View>
+
+                            <View style={styles.snowConditionRow}>
+                                <Text style={styles.snowConditionText}>
+                                    ❄️ Calidad: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{weatherData.snow_report.snow_condition_label || 'Polvo dura'}</Text>
+                                </Text>
+                                {weatherData.snow_report.freezing_level_m > 0 && (
+                                    <Text style={styles.snowConditionText}>
+                                        Cota: {Math.round(weatherData.snow_report.freezing_level_m)}m
+                                    </Text>
+                                )}
+                            </View>
+                        </View>
+                    )}
 
                     {difficultyDistribution.length > 0 && (
                         <View style={styles.section}>
@@ -575,5 +646,78 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
         color: colors.primaryDark,
         fontWeight: '600',
         textTransform: 'uppercase',
+    },
+    snowCard: {
+        backgroundColor: colors.surface,
+        borderRadius: BORDER_RADIUS.md,
+        padding: 10,
+        borderWidth: 1,
+        borderColor: colors.border,
+        gap: 6,
+        marginVertical: 4,
+    },
+    snowCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    snowCardTitle: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: colors.textPrimary,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    powderPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        backgroundColor: '#4338ca',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: BORDER_RADIUS.round,
+    },
+    powderPillText: {
+        fontSize: 9,
+        fontWeight: '800',
+        color: '#ffffff',
+    },
+    snowDepthsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: colors.card,
+        borderRadius: BORDER_RADIUS.sm,
+        paddingVertical: 6,
+        paddingHorizontal: 8,
+    },
+    snowDepthItem: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    snowDepthLabel: {
+        fontSize: 9,
+        color: colors.textSecondary,
+    },
+    snowDepthValue: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: colors.textPrimary,
+        marginTop: 1,
+    },
+    snowDivider: {
+        width: 1,
+        height: 18,
+        backgroundColor: colors.border,
+    },
+    snowConditionRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 2,
+    },
+    snowConditionText: {
+        fontSize: 10,
+        color: colors.textSecondary,
     },
 });

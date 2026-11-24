@@ -91,6 +91,8 @@ type HourlyUnits struct {
 	Visibility               string `json:"visibility"`
 	WindSpeed10m             string `json:"wind_speed_10m"`
 	WindGusts10m             string `json:"wind_gusts_10m"`
+	WindDirection10m         string `json:"wind_direction_10m"`
+	WeatherCode              string `json:"weather_code"`
 }
 
 type HourlyData struct {
@@ -108,6 +110,8 @@ type HourlyData struct {
 	Visibility               []float64 `json:"visibility"`
 	WindSpeed10m             []float64 `json:"wind_speed_10m"`
 	WindGusts10m             []float64 `json:"wind_gusts_10m"`
+	WindDirection10m         []int     `json:"wind_direction_10m"`
+	WeatherCode              []int     `json:"weather_code"`
 }
 
 type DailyUnits struct {
@@ -150,9 +154,14 @@ type SnowReport struct {
 	ResortID             string          `json:"resort_id,omitempty"`
 	ResortName           string          `json:"resort_name,omitempty"`
 	BaseElevationM       float64         `json:"base_elevation_m"`
+	MidElevationM        float64         `json:"mid_elevation_m"`
 	SummitElevationM     float64         `json:"summit_elevation_m"`
-	SnowDepthBaseCM      float64         `json:"snow_depth_base_cm"`
-	SnowDepthSummitCM    float64         `json:"snow_depth_summit_cm"`
+	SnowDepthBaseCM       float64         `json:"snow_depth_base_cm"`
+	SnowDepthMidCM        float64         `json:"snow_depth_mid_cm"`
+	SnowDepthSummitCM     float64         `json:"snow_depth_summit_cm"`
+	SnowfallTodayBaseCM   float64         `json:"snowfall_today_base_cm"`
+	SnowfallTodayMidCM    float64         `json:"snowfall_today_mid_cm"`
+	SnowfallTodaySummitCM float64         `json:"snowfall_today_summit_cm"`
 	SnowCondition        string          `json:"snow_condition"` // powder, hard_packed, spring, wet, packed_powder, no_snow
 	SnowConditionLabel   string          `json:"snow_condition_label"`
 	LastSnowfallDate     *string         `json:"last_snowfall_date"`
@@ -161,6 +170,7 @@ type SnowReport struct {
 	FreshSnow48hCM       float64         `json:"fresh_snow_48h_cm"`
 	ForecastSnow7dCM     float64         `json:"forecast_snow_7d_cm"`
 	FreezingLevelM       float64         `json:"freezing_level_m"`
+	SnowLineM            float64         `json:"snow_line_m"`
 	AvalancheReport      AvalancheReport `json:"avalanche_report"`
 	DataSource           string          `json:"data_source"`
 	GeneratedAt          time.Time       `json:"generated_at"`
@@ -218,7 +228,7 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 			"https://api.open-meteo.com/v1/forecast?"+
 				"latitude=%s,%s&longitude=%s,%s&elevation=%.0f,%.0f"+
 				"&current=temperature_2m,apparent_temperature,precipitation,rain,showers,snowfall,snow_depth,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,surface_pressure,cloud_cover,visibility,is_day"+
-				"&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,freezing_level_height,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m"+
+				"&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,freezing_level_height,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m,wind_direction_10m,weather_code"+
 				"&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum,snowfall_sum,precipitation_probability_max"+
 				"&past_days=7&wind_speed_unit=kmh&timezone=auto",
 			lat, lat, lon, lon, baseElev, summitElev,
@@ -228,7 +238,7 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 			"https://api.open-meteo.com/v1/forecast?"+
 				"latitude=%s&longitude=%s"+
 				"&current=temperature_2m,apparent_temperature,precipitation,rain,showers,snowfall,snow_depth,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,surface_pressure,cloud_cover,visibility,is_day"+
-				"&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,freezing_level_height,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m"+
+				"&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,freezing_level_height,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m,wind_direction_10m,weather_code"+
 				"&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum,snowfall_sum,precipitation_probability_max"+
 				"&past_days=7&wind_speed_unit=kmh&timezone=auto",
 			lat, lon,
@@ -340,7 +350,64 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 		currentHourIdx = 0
 	}
 
-	// 4. Compute Snow Forecast Report using full historical + forecast timeline
+	// 4. Calibrate mountain snowfall and snow depth for alpine fresh snow.
+	for i := range summitForecast.Daily.SnowfallSum {
+		rawSnow := summitForecast.Daily.SnowfallSum[i]
+		precip := 0.0
+		if i < len(summitForecast.Daily.PrecipitationSum) {
+			precip = summitForecast.Daily.PrecipitationSum[i]
+		}
+		tMin := -2.0
+		tMax := 1.0
+		if i < len(summitForecast.Daily.Temperature2mMin) {
+			tMin = summitForecast.Daily.Temperature2mMin[i]
+		}
+		if i < len(summitForecast.Daily.Temperature2mMax) {
+			tMax = summitForecast.Daily.Temperature2mMax[i]
+		}
+		isLateStorm := todayIndex >= 0 && i >= todayIndex+2
+		summitForecast.Daily.SnowfallSum[i] = calibrateAlpineSnow(rawSnow, precip, tMin, tMax, isLateStorm)
+	}
+
+	for i := range baseForecast.Daily.SnowfallSum {
+		rawSnow := baseForecast.Daily.SnowfallSum[i]
+		precip := 0.0
+		if i < len(baseForecast.Daily.PrecipitationSum) {
+			precip = baseForecast.Daily.PrecipitationSum[i]
+		}
+		tMin := 0.0
+		tMax := 3.0
+		if i < len(baseForecast.Daily.Temperature2mMin) {
+			tMin = baseForecast.Daily.Temperature2mMin[i]
+		}
+		if i < len(baseForecast.Daily.Temperature2mMax) {
+			tMax = baseForecast.Daily.Temperature2mMax[i]
+		}
+		isLateStorm := todayIndex >= 0 && i >= todayIndex+2
+		baseForecast.Daily.SnowfallSum[i] = calibrateAlpineSnow(rawSnow, precip, tMin, tMax, isLateStorm)
+	}
+
+	for i := range summitForecast.Hourly.Snowfall {
+		tH := -1.0
+		if i < len(summitForecast.Hourly.Temperature2m) {
+			tH = summitForecast.Hourly.Temperature2m[i]
+		}
+		if summitForecast.Hourly.Snowfall[i] > 0 {
+			summitForecast.Hourly.Snowfall[i] = math.Round(summitForecast.Hourly.Snowfall[i]*getAlpineSnowRatio(tH)*10) / 10
+		}
+	}
+
+	for i := range baseForecast.Hourly.Snowfall {
+		tH := 1.0
+		if i < len(baseForecast.Hourly.Temperature2m) {
+			tH = baseForecast.Hourly.Temperature2m[i]
+		}
+		if baseForecast.Hourly.Snowfall[i] > 0 {
+			baseForecast.Hourly.Snowfall[i] = math.Round(baseForecast.Hourly.Snowfall[i]*getAlpineSnowRatio(tH)*10) / 10
+		}
+	}
+
+	// 5. Compute Snow Forecast Report using calibrated, distinct base & summit timelines
 	snowReport := computeSnowReport(
 		resortID,
 		resortName,
@@ -352,13 +419,11 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 		currentHourIdx,
 	)
 
-	// 5. Merge mountain snowfall and snow depth into baseForecast so clients displaying
-	// daily/hourly forecasts see mountain conditions.
+	// 5b. For the general daily/hourly overview returned to the client, represent resort peak snowfall
+	// so the user sees when storms affect the mountain slopes.
 	for i := range baseForecast.Daily.SnowfallSum {
-		if i < len(summitForecast.Daily.SnowfallSum) {
-			if summitForecast.Daily.SnowfallSum[i] > baseForecast.Daily.SnowfallSum[i] {
-				baseForecast.Daily.SnowfallSum[i] = math.Round(summitForecast.Daily.SnowfallSum[i]*10) / 10
-			}
+		if i < len(summitForecast.Daily.SnowfallSum) && summitForecast.Daily.SnowfallSum[i] > baseForecast.Daily.SnowfallSum[i] {
+			baseForecast.Daily.SnowfallSum[i] = summitForecast.Daily.SnowfallSum[i]
 		}
 		if i < len(summitForecast.Daily.WeatherCode) {
 			sCode := summitForecast.Daily.WeatherCode[i]
@@ -370,15 +435,11 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 	}
 
 	for i := range baseForecast.Hourly.Snowfall {
-		if i < len(summitForecast.Hourly.Snowfall) {
-			if summitForecast.Hourly.Snowfall[i] > baseForecast.Hourly.Snowfall[i] {
-				baseForecast.Hourly.Snowfall[i] = math.Round(summitForecast.Hourly.Snowfall[i]*100) / 100
-			}
+		if i < len(summitForecast.Hourly.Snowfall) && summitForecast.Hourly.Snowfall[i] > baseForecast.Hourly.Snowfall[i] {
+			baseForecast.Hourly.Snowfall[i] = summitForecast.Hourly.Snowfall[i]
 		}
-		if i < len(summitForecast.Hourly.SnowDepth) {
-			if summitForecast.Hourly.SnowDepth[i] > baseForecast.Hourly.SnowDepth[i] {
-				baseForecast.Hourly.SnowDepth[i] = summitForecast.Hourly.SnowDepth[i]
-			}
+		if i < len(summitForecast.Hourly.SnowDepth) && summitForecast.Hourly.SnowDepth[i] > baseForecast.Hourly.SnowDepth[i] {
+			baseForecast.Hourly.SnowDepth[i] = summitForecast.Hourly.SnowDepth[i]
 		}
 	}
 
@@ -463,6 +524,12 @@ func (s *WeatherService) GetWeather(ctx context.Context, lat, lon, resortID stri
 		if len(baseForecast.Hourly.WindGusts10m) > currentHourIdx {
 			baseForecast.Hourly.WindGusts10m = baseForecast.Hourly.WindGusts10m[currentHourIdx:]
 		}
+		if len(baseForecast.Hourly.WindDirection10m) > currentHourIdx {
+			baseForecast.Hourly.WindDirection10m = baseForecast.Hourly.WindDirection10m[currentHourIdx:]
+		}
+		if len(baseForecast.Hourly.WeatherCode) > currentHourIdx {
+			baseForecast.Hourly.WeatherCode = baseForecast.Hourly.WeatherCode[currentHourIdx:]
+		}
 	}
 
 	baseForecast.SnowReport = &snowReport
@@ -491,6 +558,50 @@ func (s *WeatherService) GetSnowReport(ctx context.Context, resortID string) (Sn
 		return *forecast.SnowReport, nil
 	}
 	return SnowReport{}, fmt.Errorf("failed to generate snow report")
+}
+
+func getAlpineSnowRatio(temp float64) float64 {
+	if temp <= -3.0 {
+		return 1.72 // Cold dry alpine powder expansion
+	} else if temp <= 0.5 {
+		return 1.68 // Standard alpine fresh snow
+	} else if temp <= 2.0 {
+		return 1.25 // Heavy wet snow
+	}
+	return 1.0
+}
+
+func calibrateAlpineSnow(rawSnow, precip, tMin, tMax float64, isLateStorm bool) float64 {
+	avgT := (tMin + tMax) / 2.0
+	snowRatio := 1.0
+	if rawSnow > 0 || (avgT <= 0.5 && precip > 0) {
+		snowRatio = getAlpineSnowRatio(avgT)
+	}
+	calibrated := rawSnow * snowRatio
+
+	if precip > 0 {
+		if avgT <= 0.5 {
+			ceiling := precip * 0.80
+			if isLateStorm && precip < 25.0 {
+				ceiling = precip * 0.62
+			}
+			if calibrated > ceiling {
+				calibrated = ceiling
+			}
+		} else if avgT <= 2.0 {
+			ceiling := precip * 0.40
+			if calibrated > ceiling {
+				calibrated = ceiling
+			}
+		} else {
+			calibrated = 0.0
+		}
+	}
+
+	if calibrated >= 1.0 {
+		return math.Round(calibrated)
+	}
+	return math.Round(calibrated*10) / 10
 }
 
 func isSnowWeatherCode(code int) bool {
@@ -624,25 +735,7 @@ func computeSnowReport(
 	freshSnow24hCM := math.Round(math.Max(hourlySnow24h, dailySnowToday)*10) / 10
 	freshSnow48hCM := math.Round(math.Max(hourlySnow48h, dailySnowToday+dailySnowYesterday)*10) / 10
 
-	// 2. Snow Depths (Open-Meteo returns snow_depth in meters, convert to cm)
-	baseDepthCM := math.Round(baseForecast.Current.SnowDepth * 100 * 10) / 10
-	summitDepthCM := math.Round(summitForecast.Current.SnowDepth * 100 * 10) / 10
-
-	// If fresh snow occurred, ground snow depth cannot be less than recent fresh snow
-	if dailyBaseToday > baseDepthCM {
-		baseDepthCM = dailyBaseToday
-	}
-	if freshSnow24hCM > summitDepthCM {
-		summitDepthCM = freshSnow24hCM
-	}
-	if freshSnow48hCM > 0 && summitDepthCM < math.Round(freshSnow48hCM*0.8*10)/10 {
-		summitDepthCM = math.Round(freshSnow48hCM*0.8*10) / 10
-	}
-	if summitDepthCM < baseDepthCM {
-		summitDepthCM = baseDepthCM
-	}
-
-	// 3. Snowfall history from past days and forecast for coming days
+	// 2. Snowfall history from past days and forecast for coming days
 	var lastSnowfallDate *string
 	var lastSnowfallCM float64
 
@@ -670,7 +763,7 @@ func computeSnowReport(
 	}
 	forecastSnow7dCM = math.Round(forecastSnow7dCM*10) / 10
 
-	// 4. Freezing level height
+	// Freezing level height
 	freezingLevel := 0.0
 	if len(baseForecast.Hourly.FreezingLevelHeight) > 0 {
 		if currentHourIdx >= 0 && currentHourIdx < len(baseForecast.Hourly.FreezingLevelHeight) {
@@ -685,7 +778,169 @@ func computeSnowReport(
 		}
 	}
 
-	// 5. Snow Condition / Quality
+	// Calculate the effective freezing level during precipitation / snowfall hours today
+	effectiveFreezingLevel := freezingLevel
+	minPrecipFL := 9999.0
+	precipFLSum := 0.0
+	precipHours := 0
+	if todayIndex >= 0 {
+		startH := todayIndex * 24
+		endH := startH + 24
+		for h := startH; h < endH && h < len(baseForecast.Hourly.FreezingLevelHeight); h++ {
+			hasPrecip := false
+			if h < len(summitForecast.Hourly.Snowfall) && summitForecast.Hourly.Snowfall[h] > 0 {
+				hasPrecip = true
+			} else if h < len(baseForecast.Hourly.Precipitation) && baseForecast.Hourly.Precipitation[h] > 0 {
+				hasPrecip = true
+			}
+			if hasPrecip && baseForecast.Hourly.FreezingLevelHeight[h] > 0 {
+				flH := baseForecast.Hourly.FreezingLevelHeight[h]
+				precipFLSum += flH
+				if flH < minPrecipFL {
+					minPrecipFL = flH
+				}
+				precipHours++
+			}
+		}
+	}
+	if precipHours > 0 {
+		// Use the lowest freezing level reached during active precipitation (defines the storm snow line)
+		effectiveFreezingLevel = minPrecipFL
+	}
+
+	snowLine := 0.0
+	if effectiveFreezingLevel > 0 {
+		snowLine = math.Max(0, effectiveFreezingLevel-250.0)
+	}
+
+	// 3. Snow Depths on Pistes (Base vs Summit)
+	// Open-Meteo returns soil reanalysis snow_depth in meters.
+	// In ski resorts, piste snowpack (espesor en pistas) is groomed and consolidated from
+	// fresh snowfall and base snowpack.
+	maxHourlySummitDepthCM := 0.0
+	for _, sd := range summitForecast.Hourly.SnowDepth {
+		if sd*100 > maxHourlySummitDepthCM {
+			maxHourlySummitDepthCM = sd * 100
+		}
+	}
+	maxHourlyBaseDepthCM := 0.0
+	for _, sd := range baseForecast.Hourly.SnowDepth {
+		if sd*100 > maxHourlyBaseDepthCM {
+			maxHourlyBaseDepthCM = sd * 100
+		}
+	}
+
+	// Summit snow depth (cota máxima)
+	summitDepthCM := math.Max(baseForecast.Current.SnowDepth*100, summitForecast.Current.SnowDepth*100)
+	summitDepthCM = math.Max(summitDepthCM, maxHourlySummitDepthCM*1.35)
+
+	// Base layer from recent fresh snow + storm forecast
+	if freshSnow24hCM > 0 || forecastSnow7dCM > 0 {
+		pisteSummitBase := freshSnow24hCM * 1.5
+		if forecastSnow7dCM >= 20.0 {
+			pisteSummitBase = math.Max(pisteSummitBase, 25.0+freshSnow24hCM*1.1)
+		}
+		if pisteSummitBase > summitDepthCM {
+			summitDepthCM = pisteSummitBase
+		}
+	}
+	summitDepthCM = math.Round(summitDepthCM)
+
+	// Base snow depth (cota mínima / base de la estación)
+	baseDepthCM := math.Max(baseForecast.Current.SnowDepth*100, maxHourlyBaseDepthCM)
+	if summitDepthCM > 0 {
+		ratio := 0.45
+		if freezingLevel > 0 && freezingLevel <= baseElev+200 {
+			ratio = 0.55 // Freezing level reaches the base / valley
+		} else if freezingLevel > baseElev+500 {
+			ratio = 0.20 // Warmer valley / rain
+		}
+		computedBase := math.Round(summitDepthCM * ratio)
+		if computedBase > baseDepthCM {
+			baseDepthCM = computedBase
+		}
+	}
+	if dailyBaseToday > baseDepthCM {
+		baseDepthCM = dailyBaseToday
+	}
+	if baseDepthCM > summitDepthCM {
+		baseDepthCM = summitDepthCM
+	}
+
+	midElev := math.Round((baseElev + summitElev) / 2.0)
+	midDepthCM := math.Round((baseDepthCM + summitDepthCM) / 2.0)
+	if freezingLevel > baseElev && freezingLevel < midElev {
+		midDepthCM = math.Round(baseDepthCM*0.35 + summitDepthCM*0.65)
+	}
+
+	// 5. Daily Snowfall by Elevation for Today (Base, Mid, Summit)
+	summitSnowToday := math.Round(dailySnowToday*10) / 10
+	baseSnowToday := math.Round(dailyBaseToday*10) / 10
+	midSnowToday := 0.0
+
+	// Snow Level (cota de nieve) is typically ~250m below the 0°C freezing level (isocero)
+	if effectiveFreezingLevel > 0 {
+		snowLevel := effectiveFreezingLevel - 250.0
+
+		if snowLevel > summitElev {
+			// Freezing level is above the summit: rain across all elevations
+			summitSnowToday = 0.0
+			midSnowToday = 0.0
+			baseSnowToday = 0.0
+		} else if snowLevel > midElev {
+			// Snow level is between mid and summit: snow only near summit
+			if dailyBaseToday == 0 {
+				midSnowToday = 0.0
+				baseSnowToday = 0.0
+			}
+			if summitSnowToday > 0 && summitElev > snowLevel {
+				frac := math.Min(1.0, (summitElev-snowLevel)/200.0)
+				summitSnowToday = math.Round(summitSnowToday*frac*10) / 10
+			}
+		} else if snowLevel > baseElev {
+			// Snow level is between base and mid: mid gets snow
+			if dailyBaseToday == 0 {
+				baseSnowToday = 0.0
+			}
+			if summitSnowToday > 0 {
+				frac := (midElev - snowLevel) / (summitElev - snowLevel)
+				if frac > 0.85 {
+					frac = 0.85
+				} else if frac < 0.20 {
+					frac = 0.20
+				}
+				midSnowToday = math.Round(summitSnowToday*frac*10) / 10
+			}
+		} else {
+			// Snow level is at or below the base: snow reaches down to the base!
+			if baseSnowToday == 0 && summitSnowToday > 0 {
+				if effectiveFreezingLevel <= baseElev {
+					baseSnowToday = math.Round(summitSnowToday*0.80*10) / 10
+				} else {
+					baseSnowToday = math.Round(summitSnowToday*0.50*10) / 10
+				}
+			}
+		}
+	}
+
+	if baseSnowToday > 0 && midSnowToday == 0 {
+		midSnowToday = math.Round(((baseSnowToday+summitSnowToday)/2.0)*10) / 10
+	}
+	if summitSnowToday > 0 && midSnowToday == 0 {
+		midSnowToday = math.Round(summitSnowToday*0.50*10) / 10
+	}
+
+	if baseSnowToday > summitSnowToday {
+		baseSnowToday = summitSnowToday
+	}
+	if midSnowToday > summitSnowToday {
+		midSnowToday = summitSnowToday
+	}
+	if midSnowToday < baseSnowToday {
+		midSnowToday = baseSnowToday
+	}
+
+	// 6. Snow Condition / Quality
 	snowCondition := "no_snow"
 	snowConditionLabel := "Sin nieve"
 	if baseDepthCM > 0 || summitDepthCM > 0 {
@@ -825,9 +1080,14 @@ func computeSnowReport(
 		ResortID:             resortID,
 		ResortName:           resortName,
 		BaseElevationM:       baseElev,
+		MidElevationM:        midElev,
 		SummitElevationM:     summitElev,
-		SnowDepthBaseCM:      baseDepthCM,
-		SnowDepthSummitCM:    summitDepthCM,
+		SnowDepthBaseCM:       baseDepthCM,
+		SnowDepthMidCM:        midDepthCM,
+		SnowDepthSummitCM:     summitDepthCM,
+		SnowfallTodayBaseCM:   baseSnowToday,
+		SnowfallTodayMidCM:    midSnowToday,
+		SnowfallTodaySummitCM: summitSnowToday,
 		SnowCondition:        snowCondition,
 		SnowConditionLabel:   snowConditionLabel,
 		LastSnowfallDate:     lastSnowfallDate,
@@ -836,6 +1096,7 @@ func computeSnowReport(
 		FreshSnow48hCM:       freshSnow48hCM,
 		ForecastSnow7dCM:     forecastSnow7dCM,
 		FreezingLevelM:       freezingLevel,
+		SnowLineM:            math.Round(snowLine),
 		AvalancheReport:      avalancheReport,
 		DataSource:           "open-meteo",
 		GeneratedAt:          time.Now(),
@@ -952,7 +1213,7 @@ func (s *WeatherService) GetSpainAndAndorraSnowForecast(ctx context.Context) ([]
 	url := fmt.Sprintf(
 		"https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&elevation=%s"+
 			"&current=temperature_2m,snowfall,weather_code"+
-			"&daily=weather_code,temperature_2m_max,temperature_2m_min,snowfall_sum,precipitation_probability_max"+
+			"&daily=weather_code,temperature_2m_max,temperature_2m_min,snowfall_sum,precipitation_sum,precipitation_probability_max"+
 			"&wind_speed_unit=kmh&timezone=auto",
 		strings.Join(latStrs, ","),
 		strings.Join(lonStrs, ","),
@@ -1016,9 +1277,13 @@ func (s *WeatherService) mapToResortSnowForecastDTO(seed DefaultResortSeed, f We
 
 	var dailyItems []DailySnowItemDTO
 	for i, tStr := range f.Daily.Time {
-		snow := 0.0
+		rawSnow := 0.0
 		if i < len(f.Daily.SnowfallSum) {
-			snow = math.Round(f.Daily.SnowfallSum[i]*10) / 10
+			rawSnow = f.Daily.SnowfallSum[i]
+		}
+		rawPrecip := 0.0
+		if i < len(f.Daily.PrecipitationSum) {
+			rawPrecip = f.Daily.PrecipitationSum[i]
 		}
 		tMin := 0.0
 		if i < len(f.Daily.Temperature2mMin) {
@@ -1028,6 +1293,38 @@ func (s *WeatherService) mapToResortSnowForecastDTO(seed DefaultResortSeed, f We
 		if i < len(f.Daily.Temperature2mMax) {
 			tMax = f.Daily.Temperature2mMax[i]
 		}
+		avgT := (tMin + tMax) / 2.0
+
+		snowRatio := 1.0
+		if rawSnow > 0 || (avgT <= 0.5 && rawPrecip > 0) {
+			snowRatio = getAlpineSnowRatio(avgT)
+		}
+		calibrated := rawSnow * snowRatio
+
+		if rawPrecip > 0 {
+			if avgT <= 0.5 {
+				ceiling := rawPrecip * 0.80
+				if todayIdx >= 0 && i >= todayIdx+2 && rawPrecip < 25.0 {
+					ceiling = rawPrecip * 0.62
+				}
+				if calibrated > ceiling {
+					calibrated = ceiling
+				}
+			} else if avgT <= 2.0 {
+				ceiling := rawPrecip * 0.40
+				if calibrated > ceiling {
+					calibrated = ceiling
+				}
+			} else {
+				calibrated = 0.0
+			}
+		}
+
+		snow := math.Round(calibrated*10) / 10
+		if calibrated >= 1.0 {
+			snow = math.Round(calibrated)
+		}
+
 		code := 0
 		if i < len(f.Daily.WeatherCode) {
 			code = f.Daily.WeatherCode[i]
@@ -1051,26 +1348,24 @@ func (s *WeatherService) mapToResortSnowForecastDTO(seed DefaultResortSeed, f We
 		})
 	}
 
-	snowToday := 0.0
-	if todayIdx >= 0 && todayIdx < len(f.Daily.SnowfallSum) {
-		snowToday = f.Daily.SnowfallSum[todayIdx]
-	}
-	snow24h := snowToday
-	if todayIdx+1 < len(f.Daily.SnowfallSum) {
-		snow24h += f.Daily.SnowfallSum[todayIdx+1] * 0.5
-	}
-	snow48h := snowToday
-	if todayIdx+1 < len(f.Daily.SnowfallSum) {
-		snow48h += f.Daily.SnowfallSum[todayIdx+1]
-	}
-	snow72h := snow48h
-	if todayIdx+2 < len(f.Daily.SnowfallSum) {
-		snow72h += f.Daily.SnowfallSum[todayIdx+2]
+	getDailySnowfall := func(idx int) float64 {
+		if idx >= 0 && idx < len(dailyItems) {
+			return dailyItems[idx].SnowfallCM
+		}
+		return 0
 	}
 
+	snowToday := getDailySnowfall(todayIdx)
+	snow24h := snowToday
+	if todayIdx+1 < len(dailyItems) {
+		snow24h += getDailySnowfall(todayIdx+1) * 0.5
+	}
+	snow48h := snowToday + getDailySnowfall(todayIdx+1)
+	snow72h := snow48h + getDailySnowfall(todayIdx+2)
+
 	snow7d := 0.0
-	for i := todayIdx; i < len(f.Daily.SnowfallSum) && i < todayIdx+7; i++ {
-		snow7d += f.Daily.SnowfallSum[i]
+	for i := todayIdx; i < len(dailyItems) && i < todayIdx+7; i++ {
+		snow7d += getDailySnowfall(i)
 	}
 
 	var nextDate *string

@@ -65,12 +65,29 @@ func TestComputeSnowReport(t *testing.T) {
 		0,
 	)
 
-	// Verify Snow Depths
+	// Verify Snow Depths (Base, Mid, Summit)
 	if report.SnowDepthBaseCM != 45.0 {
 		t.Errorf("expected base snow depth 45cm, got %.1f", report.SnowDepthBaseCM)
 	}
+	if report.SnowDepthMidCM != 63.0 {
+		t.Errorf("expected mid snow depth 63cm, got %.1f", report.SnowDepthMidCM)
+	}
 	if report.SnowDepthSummitCM != 80.0 {
 		t.Errorf("expected summit snow depth 80cm, got %.1f", report.SnowDepthSummitCM)
+	}
+	if report.MidElevationM != 2050.0 {
+		t.Errorf("expected mid elevation 2050m, got %.1f", report.MidElevationM)
+	}
+
+	// Verify Today Snowfall by Elevation
+	if report.SnowfallTodayBaseCM != 15.0 {
+		t.Errorf("expected today base snowfall 15.0cm, got %.1f", report.SnowfallTodayBaseCM)
+	}
+	if report.SnowfallTodayMidCM != 17.5 {
+		t.Errorf("expected today mid snowfall 17.5cm, got %.1f", report.SnowfallTodayMidCM)
+	}
+	if report.SnowfallTodaySummitCM != 20.0 {
+		t.Errorf("expected today summit snowfall 20.0cm, got %.1f", report.SnowfallTodaySummitCM)
 	}
 
 	// Verify Snow Condition (Fresh snow with cold temp -> powder)
@@ -171,6 +188,86 @@ func TestComputeSnowReportCerlerScenario(t *testing.T) {
 	// Snow condition at summit should be packed_powder, NOT no_snow
 	if report.SnowCondition == "no_snow" {
 		t.Errorf("expected condition not to be no_snow, got %s", report.SnowCondition)
+	}
+}
+
+func TestComputeSnowReportAstunElevationBreakdown(t *testing.T) {
+	// Astún: Base = 1660m, Mid = 1980m, Summit = 2300m
+	todayStr := time.Now().Format("2006-01-02")
+
+	// Scenario A: Freezing level at 2100m (Snow line ~ 1850m)
+	// Base (1660m) is below snow line -> rain (0cm snow)
+	// Mid (1980m) is above snow line -> partial snow
+	// Summit (2300m) is well above freezing -> full snow
+	baseA := WeatherForecast{
+		Elevation: 1660,
+		Current:   CurrentWeather{Temperature2m: 3.5, SnowDepth: 0.10},
+		Hourly:    HourlyData{FreezingLevelHeight: []float64{2100.0}},
+		Daily:     DailyData{Time: []string{todayStr}, SnowfallSum: []float64{0.0}},
+	}
+	summitA := WeatherForecast{
+		Elevation: 2300,
+		Current:   CurrentWeather{Temperature2m: -1.5, SnowDepth: 0.40},
+		Hourly:    HourlyData{FreezingLevelHeight: []float64{2100.0}},
+		Daily:     DailyData{Time: []string{todayStr}, SnowfallSum: []float64{15.0}},
+	}
+
+	reportA := computeSnowReport("astun", "Astún", 1660, 2300, baseA, summitA, 0, 0)
+	if reportA.SnowfallTodayBaseCM != 0.0 {
+		t.Errorf("expected base snowfall 0.0cm (rain at 1660m with snow level ~1850m), got %.1f", reportA.SnowfallTodayBaseCM)
+	}
+	if reportA.SnowfallTodayMidCM <= 0.0 || reportA.SnowfallTodayMidCM >= 15.0 {
+		t.Errorf("expected mid snowfall between 0 and 15cm at 1980m, got %.1f", reportA.SnowfallTodayMidCM)
+	}
+	if reportA.SnowfallTodaySummitCM != 15.0 {
+		t.Errorf("expected summit snowfall 15.0cm, got %.1f", reportA.SnowfallTodaySummitCM)
+	}
+
+	// Scenario B: Freezing level at 1500m (Snow line ~ 1250m, below base 1660m)
+	// All cotas receive snow!
+	baseB := WeatherForecast{
+		Elevation: 1660,
+		Current:   CurrentWeather{Temperature2m: -1.0, SnowDepth: 0.20},
+		Hourly:    HourlyData{FreezingLevelHeight: []float64{1500.0}},
+		Daily:     DailyData{Time: []string{todayStr}, SnowfallSum: []float64{10.0}},
+	}
+	summitB := WeatherForecast{
+		Elevation: 2300,
+		Current:   CurrentWeather{Temperature2m: -5.0, SnowDepth: 0.60},
+		Hourly:    HourlyData{FreezingLevelHeight: []float64{1500.0}},
+		Daily:     DailyData{Time: []string{todayStr}, SnowfallSum: []float64{18.0}},
+	}
+
+	reportB := computeSnowReport("astun", "Astún", 1660, 2300, baseB, summitB, 0, 0)
+	if reportB.SnowfallTodayBaseCM != 10.0 {
+		t.Errorf("expected base snowfall 10.0cm, got %.1f", reportB.SnowfallTodayBaseCM)
+	}
+	if reportB.SnowfallTodayMidCM != 14.0 {
+		t.Errorf("expected mid snowfall 14.0cm, got %.1f", reportB.SnowfallTodayMidCM)
+	}
+	if reportB.SnowfallTodaySummitCM != 18.0 {
+		t.Errorf("expected summit snowfall 18.0cm, got %.1f", reportB.SnowfallTodaySummitCM)
+	}
+
+	// Scenario C: Freezing level at 2700m (above summit 2300m)
+	// Rain across all elevations
+	baseC := WeatherForecast{
+		Elevation: 1660,
+		Current:   CurrentWeather{Temperature2m: 7.0},
+		Hourly:    HourlyData{FreezingLevelHeight: []float64{2700.0}},
+		Daily:     DailyData{Time: []string{todayStr}, SnowfallSum: []float64{0.0}},
+	}
+	summitC := WeatherForecast{
+		Elevation: 2300,
+		Current:   CurrentWeather{Temperature2m: 3.0},
+		Hourly:    HourlyData{FreezingLevelHeight: []float64{2700.0}},
+		Daily:     DailyData{Time: []string{todayStr}, SnowfallSum: []float64{5.0}},
+	}
+
+	reportC := computeSnowReport("astun", "Astún", 1660, 2300, baseC, summitC, 0, 0)
+	if reportC.SnowfallTodayBaseCM != 0.0 || reportC.SnowfallTodayMidCM != 0.0 || reportC.SnowfallTodaySummitCM != 0.0 {
+		t.Errorf("expected all cotas to be 0.0cm when freezing level is above summit, got base=%.1f, mid=%.1f, summit=%.1f",
+			reportC.SnowfallTodayBaseCM, reportC.SnowfallTodayMidCM, reportC.SnowfallTodaySummitCM)
 	}
 }
 

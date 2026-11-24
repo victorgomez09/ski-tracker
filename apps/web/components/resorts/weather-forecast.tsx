@@ -229,14 +229,14 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                             <View style={styles.snowSubMetric}>
                                 <Text style={styles.snowSubLabel}>{t('fresh_snow_24h')}</Text>
                                 <Text style={styles.snowSubValue}>
-                                    {snowReport.fresh_snow_24h_cm > 0 ? `+${snowReport.fresh_snow_24h_cm} cm` : '0 cm'}
+                                    {snowReport.fresh_snow_24h_cm > 0 ? `${snowReport.fresh_snow_24h_cm} cm` : '0 cm'}
                                 </Text>
                             </View>
                             <View style={styles.snowSubDivider} />
                             <View style={styles.snowSubMetric}>
                                 <Text style={styles.snowSubLabel}>{t('fresh_snow_48h')}</Text>
                                 <Text style={styles.snowSubValue}>
-                                    {snowReport.fresh_snow_48h_cm > 0 ? `+${snowReport.fresh_snow_48h_cm} cm` : '0 cm'}
+                                    {snowReport.fresh_snow_48h_cm > 0 ? `${snowReport.fresh_snow_48h_cm} cm` : '0 cm'}
                                 </Text>
                             </View>
                             <View style={styles.snowSubDivider} />
@@ -323,7 +323,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                                         </View>
 
                                         <View style={styles.snowDayBadge}>
-                                            <Text style={styles.snowDayBadgeText}>+{item.snowfall} cm</Text>
+                                            <Text style={styles.snowDayBadgeText}>{item.snowfall} cm</Text>
                                         </View>
 
                                         <View style={styles.dailyTempRange}>
@@ -529,7 +529,7 @@ export const WeatherForecastDetails: React.FC<WeatherWidgetProps> = ({ data }) =
                                     <View style={styles.quickSnowItem}>
                                         <Text style={styles.quickSnowLabel}>7d:</Text>
                                         <Text style={[styles.quickSnowValue, { color: '#0284c7' }]}>
-                                            +{snowReport.forecast_snow_7d_cm} cm
+                                            {snowReport.forecast_snow_7d_cm} cm
                                         </Text>
                                     </View>
                                 </>

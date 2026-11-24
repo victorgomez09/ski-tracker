@@ -2,15 +2,10 @@ import { useRouter } from 'expo-router';
 import {
   AlertTriangle,
   ArrowUp,
-  Calendar,
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Filter,
-  Layers,
   Map as MapIcon,
-  MapPin,
-  MountainSnow,
   RefreshCw,
   Search,
   Snowflake,
@@ -18,7 +13,6 @@ import {
   Star,
   Thermometer,
   TrendingUp,
-  Wind,
   X,
 } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -26,7 +20,6 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   FlatList,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -39,7 +32,7 @@ import {
 import { ResortLogo } from '../resorts/resort-logo';
 import { BORDER_RADIUS, LIGHT_COLORS, SHADOWS, SPACING, useThemeColors } from '../../constants/theme';
 import { useFavorites } from '../../context/favorites.context';
-import { DailySnowItem, ResortSnowForecast, SnowRegion, SnowTimeframe } from '../../models/snow-forecast.model';
+import { ResortSnowForecast, SnowRegion, SnowTimeframe } from '../../models/snow-forecast.model';
 import { SnowForecastService, getWindDirectionInfo } from '../../services/snow-forecast.service';
 
 interface SnowForecastViewProps {
@@ -124,24 +117,35 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
   const [onlySnowing, setOnlySnowing] = useState(false);
   const [expandedResortId, setExpandedResortId] = useState<string | null>(null);
 
-  const loadData = useCallback(async (refresh = false) => {
-    if (refresh) setIsRefreshing(true);
-    else setIsLoading(true);
-
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
     try {
-      const data = await SnowForecastService.getSnowForecasts(refresh);
+      const data = await SnowForecastService.getSnowForecasts(true);
       setForecasts(data);
     } catch (e) {
-      console.error('Error fetching snow forecasts:', e);
+      console.error('Error refreshing snow forecasts:', e);
     } finally {
-      setIsLoading(false);
       setIsRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    loadData(false);
-  }, [loadData]);
+    let isMounted = true;
+    SnowForecastService.getSnowForecasts(false)
+      .then((data) => {
+        if (isMounted) setForecasts(data);
+      })
+      .catch((e) => {
+        console.error('Error fetching snow forecasts:', e);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredForecasts = useMemo(() => {
     return SnowForecastService.filterAndSort(forecasts, {
@@ -303,7 +307,7 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
           {/* Snow Badge */}
           <View style={[styles.compactSnowBadge, { backgroundColor: badgeStyle.bg }]}>
             <Text style={[styles.compactSnowText, { color: badgeStyle.textColor }]}>
-              {snowAmount > 0 ? `+${snowAmount} cm` : '0 cm'}
+              {snowAmount > 0 ? `${snowAmount} cm` : '0 cm'}
             </Text>
           </View>
 
@@ -333,7 +337,7 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
                 <View style={styles.expandedMetricItem}>
                   <TrendingUp size={13} color="#0284c7" />
                   <Text style={[styles.expandedMetricText, { color: '#0284c7', fontWeight: '600' }]}>
-                    Pico: +{item.max_snowfall_day.amount_cm}cm ({formatDayAndMonth(item.max_snowfall_day.date, item.max_snowfall_day.dayName)})
+                    Pico: {item.max_snowfall_day.amount_cm} cm ({formatDayAndMonth(item.max_snowfall_day.date, item.max_snowfall_day.dayName)})
                   </Text>
                 </View>
               )}
@@ -370,7 +374,7 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
                   <Text style={styles.elevationTripleMeters}>{item.summit_elevation_m}m</Text>
                 </View>
                 <Text style={styles.elevationTripleSnowValue}>
-                  +{snowCotas.summit > 0 ? snowCotas.summit : 0} cm
+                  {snowCotas.summit > 0 ? `${snowCotas.summit} cm` : '0 cm'}
                 </Text>
                 <View style={styles.elevationTripleWindRow}>
                   <WindDirectionArrow degrees={windDeg} size={11} color="#0284c7" />
@@ -390,7 +394,7 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
                   <Text style={styles.elevationTripleMeters}>{midElev}m</Text>
                 </View>
                 <Text style={styles.elevationTripleSnowValue}>
-                  +{snowCotas.mid > 0 ? snowCotas.mid : 0} cm
+                  {snowCotas.mid > 0 ? `${snowCotas.mid} cm` : '0 cm'}
                 </Text>
                 <View style={styles.elevationTripleWindRow}>
                   <WindDirectionArrow degrees={windDeg} size={11} color="#0284c7" />
@@ -410,7 +414,7 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
                   <Text style={styles.elevationTripleMeters}>{item.base_elevation_m}m</Text>
                 </View>
                 <Text style={styles.elevationTripleSnowValue}>
-                  +{snowCotas.base > 0 ? snowCotas.base : 0} cm
+                  {snowCotas.base > 0 ? `${snowCotas.base} cm` : '0 cm'}
                 </Text>
                 <View style={styles.elevationTripleWindRow}>
                   <WindDirectionArrow degrees={windDeg} size={11} color={colors.textSecondary} />
@@ -466,7 +470,7 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
                           styles.miniDaySnowAmount,
                           hasSnow && styles.miniDaySnowAmountActive,
                         ]}>
-                        {hasSnow ? `+${day.snowfall_cm}` : '-'}
+                        {hasSnow ? `${day.snowfall_cm} cm` : '-'}
                       </Text>
                       <View
                         style={[
@@ -534,7 +538,7 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
               </Text>
             </View>
             <TouchableOpacity
-              onPress={() => loadData(true)}
+              onPress={handleRefresh}
               style={styles.refreshBtn}
               accessibilityLabel="Actualizar">
               <RefreshCw
@@ -565,7 +569,7 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
               <Text style={styles.summaryTopText}>
                 🏆 {t('top_snowfall_label', 'Máxima nevada:')}{' '}
                 <Text style={{ fontWeight: '700', color: '#ffffff' }}>
-                  {summary.topResortName} (+{summary.maxSnow} cm)
+                  {summary.topResortName} ({summary.maxSnow} cm)
                 </Text>
               </Text>
             )}
@@ -668,7 +672,7 @@ export const SnowForecastView: React.FC<SnowForecastViewProps> = ({
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
-              onRefresh={() => loadData(true)}
+              onRefresh={handleRefresh}
               tintColor={colors.primary}
             />
           }
