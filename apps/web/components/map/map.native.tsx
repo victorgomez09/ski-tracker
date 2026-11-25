@@ -20,7 +20,7 @@ import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { offlineResortService } from 'services/offline-resort.service';
 import { evaluateLiftClosureAlert } from 'utils/lift-closure.util';
-import { getCurrentLocation } from 'tracking/task-manager';
+import { getCurrentLocation, isTrackingSessionActive } from 'tracking/task-manager';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Platform, processColor, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -752,7 +752,13 @@ export default function InteractiveSkiMapNative() {
             return;
         }
 
-        if (networkState?.isConnected === false) {
+        const isDeviceOffline = networkState?.isConnected === false || networkState?.isInternetReachable === false;
+        let isTracking = false;
+        try {
+            isTracking = await isTrackingSessionActive();
+        } catch {}
+
+        if (isDeviceOffline) {
             setIsLoadingResorts(false);
             try {
                 // 1. Prioritize full offline resort packs with complete pistes, lifts, and POIs
@@ -774,6 +780,47 @@ export default function InteractiveSkiMapNative() {
                 setResorts([]);
             }
             return;
+        }
+
+        // Si hay una sesión activa, dar prioridad a la zona descargada si se tiene
+        if (isTracking) {
+            try {
+                // Comprobar primero la estación activa de la sesión
+                const activeResortId = await AsyncStorage.getItem('ACTIVE_RESORT_ID');
+                if (activeResortId) {
+                    const offlineActive = await offlineResortService.getOfflineResort(activeResortId);
+                    if (offlineActive) {
+                        setIsLoadingResorts(false);
+                        setResorts([offlineActive]);
+                        return;
+                    }
+                }
+
+                // Comprobar si la zona actual del mapa intersecta con alguna zona descargada
+                if (zoom < 10 && bounds) {
+                    const offlineMatches = await offlineResortService.findOfflineResortsInBounds(
+                        bounds.minLon,
+                        bounds.minLat,
+                        bounds.maxLon,
+                        bounds.maxLat
+                    );
+                    if (offlineMatches.length > 0) {
+                        setIsLoadingResorts(false);
+                        setResorts(offlineMatches);
+                        return;
+                    }
+                } else {
+                    const offlineNearby = await offlineResortService.findOfflineResortsNearby(lat, lon, 25);
+                    if (offlineNearby.length > 0) {
+                        setIsLoadingResorts(false);
+                        setResorts(offlineNearby);
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.warn('Error checking offline resorts for active session:', err);
+            }
+            // Si no se tiene la zona descargada para esta área, el mapa continúa abajo para intentar funcionar online
         }
 
         if (abortControllerRef.current) {

@@ -6,6 +6,7 @@ import * as Network from 'expo-network';
 import type { User as UserType } from 'models/user.model';
 import api from 'interceptor/api';
 import { API_BASE_URL } from 'constants/constants';
+import { isTrackingSessionActive } from 'tracking/task-manager';
 
 const AuthContext = createContext<{
   token: string | null;
@@ -67,13 +68,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setConnectionRequiredError(false);
       try {
         const networkState = await Network.getNetworkStateAsync();
-        const isOnline = networkState.isConnected;
+        const isOnline = networkState.isConnected && networkState.isInternetReachable !== false;
+        const isTracking = await isTrackingSessionActive();
 
         const storedToken = Platform.OS === 'web'
           ? localStorage.getItem('jwt_key')
           : await SecureStore.getItemAsync('jwt_key');
 
-        if (!isOnline) {
+        if (!isOnline || isTracking) {
           const cachedUser = await AsyncStorage.getItem('user_profile');
           if (cachedUser) {
             setToken(storedToken || 'offline_token');
@@ -82,6 +84,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } catch (e) {
               console.error('Error parsing cached user:', e);
             }
+          } else if (isTracking) {
+            setToken(storedToken || 'offline_token');
           } else {
             setConnectionRequiredError(true);
           }

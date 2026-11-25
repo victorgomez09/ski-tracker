@@ -3,11 +3,13 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import * as Network from 'expo-network';
 
 import api from './api';
 import { useAuth } from 'context/auth.context';
 import { useToast } from 'context/toast.context';
 import { API_BASE_URL } from 'constants/constants';
+import { isTrackingSessionActive } from 'tracking/task-manager';
 
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
@@ -57,9 +59,29 @@ export function AxiosInterceptor({ children }: { children: React.ReactNode }) {
           hasResponse: !!error.response,
         });
 
+        // Detectar si estamos sin conexión o si hay una sesión de rastreo activa
+        let trackingActive = false;
+        try {
+          trackingActive = await isTrackingSessionActive();
+        } catch {}
+
+        let isOffline = false;
+        try {
+          const net = await Network.getNetworkStateAsync();
+          isOffline = net.isConnected === false || net.isInternetReachable === false;
+        } catch {
+          isOffline = !error.response || error.message === 'Network Error';
+        }
+
         // 1. If 401 and not already retrying, attempt to refresh token
         const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh');
         if (status === 401 && !originalRequest?._retry && !isAuthEndpoint) {
+          // Si no se tiene conexión o se tiene una sesión en activo, NO comprobar si el token ha expirado ni desloguear
+          if (isOffline || trackingActive) {
+            console.log('🔒 [AxiosInterceptor] 401 omitido: modo offline o sesión activa en curso');
+            return Promise.reject(error);
+          }
+
           originalRequest._retry = true;
 
           const storedRefreshToken = Platform.OS === 'web'
@@ -95,10 +117,16 @@ export function AxiosInterceptor({ children }: { children: React.ReactNode }) {
                   }
                   return api(originalRequest);
                 }
-              } catch (refreshErr) {
+              } catch (refreshErr: any) {
                 console.error('🔒 [AxiosInterceptor] Error al renovar token:', refreshErr);
                 isRefreshing = false;
                 onRefreshFailed();
+
+                // Si falló por red/conectividad (común en montaña), no cerrar sesión
+                const isNetworkFailure = !refreshErr.response || refreshErr.message === 'Network Error';
+                if (isNetworkFailure) {
+                  return Promise.reject(error);
+                }
               }
             } else {
               // Wait for refresh in progress
@@ -111,6 +139,11 @@ export function AxiosInterceptor({ children }: { children: React.ReactNode }) {
                 });
               });
             }
+          }
+
+          // Si hay una sesión activa o estamos offline, nunca desloguear
+          if (trackingActive || isOffline) {
+            return Promise.reject(error);
           }
 
           // If refresh token doesn't exist or refresh failed:
@@ -131,8 +164,8 @@ export function AxiosInterceptor({ children }: { children: React.ReactNode }) {
           errorMessage = error.message;
         }
 
-        // Show toast notification only for non-401 or auth endpoint errors
-        if (!isAuthEndpoint || status !== 401) {
+        // Show toast notification only for non-401 or auth endpoint errors, and suppress while offline / tracking
+        if (!isAuthEndpoint && !isOffline && !trackingActive && status !== 401 && error?.message !== 'Network Error') {
           showToastRef.current(errorMessage, 'error');
         }
 

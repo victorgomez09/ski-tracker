@@ -144,6 +144,24 @@ class OfflineResortManager {
     }
 
     /**
+     * Finds offline resorts within a given radius in kilometers.
+     */
+    async findOfflineResortsNearby(
+        lat: number,
+        lon: number,
+        radiusKm: number = 25
+    ): Promise<ResortDetail[]> {
+        const resorts = await this.getAllOfflineResorts();
+        return resorts.filter((r) => {
+            if (!r.Latitude || !r.Longitude) return false;
+            const dLat = (r.Latitude - lat) * 111.32;
+            const dLon = (r.Longitude - lon) * 111.32 * Math.cos((lat * Math.PI) / 180);
+            const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+            return dist <= radiusKm;
+        });
+    }
+
+    /**
      * Saves an offline resort pack and updates the index.
      */
     async saveOfflinePack(pack: OfflineResortPack): Promise<void> {

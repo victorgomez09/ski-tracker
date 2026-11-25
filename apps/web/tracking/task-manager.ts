@@ -196,9 +196,31 @@ export interface PersistedTrackingState {
   isServiceRunning: boolean;
 }
 
+export const isTrackingSessionActive = async (): Promise<boolean> => {
+  try {
+    const isActiveStr = await AsyncStorage.getItem(TRACKING_STORAGE_KEYS.IS_ACTIVE);
+    if (isActiveStr === 'true') return true;
+    if (Platform.OS !== 'web') {
+      try {
+        return await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+};
+
 export const getPersistedTrackingState = async (): Promise<PersistedTrackingState> => {
   try {
-    const isServiceRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+    let isServiceRunning = false;
+    if (Platform.OS !== 'web') {
+      try {
+        isServiceRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+      } catch {}
+    }
     const [
       isActiveStr,
       isPausedStr,

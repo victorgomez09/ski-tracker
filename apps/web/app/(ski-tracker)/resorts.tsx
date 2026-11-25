@@ -202,15 +202,21 @@ export default function ResortsView() {
   };
 
   const handleSessionClick = (session: any) => {
-    if (!selectedResort) return;
+    if (!selectedResort && !session) return;
+    const lat = selectedResort?.Latitude ?? session?.resort?.Latitude;
+    const lon = selectedResort?.Longitude ?? session?.resort?.Longitude;
+    const params: Record<string, any> = {
+      sessionId: session.id,
+      zoom: 14,
+    };
+    if (lat != null && lon != null) {
+      params.lat = lat;
+      params.lon = lon;
+      params.lng = lon;
+    }
     router.navigate({
       pathname: '/map',
-      params: {
-        sessionId: session.id,
-        lat: selectedResort.Latitude,
-        lon: selectedResort.Longitude,
-        zoom: 14,
-      },
+      params,
     });
     setTimeout(() => setSelectedResortWithCache(null), 100);
   };
@@ -329,6 +335,7 @@ export default function ResortsView() {
           onSelectModel={handleSelectWeatherModel}
           sessions={sessions}
           isLoadingSessions={isLoadingSessions}
+          onOpenSession={handleSessionClick}
           isRefreshingWeather={isRefreshingWeather}
           onRefreshWeather={handleRefreshWeather}
           onClose={() => setSelectedResortWithCache(null)}

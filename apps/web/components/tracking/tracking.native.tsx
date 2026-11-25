@@ -224,16 +224,18 @@ export default function InteractiveSkiMapNative() {
                     setMapStyleId(savedMapStyle as MapStyleId);
                 }
                 if (activeResortId) {
-                    try {
-                        const res = await api.get<ResortDetail>(`/resorts/by-id/${activeResortId}`);
-                        if (res.status === 200 && res.data) {
-                            setResort(res.data);
-                        }
-                    } catch (e) {
-                        console.warn('Could not fetch active resort details, trying offline storage:', e);
-                        const offlineResort = await offlineResortService.getOfflineResort(activeResortId);
-                        if (offlineResort) {
-                            setResort(offlineResort);
+                    // Prioridad al offline si la estación está descargada
+                    const offlineResort = await offlineResortService.getOfflineResort(activeResortId);
+                    if (offlineResort) {
+                        setResort(offlineResort);
+                    } else if (!isOffline) {
+                        try {
+                            const res = await api.get<ResortDetail>(`/resorts/by-id/${activeResortId}`);
+                            if (res.status === 200 && res.data) {
+                                setResort(res.data);
+                            }
+                        } catch (e) {
+                            console.warn('Could not fetch active resort details online:', e);
                         }
                     }
                 }
@@ -467,18 +469,17 @@ export default function InteractiveSkiMapNative() {
         setIsCheckingLocation(true);
         try {
             let fullResort = selected;
-            if (!selected.pistes || selected.pistes.length === 0) {
-                const offline = await offlineResortService.getOfflineResort(selected.ID);
-                if (offline) {
-                    fullResort = offline;
-                } else if (!isOffline) {
-                    try {
-                        const res = await api.get<ResortDetail>(`/resorts/by-id/${selected.ID}`);
-                        if (res.status === 200 && res.data) {
-                            fullResort = res.data;
-                        }
-                    } catch {}
-                }
+            // Prioridad a la zona descargada si se tiene
+            const offline = await offlineResortService.getOfflineResort(selected.ID);
+            if (offline) {
+                fullResort = offline;
+            } else if ((!selected.pistes || selected.pistes.length === 0) && !isOffline) {
+                try {
+                    const res = await api.get<ResortDetail>(`/resorts/by-id/${selected.ID}`);
+                    if (res.status === 200 && res.data) {
+                        fullResort = res.data;
+                    }
+                } catch {}
             }
 
             const loc = await getCurrentLocation();

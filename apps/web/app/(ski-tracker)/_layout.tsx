@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
@@ -8,6 +8,7 @@ import BottomTabs from 'components/navigation/bottom-tabs';
 import { LIGHT_COLORS, SPACING, useThemeColors } from 'constants/theme';
 import { useAuth } from 'context/auth.context';
 import { useIsOffline } from 'hooks/use-network.hook';
+import { isTrackingSessionActive } from 'tracking/task-manager';
 
 export default function RootLayout() {
   const { token, isLoading } = useAuth();
@@ -15,6 +16,12 @@ export default function RootLayout() {
   const { t } = useTranslation();
   const colors = useThemeColors();
   const styles = useMemo(() => getStyles(colors), [colors]);
+
+  const [hasActiveTracking, setHasActiveTracking] = useState(false);
+
+  useEffect(() => {
+    isTrackingSessionActive().then(setHasActiveTracking).catch(() => {});
+  }, []);
 
   if (isLoading) {
     return (
@@ -24,7 +31,7 @@ export default function RootLayout() {
     );
   }
 
-  if (!token && !isOffline) {
+  if (!token && !isOffline && !hasActiveTracking) {
     return <Redirect href="/login" />;
   }
 

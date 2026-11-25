@@ -300,6 +300,7 @@ interface SkiinfoResortDetailProps {
   onClose: () => void;
   onOpenMap?: () => void;
   onOpenPiste?: (piste: Piste) => void;
+  onOpenSession?: (session: any) => void;
   onStartTracking?: () => void;
   onDownloadOffline?: () => void;
 }
@@ -457,6 +458,7 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
   onClose,
   onOpenMap,
   onOpenPiste,
+  onOpenSession,
   onStartTracking,
   onDownloadOffline,
 }) => {
@@ -2744,7 +2746,12 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
                   const actConf = ACTIVITY_CONFIGS[sess.activity_type as ActivityType] || ACTIVITY_CONFIGS.ski;
 
                   return (
-                    <View key={sess.id} style={styles.sessionCard}>
+                    <TouchableOpacity
+                      key={sess.id}
+                      style={styles.sessionCard}
+                      onPress={() => onOpenSession?.(sess)}
+                      activeOpacity={0.7}
+                    >
                       <View style={styles.sessionCardLeft}>
                         <Text style={styles.sessionDateText}>{dateText}</Text>
                         <Text style={styles.sessionUserName}>
@@ -2759,7 +2766,7 @@ export const SkiinfoResortDetail: React.FC<SkiinfoResortDetailProps> = ({
                         </View>
                       </View>
                       <ChevronRight size={18} color={colors.textLight} />
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
