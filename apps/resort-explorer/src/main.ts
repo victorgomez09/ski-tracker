@@ -80,6 +80,12 @@ window.addEventListener('DOMContentLoaded', () => {
     manager.cycleCameraMode();
   });
 
+  document.getElementById('btn-rider-mode')?.addEventListener('click', () => {
+    const curr = manager.getGraphicsConfig();
+    const next = curr.riderMode === 'snowboard' ? 'ski' : 'snowboard';
+    manager.updateGraphicsOption({ riderMode: next });
+  });
+
   // Botón temporal para alternar entre esquiar y vista aérea de inspección del terreno
   let isAerial = false;
   const aerialBtn = document.getElementById('btn-toggle-aerial');
@@ -154,6 +160,10 @@ window.addEventListener('DOMContentLoaded', () => {
     if (dprSel) dprSel.value = String(cfg.pixelRatioMax);
     const distSel = document.getElementById('gfx-dist-select') as HTMLSelectElement | null;
     if (distSel) distSel.value = String(cfg.drawDistance);
+    const riderSel = document.getElementById('gfx-rider-select') as HTMLSelectElement | null;
+    if (riderSel) riderSel.value = cfg.riderMode || 'ski';
+    const stanceSel = document.getElementById('gfx-stance-select') as HTMLSelectElement | null;
+    if (stanceSel) stanceSel.value = cfg.snowboardStance || 'regular';
   };
 
   document.getElementById('btn-open-gfx')?.addEventListener('click', openGraphicsModal);
@@ -234,5 +244,15 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('gfx-dist-select')?.addEventListener('change', (e) => {
     const val = Number((e.target as HTMLSelectElement).value);
     if (val > 0) manager.updateGraphicsOption({ drawDistance: val });
+  });
+
+  document.getElementById('gfx-rider-select')?.addEventListener('change', (e) => {
+    const val = (e.target as HTMLSelectElement).value as 'ski' | 'snowboard';
+    manager.updateGraphicsOption({ riderMode: val });
+  });
+
+  document.getElementById('gfx-stance-select')?.addEventListener('change', (e) => {
+    const val = (e.target as HTMLSelectElement).value as 'regular' | 'goofy';
+    manager.updateGraphicsOption({ snowboardStance: val });
   });
 });

@@ -1,25 +1,47 @@
 import * as THREE from 'three';
 import { ProceduralPBR } from './ProceduralPBR.js';
 
+export type RiderMode = 'ski' | 'snowboard';
+export type SnowboardStance = 'regular' | 'goofy';
+
+export interface AvatarPoseInput {
+  roll: number;
+  crouch: number;
+  skidAngle: number;
+  steerInput: number;
+  speedMs: number;
+  isGrounded: boolean;
+  landingImpact: number;
+  isPushing: boolean;
+  timeSec: number;
+}
+
 /**
- * Avatar 3D procedural refinado de esquiador alpino (cero assets externos, materiales PBR):
- * - Esquís de carving con cantos metálicos, espátulas curvadas y fijaciones.
- * - Piernas articuladas (muslo + pantorrilla + bota) con flexión de rodilla realista.
- * - Torso anatómico con chaqueta técnica PBR, cuello alto y mochila de freeride.
- * - Brazos articulados con codos flexionados, guantes y bastones con rosetas.
- * - Casco aerodinámico con cinta trasera y gafas de ventisca reflectantes (clearcoat PBR).
+ * Avatar 3D procedural refinado de esquiador alpino y snowboarder (cero assets externos, materiales PBR):
+ * - Modo Esquí: esquís de carving con cantos metálicos, espátulas curvadas, fijaciones y bastones.
+ * - Modo Snowboard: tabla twin-tip con cantos, fijaciones anguladas y postura lateral (Regular / Goofy).
+ * - Animación articulada realista: flexión asimétrica de rodillas en giro, contra-rotación de torso/cadera,
+ *   equilibrio de brazos, amortiguación de aterrizaje y postura aérea.
  */
 export class SkierAvatar {
   public group: THREE.Group = new THREE.Group();
   private bodyPivot: THREE.Group = new THREE.Group();
   private hipsGroup: THREE.Group = new THREE.Group();
   private torsoGroup: THREE.Group = new THREE.Group();
+  private headGroup: THREE.Group = new THREE.Group();
   private leftThigh: THREE.Group = new THREE.Group();
   private rightThigh: THREE.Group = new THREE.Group();
   private leftShin: THREE.Group = new THREE.Group();
   private rightShin: THREE.Group = new THREE.Group();
   private leftArm: THREE.Group = new THREE.Group();
   private rightArm: THREE.Group = new THREE.Group();
+  private leftPoleGroup: THREE.Group = new THREE.Group();
+  private rightPoleGroup: THREE.Group = new THREE.Group();
+  private skiGroupNodes: THREE.Group[] = [];
+  private snowboardGroup: THREE.Group = new THREE.Group();
+
+  private riderMode: RiderMode = 'ski';
+  private stance: SnowboardStance = 'regular';
 
   constructor() {
     this.buildSkier();
@@ -100,8 +122,40 @@ export class SkierAvatar {
       bootCuff.rotation.x = 0.24;
       skiGroup.add(bootLower, bootCuff);
 
+      this.skiGroupNodes.push(skiGroup);
       this.bodyPivot.add(skiGroup);
     });
+
+    // 1b. Tabla de Snowboard twin-tip con cantos de acero, espátulas y fijaciones
+    this.snowboardGroup.position.set(0, 0.025, 0);
+    const boardMat = new THREE.MeshPhysicalMaterial({
+      color: 0x0284c7,
+      roughness: 0.22,
+      metalness: 0.25,
+      clearcoat: 0.85,
+    });
+    const boardBody = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.022, 1.38), boardMat);
+    const boardEdges = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.012, 1.36), steelEdgeMat);
+    boardEdges.position.y = -0.007;
+    const noseTip = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.018, 0.20), skiAccentMat);
+    noseTip.position.set(0, 0.032, 0.77);
+    noseTip.rotation.x = -0.35;
+    const tailTip = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.018, 0.20), skiAccentMat);
+    tailTip.position.set(0, 0.032, -0.77);
+    tailTip.rotation.x = 0.35;
+    this.snowboardGroup.add(boardBody, boardEdges, noseTip, tailTip);
+
+    [0.27, -0.27].forEach((fz) => {
+      const sbBind = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.045, 0.14), bootMat);
+      sbBind.position.set(0, 0.032, fz);
+      sbBind.rotation.y = fz > 0 ? 0.26 : -0.18;
+      const sbBoot = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.14, 0.24), bootMat);
+      sbBoot.position.set(0, 0.10, fz);
+      sbBoot.rotation.y = Math.PI / 2 + (fz > 0 ? 0.22 : -0.15);
+      this.snowboardGroup.add(sbBind, sbBoot);
+    });
+    this.snowboardGroup.visible = false;
+    this.bodyPivot.add(this.snowboardGroup);
 
     // 2. Piernas articuladas (pantorrilla + muslo)
     const shinGeom = new THREE.CylinderGeometry(0.072, 0.062, 0.38, 10);
@@ -165,24 +219,23 @@ export class SkierAvatar {
     this.torsoGroup.add(backpack);
 
     // Cabeza, casco aerodinámico y gafas reflectantes
-    const headGroup = new THREE.Group();
-    headGroup.position.set(0, 0.68, 0.02);
-    this.torsoGroup.add(headGroup);
+    this.headGroup.position.set(0, 0.68, 0.02);
+    this.torsoGroup.add(this.headGroup);
 
     const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.145, 16, 14), helmetMat);
     helmet.scale.set(0.95, 1.02, 1.08);
-    headGroup.add(helmet);
+    this.headGroup.add(helmet);
 
     const visor = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.08, 0.11), gogglesMat);
     visor.position.set(0, -0.01, 0.11);
-    headGroup.add(visor);
+    this.headGroup.add(visor);
 
     const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.146, 0.146, 0.04, 14), jacketTrimMat);
     strap.position.set(0, -0.01, -0.01);
-    headGroup.add(strap);
+    this.headGroup.add(strap);
 
     // 4. Brazos articulados con guantes y bastones
-    const buildArm = (side: -1 | 1, armGroup: THREE.Group) => {
+    const buildArm = (side: -1 | 1, armGroup: THREE.Group, poleGroup: THREE.Group) => {
       armGroup.position.set(side * 0.25, 0.44, 0.01);
 
       const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.054, 0.26, 8), jacketMat);
@@ -200,7 +253,6 @@ export class SkierAvatar {
       armGroup.add(glove);
 
       // Bastón de aluminio + roseta de nieve
-      const poleGroup = new THREE.Group();
       poleGroup.position.set(-side * 0.03, -0.24, 0.31);
       poleGroup.rotation.x = 1.15;
       poleGroup.rotation.z = side * 0.12;
@@ -217,36 +269,140 @@ export class SkierAvatar {
       this.torsoGroup.add(armGroup);
     };
 
-    buildArm(-1, this.leftArm);
-    buildArm(1, this.rightArm);
+    buildArm(-1, this.leftArm, this.leftPoleGroup);
+    buildArm(1, this.rightArm, this.rightPoleGroup);
+  }
+
+  public setRiderMode(mode: RiderMode, stance: SnowboardStance = 'regular') {
+    this.riderMode = mode;
+    this.stance = stance;
+
+    const isBoard = mode === 'snowboard';
+    this.skiGroupNodes.forEach((n) => {
+      n.visible = !isBoard;
+    });
+    this.leftPoleGroup.visible = !isBoard;
+    this.rightPoleGroup.visible = !isBoard;
+    this.snowboardGroup.visible = isBoard;
+
+    if (!isBoard) {
+      this.leftShin.position.set(-0.17, 0.22, -0.04);
+      this.rightShin.position.set(0.17, 0.22, -0.04);
+      this.leftShin.rotation.y = 0;
+      this.rightShin.rotation.y = 0;
+      this.hipsGroup.rotation.y = 0;
+      this.torsoGroup.rotation.y = 0;
+      this.headGroup.rotation.y = 0;
+    } else {
+      const sign = stance === 'regular' ? 1 : -1;
+      // En snowboard los pies van alineados a lo largo de la tabla y orientados lateralmente
+      const frontZ = 0.27;
+      const backZ = -0.27;
+      if (stance === 'regular') {
+        this.leftShin.position.set(0, 0.19, frontZ);
+        this.rightShin.position.set(0, 0.19, backZ);
+      } else {
+        this.rightShin.position.set(0, 0.19, frontZ);
+        this.leftShin.position.set(0, 0.19, backZ);
+      }
+      this.leftShin.rotation.y = sign * (Math.PI / 2);
+      this.rightShin.rotation.y = sign * (Math.PI / 2);
+    }
   }
 
   /**
-   * Actualiza postura articulada del esquiador según canteo, posición aerodinámica y derrape.
+   * Actualiza postura articulada realista según canteo, contra-rotación, aire, aterrizaje y modalidad.
    */
-  public updatePose(roll: number, crouch: number, skidAngle: number) {
-    // Inclinación lateral del cuerpo entero hacia el interior de la curva
-    this.bodyPivot.rotation.z = -roll;
+  public updatePose(pose: AvatarPoseInput) {
+    const { roll, crouch, skidAngle, steerInput, speedMs, isGrounded, landingImpact, isPushing, timeSec } = pose;
+    const airTuck = isGrounded ? 0 : 0.34;
+    const speedFactor = Math.min(1, speedMs / 18);
+    const turnCompress = Math.abs(roll) * 0.22;
+    const microBounce = isGrounded
+      ? (speedMs > 1.2 ? Math.sin(timeSec * 12.0) * 0.014 * speedFactor : Math.sin(timeSec * 2.2) * 0.01)
+      : 0;
+    const totalCrouch = Math.min(1.25, crouch + landingImpact * 0.55 + airTuck * 0.45 + turnCompress);
+
+    // Elevar ligeramente el pivote al cantear para que el esquí/tabla interior no se hunda bajo la pista
+    this.bodyPivot.position.y = Math.abs(roll) * 0.11;
+
+    if (this.riderMode === 'snowboard') {
+      const sign = this.stance === 'regular' ? 1 : -1;
+
+      // Inclinación lateral en cantos (toe-side / heel-side) y derrape fluido
+      this.bodyPivot.rotation.z = -roll * 0.88;
+      this.bodyPivot.rotation.y = skidAngle * 0.95;
+      this.snowboardGroup.rotation.z = -roll * 0.35;
+
+      // Rodillas flexionadas absorbiendo el terreno y los giros (más peso delante al iniciar giro)
+      const frontBias = steerInput * 0.08;
+      const kneeFlex = 0.18 + totalCrouch * 0.42;
+      this.leftShin.rotation.x = 0.24 + kneeFlex + frontBias;
+      this.rightShin.rotation.x = 0.24 + kneeFlex - frontBias;
+      this.leftThigh.rotation.x = -0.44 - (kneeFlex + frontBias) * 1.35;
+      this.rightThigh.rotation.x = -0.44 - (kneeFlex - frontBias) * 1.35;
+
+      // Cadera lateral con contra-rotación dinámica en curvas y mirada hacia la bajada
+      this.hipsGroup.position.y = 0.80 - totalCrouch * 0.16 + microBounce;
+      this.hipsGroup.position.x = roll * 0.18;
+      this.hipsGroup.rotation.y = sign * 1.18 + steerInput * 0.22;
+      this.hipsGroup.rotation.z = roll * 0.24;
+
+      this.torsoGroup.rotation.y = steerInput * 0.28;
+      this.torsoGroup.rotation.x = 0.12 + totalCrouch * 0.30;
+      this.torsoGroup.rotation.z = roll * 0.18;
+
+      this.headGroup.rotation.y = -sign * 0.96 + steerInput * 0.20;
+      this.headGroup.rotation.z = roll * 0.32;
+
+      // Brazos equilibrando sobre nose & tail con balanceo orgánico
+      const airSpread = isGrounded ? 0 : 0.45;
+      const armSway = Math.sin(timeSec * 3.5) * 0.05 * speedFactor;
+      this.leftArm.rotation.x = 0.12 + totalCrouch * 0.18 + steerInput * 0.18 + armSway;
+      this.rightArm.rotation.x = 0.12 + totalCrouch * 0.18 - steerInput * 0.18 - armSway;
+      this.leftArm.rotation.z = -0.48 - airSpread - roll * 0.38;
+      this.rightArm.rotation.z = 0.48 + airSpread - roll * 0.38;
+      return;
+    }
+
+    // MODO ESQUÍ: carving dinámico con angulación, bombeo en curva y esquís siempre sobre la nieve
+    this.bodyPivot.rotation.z = -roll * 0.78;
     this.bodyPivot.rotation.y = skidAngle;
+    this.skiGroupNodes.forEach((ski) => {
+      ski.rotation.z = -roll * 0.42;
+    });
 
-    // Flexión dinámica de rodillas y cadera
-    const kneeFlex = crouch * 0.38;
-    this.leftShin.rotation.x = 0.28 + kneeFlex;
-    this.rightShin.rotation.x = 0.28 + kneeFlex;
-    this.leftThigh.rotation.x = -0.45 - kneeFlex * 1.4;
-    this.rightThigh.rotation.x = -0.45 - kneeFlex * 1.4;
+    // Flexión asimétrica: la pierna interior del giro flexiona más mientras la exterior sostiene el canto
+    const baseKnee = totalCrouch * 0.38 + speedFactor * 0.08;
+    const innerExtraLeft = roll > 0 ? roll * 0.44 : 0;
+    const innerExtraRight = roll < 0 ? -roll * 0.44 : 0;
 
-    // Descenso de cadera y angulación al carvear
-    this.hipsGroup.position.y = 0.84 - crouch * 0.18;
-    this.hipsGroup.rotation.z = roll * 0.22; // Ligera angulación de cadera hacia el exterior
+    this.leftShin.rotation.x = 0.28 + baseKnee + innerExtraLeft;
+    this.rightShin.rotation.x = 0.28 + baseKnee + innerExtraRight;
+    this.leftThigh.rotation.x = -0.45 - (baseKnee + innerExtraLeft) * 1.42;
+    this.rightThigh.rotation.x = -0.45 - (baseKnee + innerExtraRight) * 1.42;
 
-    // Inclinación del torso hacia delante en posición de huevo/tuck
-    this.torsoGroup.rotation.x = 0.18 + crouch * 0.58;
+    // Desplazamiento lateral y angulación de cadera/torso hacia el interior de la curva
+    this.hipsGroup.position.y = 0.84 - totalCrouch * 0.17 - Math.abs(roll) * 0.05 + microBounce;
+    this.hipsGroup.position.x = roll * 0.22;
+    this.hipsGroup.rotation.z = roll * 0.38;
+    this.hipsGroup.rotation.y = -steerInput * 0.18;
 
-    // Codos pegados al cuerpo en posición aerodinámica
-    this.leftArm.rotation.x = crouch * 0.35;
-    this.rightArm.rotation.x = crouch * 0.35;
-    this.leftArm.rotation.z = -crouch * 0.15;
-    this.rightArm.rotation.z = crouch * 0.15;
+    this.torsoGroup.rotation.x = 0.18 + totalCrouch * 0.54;
+    this.torsoGroup.rotation.z = roll * 0.28;
+    this.torsoGroup.rotation.y = steerInput * 0.30;
+
+    this.headGroup.rotation.y = steerInput * 0.24;
+    this.headGroup.rotation.z = roll * 0.32;
+
+    // Brazos y bastones: clavado de bastón sutil en giros, impulso en llano y apertura aérea
+    const pushSwing = isPushing ? Math.sin(timeSec * 8.5) * 0.48 : 0;
+    const airArms = isGrounded ? 0 : 0.42;
+    const leftTurnReach = steerInput > 0 ? 0.24 : -0.10;
+    const rightTurnReach = steerInput < 0 ? 0.24 : -0.10;
+    this.leftArm.rotation.x = crouch * 0.35 + pushSwing + Math.abs(steerInput) * leftTurnReach;
+    this.rightArm.rotation.x = crouch * 0.35 + pushSwing + Math.abs(steerInput) * rightTurnReach;
+    this.leftArm.rotation.z = -crouch * 0.15 - 0.14 - airArms - roll * 0.32;
+    this.rightArm.rotation.z = crouch * 0.15 + 0.14 + airArms - roll * 0.32;
   }
 }

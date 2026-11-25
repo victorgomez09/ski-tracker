@@ -201,7 +201,7 @@ export class SceneManager {
     this.scene.add(this.tracks.group);
 
     // Controlador del esquiador siempre activo para empezar a esquiar al llegar a la estación
-    this.skier = new SkierController(this.terrain);
+    this.skier = new SkierController(this.terrain, this.pistes);
     this.skier.setAltitudeRange(resortData.base_altitude, resortData.summit_altitude);
     this.skier.setRideableLifts(this.lifts.getRideableLifts());
     this.skier.avatar.group.traverse((obj) => {
@@ -572,6 +572,10 @@ export class SceneManager {
     document.querySelectorAll('.session-stat-item').forEach((el) => {
       (el as HTMLElement).style.display = trackerEnabled ? 'flex' : 'none';
     });
+
+    if (this.skier) {
+      this.skier.setRiderMode(cfg.riderMode || 'ski', cfg.snowboardStance || 'regular');
+    }
   }
 
   public setWeatherMode(mode: WeatherMode) {
@@ -732,7 +736,13 @@ export class SceneManager {
         if (telemetry.ridingLiftName) {
           this.tracks.breakStroke();
         } else {
-          this.tracks.addPoint(this.skier.position, this.skier.heading, this.skier.isGrounded);
+          this.tracks.addPoint(
+            this.skier.position,
+            this.skier.heading,
+            this.skier.isGrounded,
+            telemetry.skidIntensity,
+            telemetry.riderMode
+          );
         }
       }
       // Seguir al esquiador con el frustum de sombras para mantener máxima nitidez alrededor
@@ -767,6 +777,12 @@ export class SceneManager {
         };
         const nextLabel = camLabels[telemetry.cameraMode];
         if (camBtn.textContent !== nextLabel) camBtn.textContent = nextLabel;
+      }
+
+      const riderBtn = document.getElementById('btn-rider-mode');
+      if (riderBtn) {
+        const nextRiderLabel = telemetry.riderMode === 'snowboard' ? '🏂 Snowboard' : '⛷️ Esquí';
+        if (riderBtn.textContent !== nextRiderLabel) riderBtn.textContent = nextRiderLabel;
       }
 
       const pisteBadge = document.getElementById('piste-hud-badge');

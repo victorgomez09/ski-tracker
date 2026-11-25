@@ -976,6 +976,20 @@
             <button class="gfx-btn" id="gfx-toggle-tracker" style="min-width:74px;">Activado</button>
           </div>
           <div class="gfx-row">
+            <span>Modalidad</span>
+            <select id="gfx-rider-select" style="background:#1e293b;color:#f8fafc;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:5px 8px;font-size:12px;">
+              <option value="ski">⛷️ Esquí</option>
+              <option value="snowboard">🏂 Snowboard</option>
+            </select>
+          </div>
+          <div class="gfx-row">
+            <span>Postura Snowboard</span>
+            <select id="gfx-stance-select" style="background:#1e293b;color:#f8fafc;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:5px 8px;font-size:12px;">
+              <option value="regular">Regular (Izq. delante)</option>
+              <option value="goofy">Goofy (Der. delante)</option>
+            </select>
+          </div>
+          <div class="gfx-row">
             <span>Resolución (Pixel Ratio)</span>
             <select id="gfx-dpr-select" style="background:#1e293b;color:#f8fafc;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:5px 8px;font-size:12px;">
               <option value="1">Ahorro (1.0x)</option>
@@ -1136,6 +1150,7 @@
           </div>
 
           <div class="view-modes" style="pointer-events: auto;">
+            <button class="btn-mode" id="btn-rider-mode" title="Alternar Esquí / Snowboard">⛷️ Esquí</button>
             <button class="btn-mode" id="btn-camera-mode" title="Cambiar cámara (C)">🎥 3ª Persona (C)</button>
             <button class="btn-mode" id="btn-toggle-aerial">👁️ Vista Aérea</button>
           </div>

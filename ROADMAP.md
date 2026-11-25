@@ -352,7 +352,7 @@ Plataforma interactiva 3D procedural (inspirada en *Endless Peaks* / *Grand Moun
   - **Detección de Saltos y Tiempo en el Aire (*Air Time*):** Detectar despegues en cambios de rasante (`!isGrounded`) para mostrar avisos arcade de tiempo en el aire y distancia saltada al aterrizar.
   - **Audio Ambiental Dinámico Sincronizado con el Clima:** Sonido de viento proporcional a la velocidad y audio ambiental de ventisca o lluvia acorde al estado meteorológico activo en `WeatherAtmosphere`.
 
-- [ ] **10.15 Animaciones Realistas del Personaje y Soporte para Snowboard**
+- [x] **10.15 Animaciones Realistas del Personaje y Soporte para Snowboard**
   - **Animaciones Articuladas del Personaje en Tiempo Real:**
     - Flexión dinámica de piernas, rodillas y cadera en *carving*, posición aerodinámica (*tuck*) y compresión al aterrizar saltos.
     - Angulación y contra-rotación realista de torso y hombros al enlazar curvas (cadera hacia el interior del giro y tronco compensando hacia la pendiente).
@@ -360,6 +360,35 @@ Plataforma interactiva 3D procedural (inspirada en *Endless Peaks* / *Grand Moun
   - **Modalidad Snowboard (Selector Esquís / Tabla):**
     - Selector de equipamiento para alternar entre **Esquí** y **Snowboard** (con postura *regular* / *goofy*).
     - Avatar y postura lateral sobre tabla única con inclinación realista de cantos (*toe-side* / *heel-side*), física adaptada y huella única en la nieve.
+
+- [ ] **10.16 Multijugador en Tiempo Real: Esquiar con Amigos de la App**
+  - **Concepto:** Invitar a amigos reales de tu lista en la app móvil a una misma sesión 3D en cualquier estación para bajar pistas juntos en vivo, verse en el mapa táctico y competir o explorar en grupo.
+  - **Arquitectura Técnica Paso a Paso:**
+    - **1. Backend Go (`apps/api`) · Hub WebSocket y Salas:**
+      - Endpoint WebSocket autenticado por JWT (`GET /api/v1/ws/explorer/:roomId`) usando `gorilla/websocket`.
+      - *Hub* en memoria por sala (`roomId`, `resortId`, lista de participantes máx. 8–16) que reenvía a ~15–20 Hz el estado compacto de cada jugador (`userId`, `name`, `x`, `y`, `z`, `heading`, `speedKmh`, `riderMode`, `stance`, `roll`, `crouch`, `skidAngle`, `isGrounded`, `ridingLiftName`).
+      - Endpoints REST de sesión e invitaciones: `POST /api/v1/explorer/rooms` (crear sala en estación) y `POST /api/v1/explorer/rooms/:id/invite` (enviar invitación push / in-app reutilizando el sistema de amigos).
+    - **2. Cliente 3D (`apps/resort-explorer`) · `MultiplayerManager.ts`:**
+      - Envío ligero de estado local cada ~50 ms (cuando haya movimiento) y recepción de snapshots de amigos.
+      - **Interpolación suave a 60 FPS (*Snapshot Interpolation*):** Cola de los últimos 2 estados por amigo (~100 ms de buffer) para interpolar posición, giro (`heading`), postura articulada (`SkierAvatar.updatePose`) y huellas/partículas sin tirones de red.
+      - **Nametags y HUD:** Etiqueta 3D (`THREE.Sprite`) sobre cada amigo con su nombre y velocidad, marcadores en vivo en `TacticalMinimap` y botón **"📍 Ir con amigo"** para hacer viaje rápido junto a él.
+      - **Física sin bloqueos:** Sin colisiones rígidas entre jugadores para evitar atascos en salidas de remontes o pistas estrechas.
+    - **3. Integración App Móvil ↔ WebView (`Bridge.ts`):**
+      - Selector en la app móvil para invitar amigos conectados y unirse con un toque a la sala (`SET_MULTIPLAYER_SESSION` con `roomId`, `wsUrl` y `token`).
+      - Botón **"👥 Amigos / Invitar"** en el HUD del simulador mostrando quién está conectado en la sala y en qué pista se encuentra.
+  - **Prioridad:** 🟡 Media | **Complejidad:** XL
+
+- [ ] **10.17 Sistema de Físicas de Caídas e Impactos (*Crash & Recovery*)**
+  - **Disparadores Realistas de Caída:**
+    - **Colisiones con tráfico y entorno:** Impactos por encima de un umbral de velocidad contra esquiadores IA, máquinas pisanieves (`MountainTraffic`), pilonas de remontes, árboles, rocas o vallas de seguridad.
+    - **Aterrizajes desequilibrados:** Aterrizar saltos con demasiado ángulo lateral o velocidad vertical excesiva.
+    - **Pérdida de canto en fuera de pista (*Catch an Edge*):** Giros o frenazos muy bruscos a alta velocidad fuera de pista sobre nieve polvo/irregular.
+  - **Simulación Física y Efectos:**
+    - Estado temporal `crashed` con deslizamiento/rodadura por inercia sobre la pendiente, animación de caída del avatar, sacudida sutil de cámara (*camera shake*) y estela densa de nieve en polvo (`SnowParticles`).
+    - Posibilidad de mostrar el equipo desprendido cerca del punto de impacto (en modo esquí).
+  - **Recuperación:**
+    - Levantamiento automático tras ~2 segundos (o con botón/tecla rápida) recolocando al esquiador/snowboarder estable sobre la nieve sin perder el progreso de la sesión.
+  - **Prioridad:** 🟡 Media | **Complejidad:** M
 
 
 ---

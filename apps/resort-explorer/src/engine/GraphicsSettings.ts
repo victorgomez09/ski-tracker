@@ -1,3 +1,5 @@
+import { RiderMode, SnowboardStance } from './SkierAvatar.js';
+
 export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra';
 
 export interface GraphicsConfig {
@@ -10,6 +12,8 @@ export interface GraphicsConfig {
   rockCount: number;
   trafficEnabled: boolean;
   sessionTrackerEnabled: boolean;
+  riderMode: RiderMode;
+  snowboardStance: SnowboardStance;
 }
 
 const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
@@ -23,6 +27,8 @@ const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
     rockCount: 150,
     trafficEnabled: false,
     sessionTrackerEnabled: true,
+    riderMode: 'ski',
+    snowboardStance: 'regular',
   },
   medium: {
     preset: 'medium',
@@ -34,6 +40,8 @@ const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
     rockCount: 280,
     trafficEnabled: true,
     sessionTrackerEnabled: true,
+    riderMode: 'ski',
+    snowboardStance: 'regular',
   },
   high: {
     preset: 'high',
@@ -45,6 +53,8 @@ const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
     rockCount: 450,
     trafficEnabled: true,
     sessionTrackerEnabled: true,
+    riderMode: 'ski',
+    snowboardStance: 'regular',
   },
   ultra: {
     preset: 'ultra',
@@ -56,6 +66,8 @@ const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
     rockCount: 550,
     trafficEnabled: true,
     sessionTrackerEnabled: true,
+    riderMode: 'ski',
+    snowboardStance: 'regular',
   },
 };
 
@@ -88,7 +100,13 @@ export class GraphicsSettings {
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<GraphicsConfig>;
         const base = PRESET_MAP[parsed.preset || this.detectDefaultPreset()];
-        return { ...base, ...parsed, sessionTrackerEnabled: parsed.sessionTrackerEnabled ?? true };
+        return {
+          ...base,
+          ...parsed,
+          sessionTrackerEnabled: parsed.sessionTrackerEnabled ?? true,
+          riderMode: parsed.riderMode ?? 'ski',
+          snowboardStance: parsed.snowboardStance ?? 'regular',
+        };
       }
     } catch {
       // Ignorar errores de almacenamiento en WebView restringido

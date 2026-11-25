@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RiderMode } from './SkierAvatar.js';
 
 /**
  * Surcos permanentes de esquí sobre la nieve (InstancedMesh de 1 solo draw call):
@@ -51,7 +52,13 @@ export class SkiTracksTrail {
     this.lastPos.set(0, -999, 0);
   }
 
-  public addPoint(pos: THREE.Vector3, heading: number, isGrounded: boolean, skidIntensity = 0) {
+  public addPoint(
+    pos: THREE.Vector3,
+    heading: number,
+    isGrounded: boolean,
+    skidIntensity = 0,
+    riderMode: RiderMode = 'ski'
+  ) {
     if (!isGrounded) {
       this.lastPos.set(0, -999, 0);
       return;
@@ -87,21 +94,30 @@ export class SkiTracksTrail {
 
     const rightX = Math.cos(heading);
     const rightZ = -Math.sin(heading);
-    const skiOffset = 0.17;
     const widthScale = 1.0 + Math.min(1.5, skidIntensity * 1.4);
 
-    [-1, 1].forEach((side) => {
-      this.dummy.position.set(
-        midX + side * rightX * skiOffset,
-        midY,
-        midZ + side * rightZ * skiOffset
-      );
+    if (riderMode === 'snowboard') {
+      this.dummy.position.set(midX, midY, midZ);
       this.dummy.rotation.set(pitch, yaw, 0, 'YXZ');
-      this.dummy.scale.set(widthScale, 1, segLen * 1.15);
+      this.dummy.scale.set(widthScale * 1.85, 1, segLen * 1.15);
       this.dummy.updateMatrix();
       this.mesh.setMatrixAt(this.count, this.dummy.matrix);
       this.count++;
-    });
+    } else {
+      const skiOffset = 0.17;
+      [-1, 1].forEach((side) => {
+        this.dummy.position.set(
+          midX + side * rightX * skiOffset,
+          midY,
+          midZ + side * rightZ * skiOffset
+        );
+        this.dummy.rotation.set(pitch, yaw, 0, 'YXZ');
+        this.dummy.scale.set(widthScale, 1, segLen * 1.15);
+        this.dummy.updateMatrix();
+        this.mesh.setMatrixAt(this.count, this.dummy.matrix);
+        this.count++;
+      });
+    }
 
     this.mesh.count = this.count;
     this.mesh.instanceMatrix.needsUpdate = true;
