@@ -55,6 +55,7 @@ export class TacticalMinimap {
   private expandedMap: L.Map | null = null;
   private expandedLayers: L.LayerGroup | null = null;
   private skierMarker: L.Marker | null = null;
+  private targetPin: L.CircleMarker | null = null;
 
   private projection: GeoProjection | null = null;
   private terrain: ProceduralTerrain | null = null;
@@ -208,6 +209,12 @@ export class TacticalMinimap {
       className: 'leaflet-snow-layer',
     }).addTo(this.expandedMap);
 
+    this.expandedMap.on('zoomend', () => {
+      const z = this.expandedMap?.getZoom() ?? 14;
+      mapContainer.classList.toggle('show-piste-labels', z >= 13);
+    });
+    mapContainer.classList.add('show-piste-labels');
+
     this.expandedLayers = L.layerGroup().addTo(this.expandedMap);
   }
 
@@ -251,8 +258,20 @@ export class TacticalMinimap {
     this.pois = [];
 
     (data.pistes || []).forEach((p) => {
-      const coords = p.geometry_geojson?.coordinates;
-      if (!coords || coords.length < 2) return;
+      const geom = p.geometry_geojson;
+      if (!geom || geom.type !== 'LineString' || !Array.isArray(geom.coordinates)) return;
+      const pType = (p.piste_type || 'downhill').toLowerCase();
+      if (pType !== 'downhill' && pType !== 'alpine') return;
+
+      const coords = geom.coordinates;
+      if (coords.length < 2) return;
+      // Descartar polígonos cerrados (zonas/áreas) donde inicio == fin
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      if (coords.length > 3 && Math.abs(first[0] - last[0]) < 1e-6 && Math.abs(first[1] - last[1]) < 1e-6) {
+        return;
+      }
+
       let lengthMeters = 0;
       const pts: Array<[number, number]> = [];
       const latLngs: Array<[number, number]> = [];
@@ -317,8 +336,9 @@ export class TacticalMinimap {
     if (!this.expandedMap || !this.expandedLayers) return;
     this.expandedLayers.clearLayers();
     this.skierMarker = null;
+    this.targetPin = null;
 
-    // 1. Pistas clicables con menú de detalles
+    // 1. Pistas clicables con nombre alineado en dirección de la pista y viaje al punto exacto
     this.pistes.forEach((p) => {
       const line = L.polyline(p.latLngs, {
         color: p.color,
@@ -326,15 +346,41 @@ export class TacticalMinimap {
         opacity: 0.9,
       });
 
+      if (p.name && p.name !== 'Pista sin nombre' && p.name !== 'Pista' && p.points.length >= 2) {
+        const midIdx = Math.floor(p.points.length / 2);
+        const aIdx = Math.max(0, midIdx - 1);
+        const bIdx = Math.min(p.points.length - 1, midIdx + 1);
+        const dx = p.points[bIdx][0] - p.points[aIdx][0];
+        const dz = p.points[bIdx][1] - p.points[aIdx][1];
+        let angleDeg = (Math.atan2(dz, dx) * 180) / Math.PI;
+        // Mantener texto siempre legible (nunca boca abajo)
+        if (angleDeg > 90) angleDeg -= 180;
+        if (angleDeg < -90) angleDeg += 180;
+
+        const labelIcon = L.divIcon({
+          className: 'piste-map-label',
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+          html: `<span class="piste-inline-text" style="transform:translate(-50%,-50%) rotate(${angleDeg.toFixed(1)}deg);color:${p.color};">${p.name}</span>`,
+        });
+        L.marker(p.latLngs[midIdx], { icon: labelIcon, interactive: false }).addTo(this.expandedLayers!);
+      }
+
       line.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
-        const startPt = p.points[0];
-        const nextPt = p.points[Math.min(1, p.points.length - 1)];
-        const heading = Math.atan2(nextPt[0] - startPt[0], nextPt[1] - startPt[1]);
+        if (!this.projection) return;
 
-        const startAlt = this.estimateRealAltitude(startPt[0], startPt[1]);
-        const endPt = p.points[p.points.length - 1];
-        const endAlt = this.estimateRealAltitude(endPt[0], endPt[1]);
+        // Calcular punto exacto sobre la polilínea más cercano al clic del usuario
+        const [clickX, clickZ] = this.projection.project(e.latlng.lng, e.latlng.lat);
+        const snapped = this.closestPointOnPolyline(clickX, clickZ, p.points);
+        const [snappedLon, snappedLat] = this.projection.unproject(snapped.x, snapped.z);
+
+        // Dibujar marcador visual en el punto exacto seleccionado
+        this.showTargetPin(snappedLat, snappedLon);
+
+        const clickedAlt = this.estimateRealAltitude(snapped.x, snapped.z);
+        const startAlt = this.estimateRealAltitude(p.points[0][0], p.points[0][1]);
+        const endAlt = this.estimateRealAltitude(p.points[p.points.length - 1][0], p.points[p.points.length - 1][1]);
 
         this.showSelectionMenu({
           kind: 'piste',
@@ -342,13 +388,13 @@ export class TacticalMinimap {
           badgeText: this.difficultyLabels[p.difficulty] || p.difficulty,
           badgeColor: p.color,
           details: [
-            `Longitud: ${p.lengthMeters >= 1000 ? `${(p.lengthMeters / 1000).toFixed(2)} km` : `${p.lengthMeters} m`}`,
+            `Punto elegido: ${clickedAlt} m`,
+            `Longitud total: ${p.lengthMeters >= 1000 ? `${(p.lengthMeters / 1000).toFixed(2)} km` : `${p.lengthMeters} m`}`,
             `Cota inicio → fin: ${startAlt} m → ${endAlt} m`,
-            `Desnivel: ${Math.abs(startAlt - endAlt)} m`,
           ],
-          x: startPt[0],
-          z: startPt[1],
-          heading,
+          x: snapped.x,
+          z: snapped.z,
+          heading: snapped.heading,
         });
       });
 
@@ -420,6 +466,60 @@ export class TacticalMinimap {
     this.updateExpandedSkierMarker();
   }
 
+  private showTargetPin(lat: number, lon: number) {
+    if (!this.expandedLayers) return;
+    if (this.targetPin) {
+      this.expandedLayers.removeLayer(this.targetPin);
+      this.targetPin = null;
+    }
+    this.targetPin = L.circleMarker([lat, lon], {
+      radius: 8,
+      color: '#ffffff',
+      weight: 3,
+      fillColor: '#f97316',
+      fillOpacity: 1,
+    }).addTo(this.expandedLayers);
+  }
+
+  private clearTargetPin() {
+    if (this.targetPin && this.expandedLayers) {
+      this.expandedLayers.removeLayer(this.targetPin);
+      this.targetPin = null;
+    }
+  }
+
+  private closestPointOnPolyline(
+    px: number,
+    pz: number,
+    points: Array<[number, number]>
+  ): { x: number; z: number; heading: number } {
+    let bestDistSq = Infinity;
+    let bestX = points[0][0];
+    let bestZ = points[0][1];
+    let bestHeading = 0;
+
+    for (let i = 0; i < points.length - 1; i++) {
+      const [ax, az] = points[i];
+      const [bx, bz] = points[i + 1];
+      const abx = bx - ax;
+      const abz = bz - az;
+      const abLenSq = abx * abx + abz * abz;
+      const t = abLenSq > 1e-6 ? Math.max(0, Math.min(1, ((px - ax) * abx + (pz - az) * abz) / abLenSq)) : 0;
+      const cx = ax + abx * t;
+      const cz = az + abz * t;
+      const dSq = (px - cx) * (px - cx) + (pz - cz) * (pz - cz);
+
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq;
+        bestX = cx;
+        bestZ = cz;
+        bestHeading = Math.atan2(abx, abz);
+      }
+    }
+
+    return { x: bestX, z: bestZ, heading: bestHeading };
+  }
+
   private estimateRealAltitude(x: number, z: number): number {
     if (!this.terrain) return this.baseAltitudeMeters;
     const y = this.terrain.getElevationAt(x, z);
@@ -456,12 +556,15 @@ export class TacticalMinimap {
 
     this.selectionMenu.querySelector('#sel-menu-cancel')?.addEventListener('click', () => {
       this.selectionMenu.style.display = 'none';
+      this.clearTargetPin();
     });
     this.selectionMenu.querySelector('#sel-btn-cancel')?.addEventListener('click', () => {
       this.selectionMenu.style.display = 'none';
+      this.clearTargetPin();
     });
     this.selectionMenu.querySelector('#sel-btn-go')?.addEventListener('click', () => {
       this.selectionMenu.style.display = 'none';
+      this.clearTargetPin();
       this.toggleExpanded(false);
       this.onFastTravel(target.x, target.z, target.heading);
     });

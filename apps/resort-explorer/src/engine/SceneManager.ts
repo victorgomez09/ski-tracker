@@ -363,25 +363,32 @@ export class SceneManager {
     let summitX = 0;
     let summitZ = 200;
 
-    let lowestY = Infinity;
+    let lowestLiftY = Infinity;
     let highestY = -Infinity;
-    const liftBases: Array<{ x: number; z: number }> = [];
+    let mainLiftTopX = 0;
+    let mainLiftTopZ = 0;
+    const liftBases: Array<{ x: number; z: number; y: number; isChair: boolean }> = [];
 
-    // 1. Buscar la cota más baja y la cota más alta reales entre todos los remontes y pistas
+    // 1. Localizar la base del remonte principal y su dirección de subida hacia el corazón de la montaña
     (data.lifts || []).forEach((lift) => {
       const coords = lift.geometry_geojson?.coordinates;
       if (!coords || coords.length < 2) return;
       const [sx, sz] = this.projection.project(coords[0][0], coords[0][1]);
       const [ex, ez] = this.projection.project(coords[coords.length - 1][0], coords[coords.length - 1][1]);
-      liftBases.push({ x: sx, z: sz });
-
       const sy = this.terrain.getElevationAt(sx, sz);
       const ey = this.terrain.getElevationAt(ex, ez);
+      const isChair = lift.lift_type === 'chair_lift' || lift.lift_type === 'gondola' || lift.lift_type === 'cable_car';
 
-      if (sy < lowestY) {
-        lowestY = sy;
+      liftBases.push({ x: sx, z: sz, y: sy, isChair });
+
+      // Priorizar la base de un remonte principal en cota baja (zona de llegada/taquillas)
+      const effectiveY = isChair ? sy - 8 : sy;
+      if (effectiveY < lowestLiftY) {
+        lowestLiftY = effectiveY;
         baseX = sx;
         baseZ = sz;
+        mainLiftTopX = ex;
+        mainLiftTopZ = ez;
       }
       if (ey > highestY) {
         highestY = ey;
@@ -390,26 +397,52 @@ export class SceneManager {
       }
     });
 
-    (data.pistes || []).forEach((piste) => {
-      const coords = piste.geometry_geojson?.coordinates;
-      if (!coords || coords.length < 2) return;
-      coords.forEach((pt) => {
-        const [px, pz] = this.projection.project(pt[0], pt[1]);
-        const py = this.terrain.getElevationAt(px, pz);
-        if (py < lowestY) {
-          lowestY = py;
-          baseX = px;
-          baseZ = pz;
-        }
-        if (py > highestY) {
-          highestY = py;
-          summitX = px;
-          summitZ = pz;
+    // Si no hay remontes, usar pistas
+    if (liftBases.length === 0) {
+      let lowestPisteY = Infinity;
+      (data.pistes || []).forEach((piste) => {
+        const coords = piste.geometry_geojson?.coordinates;
+        if (!coords || coords.length < 2) return;
+        coords.forEach((pt) => {
+          const [px, pz] = this.projection.project(pt[0], pt[1]);
+          const py = this.terrain.getElevationAt(px, pz);
+          if (py < lowestPisteY) {
+            lowestPisteY = py;
+            baseX = px;
+            baseZ = pz;
+          }
+          if (py > highestY) {
+            highestY = py;
+            summitX = px;
+            summitZ = pz;
+          }
+        });
+      });
+    }
+
+    // 2. Si hay POIs de llegada en la base (taquillas, alquiler, cafetería), situar el spawn entre ellos y el remonte
+    const baseServicePOIs = (data.pois || []).filter((poi) =>
+      ['info', 'rental', 'cafe', 'restaurant', 'ski_school'].includes(poi.category)
+    );
+    if (baseServicePOIs.length > 0 && liftBases.length > 0) {
+      let bestPoi: { x: number; z: number } | null = null;
+      let bestDist = 140; // Radio máximo de plaza base (140 m desde el remonte principal)
+      baseServicePOIs.forEach((poi) => {
+        const [px, pz] = this.projection.project(poi.longitude, poi.latitude);
+        const d = Math.hypot(px - baseX, pz - baseZ);
+        if (d < bestDist) {
+          bestDist = d;
+          bestPoi = { x: px, z: pz };
         }
       });
-    });
+      if (bestPoi) {
+        // Punto intermedio en la explanada entre los servicios y el primer remonte
+        baseX = baseX * 0.6 + (bestPoi as { x: number; z: number }).x * 0.4;
+        baseZ = baseZ * 0.6 + (bestPoi as { x: number; z: number }).z * 0.4;
+      }
+    }
 
-    // 2. Asegurar que el spawn en base NO quede superpuesto a la base de ningún remonte (mínimo 18 m despejado)
+    // 3. Asegurar que el esquiador aparezca en nieve despejada (~22 m frente/lateral al remonte, sin solaparse)
     const dirX = summitX - baseX;
     const dirZ = summitZ - baseZ;
     const len = Math.hypot(dirX, dirZ) || 1;
@@ -419,14 +452,14 @@ export class SceneManager {
     const rightZ = fwdX;
 
     const isTooCloseToLift = (x: number, z: number) =>
-      liftBases.some((lb) => Math.hypot(x - lb.x, z - lb.z) < 18);
+      liftBases.some((lb) => Math.hypot(x - lb.x, z - lb.z) < 20);
 
     if (isTooCloseToLift(baseX, baseZ)) {
       const candidates = [
-        { x: baseX + rightX * 20, z: baseZ + rightZ * 20 },
-        { x: baseX - rightX * 20, z: baseZ - rightZ * 20 },
-        { x: baseX - fwdX * 22, z: baseZ - fwdZ * 22 },
-        { x: baseX + rightX * 32 - fwdX * 14, z: baseZ + rightZ * 32 - fwdZ * 14 },
+        { x: baseX + rightX * 22, z: baseZ + rightZ * 22 },
+        { x: baseX - rightX * 22, z: baseZ - rightZ * 22 },
+        { x: baseX - fwdX * 24, z: baseZ - fwdZ * 24 },
+        { x: baseX + rightX * 30 - fwdX * 14, z: baseZ + rightZ * 30 - fwdZ * 14 },
       ];
       const safe = candidates.find((c) => !isTooCloseToLift(c.x, c.z));
       if (safe) {
@@ -435,14 +468,16 @@ export class SceneManager {
       }
     }
 
-    // Orientar la vista desde la base directamente hacia la cota más alta de la montaña
-    const toSummit = Math.atan2(summitX - baseX, summitZ - baseZ);
+    // Orientar la vista desde la explanada de llegada directamente hacia el centro de la montaña / remonte principal
+    const focusX = liftBases.length > 0 ? mainLiftTopX * 0.65 : summitX * 0.65;
+    const focusZ = liftBases.length > 0 ? mainLiftTopZ * 0.65 : summitZ * 0.65;
+    const toMountain = Math.atan2(focusX - baseX, focusZ - baseZ);
     const toBase = Math.atan2(baseX - summitX, baseZ - summitZ);
 
     return {
       baseX,
       baseZ,
-      baseHeading: toSummit,
+      baseHeading: toMountain,
       summitX,
       summitZ,
       summitHeading: toBase,
@@ -684,6 +719,11 @@ export class SceneManager {
       const altEl = document.getElementById('skier-alt');
       if (speedEl) speedEl.textContent = `${telemetry.speedKmh} km/h`;
       if (altEl) altEl.textContent = `${telemetry.altitudeMeters.toLocaleString()} m`;
+
+      const touchControls = document.getElementById('skier-touch-controls');
+      if (touchControls) {
+        touchControls.style.display = telemetry.ridingLiftName ? 'none' : 'flex';
+      }
 
       const liftBanner = document.getElementById('lift-action-banner');
       const liftBannerText = document.getElementById('lift-banner-text');

@@ -16,6 +16,8 @@ export interface RideableLift {
 
 interface AnimatedLift {
   curve: THREE.CatmullRomCurve3;
+  loopLength: number;
+  speedMs: number;
   chairs: Array<{ mesh: THREE.Group; progress: number }>;
 }
 
@@ -63,10 +65,10 @@ export class ProceduralLifts {
   }
 
   public update(deltaTime: number) {
-    const speed = 0.012;
     this.animatedLifts.forEach((lift) => {
+      const progressStep = (lift.speedMs * deltaTime) / Math.max(100, lift.loopLength);
       lift.chairs.forEach((chairData) => {
-        chairData.progress = (chairData.progress + speed * deltaTime) % 1.0;
+        chairData.progress = (chairData.progress + progressStep) % 1.0;
         const pt = lift.curve.getPointAt(chairData.progress);
         chairData.mesh.position.copy(pt);
 
@@ -123,6 +125,18 @@ export class ProceduralLifts {
       // CASO 2: Telecuerda de debutantes (Rope Tow) o remonte muy corto (< 65m)
       if (lift.lift_type === 'rope_tow' || totalDistance < 65) {
         this.buildRopeTow(startPos, endPos, terrain);
+        this.rideableLifts.push({
+          id: lift.id,
+          name: lift.name || 'Telecuerda',
+          liftType: lift.lift_type,
+          startPos: startPos.clone(),
+          endPos: endPos.clone(),
+          uphillCurve: new THREE.CatmullRomCurve3([
+            startPos.clone().add(new THREE.Vector3(0, 0.06, 0)),
+            endPos.clone().add(new THREE.Vector3(0, 0.06, 0)),
+          ]),
+          isChair: false,
+        });
         return;
       }
 
@@ -241,6 +255,8 @@ export class ProceduralLifts {
 
         this.animatedLifts.push({
           curve: cableCurve,
+          loopLength: cableCurve.getLength(),
+          speedMs: lift.lift_type === 'gondola' || lift.lift_type === 'cable_car' ? 7.0 : 5.5,
           chairs: liftChairs,
         });
       }

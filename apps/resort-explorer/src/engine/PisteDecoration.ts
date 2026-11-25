@@ -64,8 +64,8 @@ export class PisteDecoration {
     const group = new THREE.Group();
     group.position.copy(position);
 
-    const postHeight = 2.4;
-    const postRadius = 0.10;
+    const postHeight = 2.15;
+    const postRadius = 0.055; // Palo PVC realista (~11 cm diámetro)
 
     if (isRightSide) {
       const lowerHeight = postHeight * 0.60;
@@ -84,7 +84,34 @@ export class PisteDecoration {
       );
       upperMesh.position.y = lowerHeight + upperHeight / 2;
       group.add(upperMesh);
+
+      // Disco circular numerado montado ENCIMA del palo derecho (normativa ATUDEM/FIS)
+      // Sin ser atravesado por el tubo
+      const discRadius = 0.36;
+      const rimGeom = new THREE.CylinderGeometry(discRadius, discRadius, 0.06, 20);
+      rimGeom.rotateX(Math.PI / 2);
+
+      const sideEdgeMat = new THREE.MeshStandardMaterial({ color, roughness: 0.4 });
+      const faceMat = this.getNumberedDiscMaterial(pisteNumber, color);
+
+      const discHolder = new THREE.Group();
+      discHolder.position.y = postHeight + discRadius - 0.04;
+      discHolder.rotation.y = Math.atan2(direction.x, direction.z);
+
+      const rimMesh = new THREE.Mesh(rimGeom, sideEdgeMat);
+      const faceGeom = new THREE.CircleGeometry(discRadius, 20);
+
+      const frontFace = new THREE.Mesh(faceGeom, faceMat);
+      frontFace.position.z = 0.032;
+
+      const backFace = new THREE.Mesh(faceGeom, faceMat);
+      backFace.position.z = -0.032;
+      backFace.rotation.y = Math.PI;
+
+      discHolder.add(rimMesh, frontFace, backFace);
+      group.add(discHolder);
     } else {
+      // Lado izquierdo bajando: únicamente el palo liso del color de dificultad (sin disco)
       const postMesh = new THREE.Mesh(
         new THREE.CylinderGeometry(postRadius, postRadius, postHeight, 8),
         new THREE.MeshStandardMaterial({ color, roughness: 0.45 })
@@ -93,19 +120,6 @@ export class PisteDecoration {
       group.add(postMesh);
     }
 
-    // Disco circular con el número de la pista en ambas caras
-    const discRadius = 0.42;
-    const discGeom = new THREE.CylinderGeometry(discRadius, discRadius, 0.06, 16);
-    discGeom.rotateX(Math.PI / 2);
-
-    const sideEdgeMat = new THREE.MeshStandardMaterial({ color, roughness: 0.4 });
-    const faceMat = this.getNumberedDiscMaterial(pisteNumber, color);
-
-    const discMesh = new THREE.Mesh(discGeom, [sideEdgeMat, faceMat, faceMat]);
-    discMesh.position.y = postHeight - 0.25;
-    discMesh.rotation.y = Math.atan2(direction.x, direction.z);
-
-    group.add(discMesh);
     return group;
   }
 

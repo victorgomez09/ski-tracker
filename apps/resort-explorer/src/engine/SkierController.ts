@@ -58,7 +58,7 @@ export class SkierController {
 
   private rideableLifts: RideableLift[] = [];
   private nearbyLift: RideableLift | null = null;
-  private ridingLift: { lift: RideableLift; progress: number; durationSec: number } | null = null;
+  private ridingLift: { lift: RideableLift; progress: number; durationSec: number; speedMs: number } | null = null;
 
   constructor(terrain: ProceduralTerrain) {
     this.terrain = terrain;
@@ -100,12 +100,33 @@ export class SkierController {
     this.ridingLift = null;
   }
 
+  private getStandardLiftSpeedMs(liftType: string): number {
+    switch (liftType) {
+      case 'magic_carpet':
+        return 1.8; // ~6.5 km/h (cinta transportadora)
+      case 'rope_tow':
+        return 2.5; // ~9 km/h (telecuerda)
+      case 'drag_lift':
+      case 't-bar':
+      case 'platter':
+        return 4.2; // ~15 km/h (telesquí / arrastre)
+      case 'gondola':
+      case 'cable_car':
+        return 7.0; // ~25 km/h (telecabina)
+      case 'chair_lift':
+      default:
+        return 5.5; // ~20 km/h (telesilla desembragable estándar)
+    }
+  }
+
   public boardNearbyLift(): boolean {
     if (this.ridingLift || !this.nearbyLift) return false;
     const dist = this.nearbyLift.startPos.distanceTo(this.nearbyLift.endPos);
-    const durationSec = Math.max(7, Math.min(24, dist / 35));
-    this.ridingLift = { lift: this.nearbyLift, progress: 0, durationSec };
+    const speedMs = this.getStandardLiftSpeedMs(this.nearbyLift.liftType);
+    const durationSec = Math.max(8, dist / speedMs);
+    this.ridingLift = { lift: this.nearbyLift, progress: 0, durationSec, speedMs };
     this.velocity.set(0, 0, 0);
+    this.input = { left: false, right: false, tuck: false, brake: false };
     return true;
   }
 
@@ -135,6 +156,10 @@ export class SkierController {
   }
 
   public setInput(key: keyof SkierInputState, active: boolean) {
+    if (this.ridingLift) {
+      this.input = { left: false, right: false, tuck: false, brake: false };
+      return;
+    }
     this.input[key] = active;
   }
 
@@ -175,16 +200,16 @@ export class SkierController {
 
   private bindKeyboard() {
     window.addEventListener('keydown', (e) => {
+      if (this.ridingLift) {
+        if (e.code === 'Space') {
+          this.skipLiftRide();
+        }
+        return; // Bloquear giro, impulso, frenada y respawn mientras se sube en cualquier remonte
+      }
       if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.input.left = true;
       if (e.code === 'ArrowRight' || e.code === 'KeyD') this.input.right = true;
       if (e.code === 'ArrowUp' || e.code === 'KeyW') this.input.tuck = true;
-      if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') {
-        if (this.ridingLift && e.code === 'Space') {
-          this.skipLiftRide();
-          return;
-        }
-        this.input.brake = true;
-      }
+      if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') this.input.brake = true;
       if (e.code === 'KeyE') this.boardNearbyLift();
       if (e.code === 'KeyR') this.respawnAtBase();
     });
@@ -208,12 +233,16 @@ export class SkierController {
       } else {
         const pt = this.ridingLift.lift.uphillCurve.getPointAt(this.ridingLift.progress);
         const tangent = this.ridingLift.lift.uphillCurve.getTangentAt(this.ridingLift.progress);
+        // En remontes de superficie (telesquí, telecuerda, cinta), mantener los esquís al ras de la nieve
+        if (!this.ridingLift.lift.isChair) {
+          pt.y = this.terrain.getElevationAt(pt.x, pt.z) + this.pisteSurfaceOffset;
+        }
         this.position.copy(pt);
         this.heading = Math.atan2(tangent.x, tangent.z);
 
         this.avatar.group.position.copy(pt);
         this.avatar.group.rotation.set(0, this.heading, 0);
-        this.avatar.updatePose(0, 0.25, 0);
+        this.avatar.updatePose(0, this.ridingLift.lift.isChair ? 0.28 : 0.05, 0);
 
         this.particles.update(clampedDt);
         this.audio.update(4, 0, false);
@@ -232,10 +261,10 @@ export class SkierController {
           this.baseAltitudeMeters + normElev * (this.summitAltitudeMeters - this.baseAltitudeMeters)
         );
         return {
-          speedKmh: 18,
+          speedKmh: Math.round(this.ridingLift.speedMs * 3.6),
           altitudeMeters,
           nearbyLiftName: null,
-          ridingLiftName: this.ridingLift.lift.name,
+          ridingLiftName: `${this.ridingLift.lift.name} (${Math.round(this.ridingLift.progress * 100)}%)`,
         };
       }
     }
@@ -402,9 +431,10 @@ export class SkierController {
       desiredCamPos.y = camGroundY + 2.0;
     }
 
+    const lookHeight = newHorizSpeed < 2.0 ? 2.4 : 1.3;
     const desiredLookAt = this.position.clone()
       .addScaledVector(camDir, 7.0)
-      .add(new THREE.Vector3(0, 1.3, 0));
+      .add(new THREE.Vector3(0, lookHeight, 0));
 
     const camSmooth = 1 - Math.exp(-7.5 * clampedDt);
     this.cameraPos.lerp(desiredCamPos, camSmooth);
