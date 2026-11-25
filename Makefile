@@ -5,6 +5,7 @@ GO := go
 GOFLAGS := -v
 API_DIR := apps/api
 WEB_DIR := apps/web
+EXPLORER_DIR := apps/resort-explorer
 BIN_DIR := bin
 
 # ============================================================================
@@ -26,10 +27,16 @@ dev-api: docker-up ## Start Go API with hot reload
 dev-web: ## Start Next.js dev server
 	cd $(WEB_DIR) && pnpm web
 
+dev-explorer: docker-up ## Start Go API and Three.js Resort Explorer 3D
+	@$(MAKE) -j2 dev-api dev-explorer-app
+
+dev-explorer-app: ## Start Three.js Resort Explorer 3D dev server only
+	cd $(EXPLORER_DIR) && pnpm dev
+
 # ============================================================================
 # Build
 # ============================================================================
-build: build-api build-web ## Build all
+build: build-api build-web build-explorer ## Build all
 
 build-data: docker-up ## Start data script
 	cd $(API_DIR) && go run ./cmd/scripts
@@ -41,6 +48,9 @@ build-api: ## Build Go API binary
 
 build-web: ## Build web production
 	cd $(WEB_DIR) && bun run build
+
+build-explorer: ## Build Three.js Resort Explorer 3D
+	cd $(EXPLORER_DIR) && pnpm build
 
 ota-publish: ## Export and publish Expo OTA update to server (options: ARGS='--channel beta|stable')
 	./scripts/publish-ota.sh $(ARGS)

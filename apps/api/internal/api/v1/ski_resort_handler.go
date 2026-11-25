@@ -8,6 +8,7 @@ import (
 	"github.com/victorgomez09/ski-tracker/internal/api/middleware"
 	"github.com/victorgomez09/ski-tracker/internal/apierr"
 	"github.com/victorgomez09/ski-tracker/internal/httputil"
+	"github.com/victorgomez09/ski-tracker/internal/models"
 	"github.com/victorgomez09/ski-tracker/internal/service"
 	"github.com/victorgomez09/ski-tracker/internal/store"
 )
@@ -192,6 +193,59 @@ func (h *SkiResortHandler) GetPOIs(c *gin.Context) {
 	}
 
 	httputil.RespondOK(c, pois)
+}
+
+func (h *SkiResortHandler) GetDEM(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		httputil.RespondError(c, fmt.Errorf("missing required path parameter: id"))
+		return
+	}
+
+	dem, err := h.svc.GetDEM(c.Request.Context(), id)
+	if err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+
+	httputil.RespondOK(c, dem)
+}
+
+func (h *SkiResortHandler) SaveDEM(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		httputil.RespondError(c, fmt.Errorf("missing required path parameter: id"))
+		return
+	}
+
+	var req struct {
+		MinLon        float64 `json:"min_lon"`
+		MinLat        float64 `json:"min_lat"`
+		MaxLon        float64 `json:"max_lon"`
+		MaxLat        float64 `json:"max_lat"`
+		Resolution    int     `json:"resolution"`
+		ElevationsB64 string  `json:"elevations_b64"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+
+	err := h.svc.SaveDEM(c.Request.Context(), models.SkiResortDEM{
+		ResortID:      id,
+		MinLon:        req.MinLon,
+		MinLat:        req.MinLat,
+		MaxLon:        req.MaxLon,
+		MaxLat:        req.MaxLat,
+		Resolution:    req.Resolution,
+		ElevationsB64: req.ElevationsB64,
+	})
+	if err != nil {
+		httputil.RespondError(c, err)
+		return
+	}
+
+	httputil.RespondOK(c, gin.H{"status": "cached"})
 }
 
 func (h *SkiResortHandler) RefreshPOIs(c *gin.Context) {

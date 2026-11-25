@@ -220,4 +220,31 @@ func (s *skiResortStore) SavePOIs(ctx context.Context, pois []models.SkiResortPO
 	return err
 }
 
+func (s *skiResortStore) GetDEM(ctx context.Context, resortID string) (*models.SkiResortDEM, error) {
+	var dem models.SkiResortDEM
+	err := s.db.NewSelect().
+		Model(&dem).
+		Where("resort_id = ?", resortID).
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &dem, nil
+}
+
+func (s *skiResortStore) SaveDEM(ctx context.Context, dem models.SkiResortDEM) error {
+	_, err := s.db.NewInsert().
+		Model(&dem).
+		On("CONFLICT (resort_id) DO UPDATE").
+		Set("min_lon = EXCLUDED.min_lon").
+		Set("min_lat = EXCLUDED.min_lat").
+		Set("max_lon = EXCLUDED.max_lon").
+		Set("max_lat = EXCLUDED.max_lat").
+		Set("resolution = EXCLUDED.resolution").
+		Set("elevations_b64 = EXCLUDED.elevations_b64").
+		Set("updated_at = NOW()").
+		Exec(ctx)
+	return err
+}
+
 

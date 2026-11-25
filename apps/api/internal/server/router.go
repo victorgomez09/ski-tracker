@@ -90,23 +90,27 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		apiV1.GET("/ski-sessions/photos/*path", skiSessionHandler.GetPhoto)
 		apiV1.GET("/sessions/photos/*path", skiSessionHandler.GetPhoto)
 
+		// Public resort catalog & explorer routes (accessible by 3D explorer and web map)
+		skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
+		apiV1.GET("/resorts/bbox", skiResortHandler.ListByBBox)
+		apiV1.GET("/resorts/nearby", skiResortHandler.ListNearby)
+		apiV1.GET("/resorts/by-name", skiResortHandler.ListByName)
+		apiV1.GET("/resorts/by-id/:id", skiResortHandler.GetByID)
+		apiV1.GET("/resorts/by-id/:id/offline-pack", skiResortHandler.GetOfflinePack)
+		apiV1.GET("/resorts/:id/offline-pack", skiResortHandler.GetOfflinePack)
+		apiV1.GET("/resorts/by-id/:id/pois", skiResortHandler.GetPOIs)
+		apiV1.GET("/resorts/by-id/:id/dem", skiResortHandler.GetDEM)
+		apiV1.POST("/resorts/by-id/:id/dem", skiResortHandler.SaveDEM)
+		apiV1.GET("/resorts/closeness", skiResortHandler.GetByCloseness)
+
 		protected := apiV1.Group("")
 		protected.Use(middleware.Auth(deps.JWTManager))
 		{
-			// Resort routes
-			skiResortHandler := v1.NewSkiResortHandler(deps.Services.SkiResort, deps.Store)
+			// User-specific resort routes
 			protected.GET("/resorts/favorites", skiResortHandler.ListFavorites)
 			protected.POST("/resorts/favorites/:id", skiResortHandler.AddFavorite)
 			protected.DELETE("/resorts/favorites/:id", skiResortHandler.RemoveFavorite)
-			protected.GET("/resorts/bbox", skiResortHandler.ListByBBox)
-			protected.GET("/resorts/nearby", skiResortHandler.ListNearby)
-			protected.GET("/resorts/by-name", skiResortHandler.ListByName)
-			protected.GET("/resorts/by-id/:id", skiResortHandler.GetByID)
-			protected.GET("/resorts/by-id/:id/offline-pack", skiResortHandler.GetOfflinePack)
-			protected.GET("/resorts/:id/offline-pack", skiResortHandler.GetOfflinePack)
-			protected.GET("/resorts/by-id/:id/pois", skiResortHandler.GetPOIs)
 			protected.POST("/resorts/by-id/:id/pois/refresh", skiResortHandler.RefreshPOIs)
-			protected.GET("/resorts/closeness", skiResortHandler.GetByCloseness)
 
 			// Session routes (supports both /sessions and legacy /ski-sessions)
 			protected.GET("/ski-sessions", skiSessionHandler.List)

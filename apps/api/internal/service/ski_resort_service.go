@@ -1137,3 +1137,21 @@ func calculateResortDownhillDistanceKM(resort models.SkiResort, pistes []models.
 	}
 	return math.Round(totalKm*10) / 10
 }
+
+func (s *SkiResortService) GetDEM(ctx context.Context, resortID string) (*models.SkiResortDEM, error) {
+	dem, err := s.store.SkiResort().GetDEM(ctx, resortID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, apierr.ErrNotFound
+		}
+		return nil, err
+	}
+	return dem, nil
+}
+
+func (s *SkiResortService) SaveDEM(ctx context.Context, dem models.SkiResortDEM) error {
+	if dem.ResortID == "" || dem.Resolution <= 0 || dem.ElevationsB64 == "" {
+		return fmt.Errorf("invalid DEM payload")
+	}
+	return s.store.SkiResort().SaveDEM(ctx, dem)
+}

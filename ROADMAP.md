@@ -41,6 +41,11 @@ mindmap
     6. Negocio & Rendimiento
       Plan PRO (RevenueCat)
       Optimización extrema de batería
+    7. Explorador 3D & Juego
+      Generación procedimental
+      Terreno DEM y Pistas OSM
+      Simulador de descenso
+      Web y App WebView
 ```
 
 ---
@@ -55,6 +60,7 @@ mindmap
 | **Meteo** | Integración básica Open-Meteo (temperatura, viento, rachas) | Partes de nieve (snow reports), webcams integradas, cota de nieve en tiempo real |
 | **Analítica** | Métricas agregadas (desnivel, velocidad máx/media, lista de bajadas) | Reproductor 3D de ruta (Relive), comparador de bajadas, segmentos cronometrados |
 | **Plataformas** | React Native (Expo) Android / iOS / Web | Wearables (relojes inteligentes), exportación e importación GPX/Strava |
+| **Simulador 3D** | Ninguno | Explorador interactivo procedimental en Three.js con estaciones, pistas y remontes reales |
 
 ---
 
@@ -244,6 +250,76 @@ Basado en la arquitectura definida en [`PRO_PLAN.md`](file:///home/development/p
 - [ ] **9.2 Suite de Pruebas Automatizadas de Tracking (Mock Routes):** Scripts que inyecten rutas simuladas de Sierra Nevada, Formigal o Baqueira en el backend para validar que los algoritmos de segmentación de remontes/pistas no sufran regresiones.
 - [ ] **9.3 Observabilidad y Monitorización:** Trazas de rendimiento en el backend (Prometheus / Grafana o Datadog) y reporte de errores en cliente (Sentry).
 - [ ] **9.4 Actualización Automática de Datos de Estaciones:** Job cron periódico (en [`seed-database.py`](file:///home/development/projects/ski-tracker/seed/seed-database.py)) para actualizar pistas y remontes desde OpenStreetMap de forma incremental.
+
+---
+
+## 🎿 10. Simulador y Explorador 3D Procedural de Estaciones (Three.js Game)
+
+Plataforma interactiva 3D procedural (inspirada en *Endless Peaks* / *Grand Mountain Adventure*) para previsualizar, explorar y descender virtualmente las estaciones de esquí de España y Andorra antes de visitarlas, sin assets 3D pesados y reutilizando el backend geoespacial existente.
+
+- [x] **10.1 Arquitectura y Estrategia de Despliegue (Web Standalone + WebView Móvil)**
+  - **Estrategia:** Proyecto web moderno (Vite + Three.js) dentro del monorepo (`apps/resort-explorer`), accesible vía web directa (escritorio/móvil) e integrable en la app de React Native mediante `WebView` a pantalla completa.
+  - **Ventajas:** Máximo rendimiento WebGL/WebGPU a 60 FPS, independencia del ciclo de vida móvil, cero sobrepeso en el binario nativo y soporte de teclado, gamepad y gestos táctiles.
+  - **Puente Bidireccional (`Bridge.ts`):** Protocolo `postMessage` para sincronizar configuración, estación seleccionada y telemetría entre la app nativa y el visor 3D.
+
+- [x] **10.2 Consumo de Datos Geoespaciales y Vectoriales Completos (OSM + DEM)**
+  - **Ingesta Vectorial Completa de Estaciones:** Importación y parseo de todos los caminos y trazados reales de OpenStreetMap (ej. en Valdesquí: los 62 trazados de pistas con curvas de alta densidad y los 15 remontes mecánicos).
+  - **Conversor de Proyección Geodésica (`GeoProjection.ts`):** Proyección equirrectangular corregida por la latitud de la estación para transformar coordenadas GPS WGS84 `[lon, lat]` a metros locales Three.js `[x, z]` centrados en el valle.
+  - **Datasets Offline Embebidos:** Almacén local de datos vectoriales por estación (`valdesqui-osm.json`) para garantizar renderizado instantáneo y funcionamiento 100% offline.
+  - **Soporte DEM con Interpolación Bilineal:** Capacidad de muestreo sobre mallas de elevación raster para adaptar cada vértice a la altimetría exacta.
+
+- [x] **10.3 Generación Procedural Fidedigna y Equipamiento de Pistas (Zero-Assets)**
+  - **Orientación Orográfica Calibrada:** Alineación cardinal estricta (Norte = valle de base y cafetería; Sur = cumbres de Bola del Mundo y Valdemartín) evitando inversiones de relieve.
+  - **Shader de Nieve Pisada Realista (*Corduroy Shader*):** Shader GLSL de blanco nival neutro con 4 carriles paralelos de máquina pisanieves, estrías longitudinales y talud lateral sombreado para distinguir claramente la pista pisada de la nieve polvo virgen (colores de dificultad reservados exclusivamente a las balizas).
+  - **Balizamiento Reglamentario Oficial (FIS / ATUDEM):**
+    - Postes cilíndricos de PVC de 2,4 metros.
+    - Discos circulares superiores con el color oficial (verde, azul, rojo, negro) orientados hacia el esquiador.
+    - Margen derecho: capuchón fluorescente naranja de seguridad para orientación en niebla o ventisca.
+  - **Anchura Inteligente y Redes de Seguridad:**
+    - Dimensionamiento adaptativo según dificultad (28m verdes, 22m azules, 18m rojas) y sobreancho automático en curvas cerradas.
+    - Vallas y redes de protección naranjas (B-Nets) automáticas en curvas exteriores pronunciadas o zonas de cortado.
+  - **Remontes Mecánicos Dinámicos:**
+    - Estaciones terminales con tejado alpino y gran polea motriz (*bullwheel*).
+    - Pilonas tubulares con crucetas y poleas metálicas.
+    - Sillas cuatriplaza móviles que recorren los cables en bucle continuo cerrado.
+    - Antenas emblemáticas de la Bola del Mundo (tres torres de franjas rojas y blancas) en la cota cumbre.
+  - **Vegetación Alpina:** Bosques de pinos silvestres de Guadarrama mediante `InstancedMesh` (2.000+ árboles en un solo *draw call*) acotados al piso forestal de la cota baja.
+
+- [x] **10.4 Motor Físico y Jugabilidad (Esquiador / Descenso Virtual)**
+  - **Física de Deslizamiento y Canteo:**
+    - Aceleración por gravedad según el ángulo de inclinación del terreno.
+    - Fricción diferenciada entre deslizar recto (baja resistencia) y canteo/carving (fuerza lateral con agarre).
+    - Mecánica de frenado derrapando (hockey stop) y pérdida de velocidad al subir contrapendiente.
+    - Velocidad punta acotada por resistencia aerodinámica del aire.
+  - **Cámara Dinámica de Persecución (3ª Persona):**
+    - Suavizado cinemático tras el esquiador con inclinación lateral (*roll/tilt*) al carvear en giros.
+    - Control interactivo: Flechas / WASD en escritorio y joystick virtual o botones táctiles en móvil.
+  - **Efectos Visuales Nival y Estela de Polvo:**
+    - Sistema de partículas con Three.js para la estela de nieve en polvo proyectada al frenar o girar fuerte.
+  - **Audio Procedural de Nieve (Web Audio API):**
+    - Sonido del viento modular dependiente de la velocidad actual.
+    - Sonido de deslizamiento de cantos sobre nieve compacta y polvo.
+
+- [x] **10.5 Selector de Estaciones (Mapa y Carga Dinámica)**
+  - **Mapa Interactivo de Estaciones:** Pantalla inicial con mapa de estaciones disponibles conectado al backend (`/api/v1/resorts`).
+  - **Carga Completa bajo Demanda:** Al seleccionar una estación, descarga automática de sus pistas, remontes, POIs y relieve (DEM) para construir el mundo 3D al vuelo.
+  - **Spawn en Cota Base:** El esquiador aparece por defecto en la base de la estación (zona de acceso/taquillas), listo para explorar o tomar el primer remonte.
+
+- [ ] **10.6 Remontes Interactivos, Casetas y POIs 3D**
+  - **Embarque y Subida en Remonte:** Al acercarse a la base de cualquier telesilla o telesquí, posibilidad de embarcar (`E` / botón táctil) y subir montado hasta la cota superior.
+  - **Salto de Trayecto (*Skip Ride*):** Opción durante el viaje en remonte para saltar la espera y aparecer directamente en el desembarque de la cumbre.
+  - **Casetas de Remontes y POIs:** Modelado procedural limpio de las casetas terminales de los remontes y renderizado 3D de Puntos de Interés (cafeterías, alquiler, enfermería, miradores, parkings) con marcadores visibles.
+
+- [ ] **10.7 Minimapa Táctico Interactivo y Viaje Rápido**
+  - **Minimapa en HUD:** Plano vectorial en esquina con pistas (coloreadas por dificultad), remontes, POIs y flecha de posición/dirección del esquiador en tiempo real (estilo app de tracking).
+  - **Mapa Ampliado:** Botón / tecla (`M`) para expandir el plano a pantalla completa con zoom y desplazamiento.
+  - **Viaje Rápido (*Fast Travel*):** En el plano ampliado, posibilidad de pinchar sobre cualquier pista, cumbre o POI para teletransportarse directamente allí.
+
+- [ ] **10.8 Modos de Juego, Clima y Conexión con Tracking Real**
+  - **Modo Descenso Continuo y Slalom:** Cronómetro de bajada cumbre-base, récord de velocidad punta y puertas de slalom procedurales (palos dobles rojo/azul) sobre trazados reales.
+  - **Clima y Hora Dinámica:** Selector rápido de ambiente (Sol alpino, Ventisca/Niebla densa para probar las balizas, Atardecer dorado).
+  - **Replay *Ghost* de Sesiones Reales:** Reproducir en el escenario 3D una bajada GPS grabada con la app de tracking para competir contra tu propia trazada.
+
 
 ---
 

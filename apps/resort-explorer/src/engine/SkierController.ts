@@ -1,0 +1,313 @@
+import * as THREE from 'three';
+import { ProceduralTerrain } from './ProceduralTerrain.js';
+import { SkierAvatar } from './SkierAvatar.js';
+import { SnowParticles } from './SnowParticles.js';
+import { SkiAudio } from './SkiAudio.js';
+
+export interface SkierInputState {
+  left: boolean;
+  right: boolean;
+  tuck: boolean;
+  brake: boolean;
+}
+
+export interface SkierTelemetry {
+  speedKmh: number;
+  altitudeMeters: number;
+}
+
+/**
+ * Controlador físico de esquí y cámara de persecución en 3ª persona:
+ * - Aceleración por gravedad proyectada sobre la pendiente real del terreno.
+ * - Canteo / Carving con agarre lateral y pérdida de velocidad controlada en giros cerrados.
+ * - Frenado derrapado (Hockey Stop) con estela de nieve en polvo.
+ * - Cámara cinemática suavizada con inclinación lateral (roll) y FOV dinámico según velocidad.
+ */
+export class SkierController {
+  public avatar: SkierAvatar;
+  public particles: SnowParticles;
+  public audio: SkiAudio;
+
+  public position = new THREE.Vector3(180, 120, 260);
+  public velocity = new THREE.Vector3(0, 0, -4);
+  public heading = Math.PI; // Mirando hacia -Z (hacia el valle de Prado Llano)
+
+  private terrain: ProceduralTerrain;
+  private input: SkierInputState = { left: false, right: false, tuck: false, brake: false };
+  private cameraPos = new THREE.Vector3();
+  private cameraLookAt = new THREE.Vector3();
+  private currentRoll = 0;
+  private currentCrouch = 0;
+  private currentSkid = 0;
+  private cameraRoll = 0;
+  private isGrounded = true;
+
+  private baseAltitudeMeters = 1860;
+  private summitAltitudeMeters = 2280;
+  private baseSpawnPoint = new THREE.Vector3(240, 14, -400);
+  private baseHeading = 0; // Mirando hacia +Z (hacia las pistas/cumbre desde Prado Llano)
+  private summitSpawnPoint = new THREE.Vector3(160, 120, 240);
+  private summitHeading = Math.PI;
+
+  constructor(terrain: ProceduralTerrain) {
+    this.terrain = terrain;
+    this.avatar = new SkierAvatar();
+    this.particles = new SnowParticles();
+    this.audio = new SkiAudio();
+
+    this.bindKeyboard();
+    this.respawnAtBase();
+  }
+
+  public setAltitudeRange(baseAlt: number, summitAlt: number) {
+    this.baseAltitudeMeters = baseAlt;
+    this.summitAltitudeMeters = summitAlt;
+  }
+
+  public setSpawnPoints(
+    baseX: number,
+    baseZ: number,
+    baseHeading: number,
+    summitX: number,
+    summitZ: number,
+    summitHeading: number
+  ) {
+    this.baseSpawnPoint.set(baseX, this.terrain.getElevationAt(baseX, baseZ), baseZ);
+    this.baseHeading = baseHeading;
+    this.summitSpawnPoint.set(summitX, this.terrain.getElevationAt(summitX, summitZ), summitZ);
+    this.summitHeading = summitHeading;
+  }
+
+  public setInput(key: keyof SkierInputState, active: boolean) {
+    this.input[key] = active;
+  }
+
+  public respawnAtBase() {
+    const spawnY = this.terrain.getElevationAt(this.baseSpawnPoint.x, this.baseSpawnPoint.z);
+    this.spawnAt(this.baseSpawnPoint.x, spawnY, this.baseSpawnPoint.z, this.baseHeading, 0);
+  }
+
+  public respawnAtSummit() {
+    const spawnY = this.terrain.getElevationAt(this.summitSpawnPoint.x, this.summitSpawnPoint.z);
+    this.spawnAt(this.summitSpawnPoint.x, spawnY, this.summitSpawnPoint.z, this.summitHeading, 5.0);
+  }
+
+  private spawnAt(x: number, y: number, z: number, heading: number, initialSpeed: number) {
+    this.position.set(x, y, z);
+    this.heading = heading;
+    const forward = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+    this.velocity.copy(forward).multiplyScalar(initialSpeed);
+    this.currentRoll = 0;
+    this.currentCrouch = 0;
+    this.currentSkid = 0;
+    this.cameraRoll = 0;
+    this.isGrounded = true;
+
+    this.avatar.group.position.copy(this.position);
+    this.avatar.group.rotation.set(0, this.heading, 0);
+
+    // Inicializar cámara justo detrás del esquiador
+    this.cameraPos.copy(this.position).addScaledVector(forward, -11).add(new THREE.Vector3(0, 4.5, 0));
+    this.cameraLookAt.copy(this.position).addScaledVector(forward, 7);
+  }
+
+  private bindKeyboard() {
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.input.left = true;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') this.input.right = true;
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') this.input.tuck = true;
+      if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') this.input.brake = true;
+      if (e.code === 'KeyR') this.respawnAtSummit();
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.input.left = false;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') this.input.right = false;
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') this.input.tuck = false;
+      if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') this.input.brake = false;
+    });
+  }
+
+  public update(dt: number, camera: THREE.PerspectiveCamera): SkierTelemetry {
+    const clampedDt = Math.min(dt, 0.05);
+
+    // 1. Calcular pendiente del terreno mediante diferencias finitas
+    const eps = 1.2;
+    const hRight = this.terrain.getElevationAt(this.position.x + eps, this.position.z);
+    const hLeft = this.terrain.getElevationAt(this.position.x - eps, this.position.z);
+    const hFwd = this.terrain.getElevationAt(this.position.x, this.position.z + eps);
+    const hBack = this.terrain.getElevationAt(this.position.x, this.position.z - eps);
+
+    const gradX = (hRight - hLeft) / (2 * eps);
+    const gradZ = (hFwd - hBack) / (2 * eps);
+
+    // Normal de la superficie y vector caída de pendiente (fall line)
+    const normal = new THREE.Vector3(-gradX, 1, -gradZ).normalize();
+
+    // 2. Dirección de giro (steering)
+    const steerInput = (this.input.left ? 1 : 0) - (this.input.right ? 1 : 0);
+    const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    const turnRate = (1.55 + Math.min(1.0, horizSpeed / 18) * 0.45) * (this.input.brake ? 1.25 : 1.0);
+    this.heading += steerInput * turnRate * clampedDt;
+
+    const forward = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+    const right = new THREE.Vector3(forward.z, 0, -forward.x);
+
+    // 3. Física de gravedad, agarre de cantos y resistencia aerodinámica
+    if (this.isGrounded) {
+      // Aceleración gravitatoria proyectada sobre la pendiente (g = 11.5 m/s² ajustada a escala jugable)
+      const gravity = 11.5;
+      const slopeAccelX = -gradX * gravity;
+      const slopeAccelZ = -gradZ * gravity;
+
+      this.velocity.x += slopeAccelX * clampedDt;
+      this.velocity.z += slopeAccelZ * clampedDt;
+
+      // Descomponer velocidad en componente longitudinal (deslizamiento) y lateral (derrape)
+      const vForward = this.velocity.x * forward.x + this.velocity.z * forward.z;
+      const vRight = this.velocity.x * right.x + this.velocity.z * right.z;
+
+      // Agarre lateral de cantos (carving grip): redirige energía lateral hacia adelante
+      const edgeGrip = this.input.brake ? 2.8 : 7.5;
+      const retainedRight = vRight * Math.exp(-edgeGrip * clampedDt);
+      const redirectedForward = vForward + Math.abs(vRight - retainedRight) * (this.input.brake ? 0.05 : 0.45);
+
+      // Fricción de nieve y resistencia aerodinámica
+      const snowDrag = this.input.brake ? 2.4 : this.input.tuck ? 0.04 : 0.08;
+      const aeroDrag = (this.input.tuck ? 0.008 : 0.015) * horizSpeed;
+      const totalFriction = snowDrag + aeroDrag;
+
+      const finalForward = redirectedForward * Math.exp(-totalFriction * clampedDt);
+      this.velocity.x = forward.x * finalForward + right.x * retainedRight;
+      this.velocity.z = forward.z * finalForward + right.z * retainedRight;
+
+      // Empuje suave inicial si está parado en llano y pulsa avanzar (W/Up)
+      if (this.input.tuck && horizSpeed < 6) {
+        this.velocity.x += forward.x * 5.0 * clampedDt;
+        this.velocity.z += forward.z * 5.0 * clampedDt;
+      }
+    } else {
+      // En el aire: gravedad vertical y mínima resistencia
+      this.velocity.y -= 16.0 * clampedDt;
+      this.velocity.x *= Math.exp(-0.02 * clampedDt);
+      this.velocity.z *= Math.exp(-0.02 * clampedDt);
+    }
+
+    // Limitar velocidad máxima realista (~95 km/h = 26.4 m/s)
+    const maxSpeed = this.input.tuck ? 26.5 : 22.0;
+    const newHorizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    if (newHorizSpeed > maxSpeed) {
+      const scale = maxSpeed / newHorizSpeed;
+      this.velocity.x *= scale;
+      this.velocity.z *= scale;
+    }
+
+    // 4. Integrar posición y colisión con el terreno
+    this.position.x += this.velocity.x * clampedDt;
+    this.position.z += this.velocity.z * clampedDt;
+    this.position.y += this.velocity.y * clampedDt;
+
+    // Mantener dentro de los límites dinámicos de la estación completa
+    const boundX = this.terrain.width * 0.47;
+    const boundZ = this.terrain.depth * 0.47;
+    if (Math.abs(this.position.x) > boundX) {
+      this.position.x = Math.sign(this.position.x) * boundX;
+      this.velocity.x *= -0.3;
+    }
+    if (Math.abs(this.position.z) > boundZ) {
+      this.position.z = Math.sign(this.position.z) * boundZ;
+      this.velocity.z *= -0.3;
+    }
+
+    const groundY = this.terrain.getElevationAt(this.position.x, this.position.z);
+    if (this.position.y <= groundY + 0.12) {
+      this.position.y = groundY;
+      this.velocity.y = (this.velocity.x * gradX + this.velocity.z * gradZ);
+      this.isGrounded = true;
+    } else {
+      this.isGrounded = false;
+    }
+
+    // 5. Animar avatar (orientación a la pendiente, canteo, huevo y hockey stop)
+    const targetRoll = -steerInput * Math.min(0.55, newHorizSpeed * 0.035);
+    const targetCrouch = this.input.tuck ? 1.0 : this.input.brake ? 0.35 : 0.1;
+    const targetSkid = this.input.brake ? (steerInput !== 0 ? steerInput * 0.95 : 0.85) : 0;
+
+    const poseLerp = 1 - Math.exp(-10 * clampedDt);
+    this.currentRoll = THREE.MathUtils.lerp(this.currentRoll, targetRoll, poseLerp);
+    this.currentCrouch = THREE.MathUtils.lerp(this.currentCrouch, targetCrouch, poseLerp);
+    this.currentSkid = THREE.MathUtils.lerp(this.currentSkid, targetSkid, poseLerp);
+
+    this.avatar.group.position.copy(this.position);
+
+    // Alinear el avatar suavemente con el vector forward y la normal del terreno
+    const slopeForward = forward.clone().projectOnPlane(normal).normalize();
+    const slopeRight = new THREE.Vector3().crossVectors(normal, slopeForward).normalize();
+    const rotMatrix = new THREE.Matrix4().makeBasis(slopeRight, normal, slopeForward);
+    const targetQuat = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
+    this.avatar.group.quaternion.slerp(targetQuat, 1 - Math.exp(-12 * clampedDt));
+    this.avatar.updatePose(this.currentRoll, this.currentCrouch, this.currentSkid);
+
+    // 6. Partículas de nieve en polvo al carvear o frenar
+    const carveIntensity = Math.min(1, (Math.abs(steerInput) * 0.65 + (this.input.brake ? 1.0 : 0)) * (newHorizSpeed / 12));
+    if (this.isGrounded && newHorizSpeed > 2.5 && carveIntensity > 0.15) {
+      const sprayDir = right.clone().multiplyScalar(steerInput >= 0 ? 1 : -1);
+      const emitCount = Math.min(6, Math.ceil(carveIntensity * 5));
+      this.particles.emit(this.position, sprayDir, carveIntensity, emitCount);
+    }
+    this.particles.update(clampedDt);
+
+    // 7. Audio procedural
+    this.audio.update(newHorizSpeed, carveIntensity, this.isGrounded);
+
+    // 8. Cámara dinámica de persecución en 3ª persona
+    const camDistance = 9.5 + (newHorizSpeed / 25) * 3.5;
+    const camHeight = 3.8 + (newHorizSpeed / 25) * 0.8;
+
+    const velDir = newHorizSpeed > 1.5
+      ? new THREE.Vector3(this.velocity.x, 0, this.velocity.z).normalize()
+      : forward;
+    const camDir = forward.clone().lerp(velDir, 0.5).normalize();
+
+    const desiredCamPos = this.position.clone()
+      .addScaledVector(camDir, -camDistance)
+      .add(new THREE.Vector3(0, camHeight, 0));
+
+    // Evitar que la cámara atraviese el terreno por detrás
+    const camGroundY = this.terrain.getElevationAt(desiredCamPos.x, desiredCamPos.z);
+    if (desiredCamPos.y < camGroundY + 2.0) {
+      desiredCamPos.y = camGroundY + 2.0;
+    }
+
+    const desiredLookAt = this.position.clone()
+      .addScaledVector(camDir, 7.0)
+      .add(new THREE.Vector3(0, 1.3, 0));
+
+    const camSmooth = 1 - Math.exp(-7.5 * clampedDt);
+    this.cameraPos.lerp(desiredCamPos, camSmooth);
+    this.cameraLookAt.lerp(desiredLookAt, 1 - Math.exp(-10 * clampedDt));
+
+    camera.position.copy(this.cameraPos);
+    camera.lookAt(this.cameraLookAt);
+
+    // Inclinación sutil (roll) de cámara al carvear y FOV dinámico con la velocidad
+    this.cameraRoll = THREE.MathUtils.lerp(this.cameraRoll, this.currentRoll * 0.22, camSmooth);
+    camera.rotateZ(this.cameraRoll);
+
+    const targetFov = 45 + (newHorizSpeed / 26) * 14;
+    if (Math.abs(camera.fov - targetFov) > 0.05) {
+      camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, camSmooth);
+      camera.updateProjectionMatrix();
+    }
+
+    // Calcular altitud real en metros (escala 1:1 respecto al terreno)
+    const verticalRange = Math.max(1, this.terrain.verticalDropMeters || 420);
+    const normElev = Math.max(0, Math.min(1, (this.position.y - 14) / verticalRange));
+    const altitudeMeters = Math.round(this.baseAltitudeMeters + normElev * (this.summitAltitudeMeters - this.baseAltitudeMeters));
+
+    return {
+      speedKmh: Math.round(newHorizSpeed * 3.6),
+      altitudeMeters,
+    };
+  }
+}

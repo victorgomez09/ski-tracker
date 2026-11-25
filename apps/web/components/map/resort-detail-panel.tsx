@@ -1,11 +1,12 @@
 import { Resort, ResortDetail, Piste } from 'models/ski-resort.model';
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Linking, Platform, StyleSheet } from 'react-native';
-import { Snowflake, Sparkles, Star, X } from 'lucide-react-native';
+import { Mountain, Snowflake, Sparkles, Star, X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { useFavorites } from '../../context/favorites.context';
 import { useThemeColors, SPACING, BORDER_RADIUS, SHADOWS, LIGHT_COLORS } from '../../constants/theme';
 import { ResortLogo } from '../resorts/resort-logo';
+import { ResortExplorerModal } from '../resorts/resort-explorer-modal';
 import api from '../../interceptor/api';
 import { API_BASE_URL } from '../../constants/constants';
 import { WeatherForecast } from '../../models/weather.model';
@@ -78,6 +79,7 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
     const styles = useMemo(() => getStyles(colors), [colors]);
 
     const [weatherData, setWeatherData] = useState<WeatherForecast | null>(null);
+    const [showExplorer3D, setShowExplorer3D] = useState(false);
 
     useEffect(() => {
         if (!resort) return;
@@ -324,6 +326,16 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                         </View>
                     </View>
 
+                    {/* Botón Acceso 3D Procedural */}
+                    <TouchableOpacity
+                        style={styles.explorerButton}
+                        onPress={() => setShowExplorer3D(true)}
+                        activeOpacity={0.85}
+                    >
+                        <Mountain size={16} color="#ffffff" />
+                        <Text style={styles.explorerButtonText}>🎿 Explorar Estación en 3D</Text>
+                    </TouchableOpacity>
+
                     {/* Skiinfo Snow Report Mini Card */}
                     {weatherData?.snow_report && (
                         <View style={styles.snowCard}>
@@ -441,6 +453,16 @@ export const ResortDetailPanel: React.FC<ResortDetailPanelProps> = ({ resort, on
                     )}
                 </ScrollView>
             </View>
+
+            <ResortExplorerModal
+                visible={showExplorer3D}
+                onClose={() => setShowExplorer3D(false)}
+                resortName={resort.Name}
+                summitAltitude={stats.maxElev}
+                baseAltitude={stats.minElev}
+                pistesKm={formattedPisteLength}
+                resortData={resort}
+            />
         </View>
     );
 };
@@ -719,5 +741,22 @@ const getStyles = (colors: typeof LIGHT_COLORS) => StyleSheet.create({
     snowConditionText: {
         fontSize: 10,
         color: colors.textSecondary,
+    },
+    explorerButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: '#0284c7',
+        borderRadius: BORDER_RADIUS.md,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        marginTop: SPACING.xs,
+        ...SHADOWS.sm,
+    },
+    explorerButtonText: {
+        color: '#ffffff',
+        fontSize: 13,
+        fontWeight: '700',
     },
 });

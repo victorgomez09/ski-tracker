@@ -71,6 +71,8 @@ type SkiResortStore interface {
 	RemoveFavorite(ctx context.Context, userID uuid.UUID, resortID string) error
 	GetPOIsByResortID(ctx context.Context, resortID string) ([]models.SkiResortPOI, error)
 	SavePOIs(ctx context.Context, pois []models.SkiResortPOI) error
+	GetDEM(ctx context.Context, resortID string) (*models.SkiResortDEM, error)
+	SaveDEM(ctx context.Context, dem models.SkiResortDEM) error
 }
 
 type SkiPisteStore interface {

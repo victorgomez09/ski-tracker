@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Ski Tracker - Resort Explorer 3D</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+      }
+      body, html {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background-color: #0b1320;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        color: #ffffff;
+      }
+      #app {
+        width: 100%;
+        height: 100%;
+        position: relative;
+      }
+      canvas#webgl-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      /* UI Overlay */
+      .hud-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 16px;
+      }
+      .hud-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        padding: 10px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        pointer-events: auto;
+      }
+      .resort-title {
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .badge-live {
+        background: #10b981;
+        color: white;
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .hud-controls-hint {
+        font-size: 11px;
+        color: #94a3b8;
+      }
+      .hud-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        pointer-events: auto;
+      }
+      .hud-stats {
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(8px);
+        padding: 8px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        gap: 16px;
+        font-size: 12px;
+      }
+      .stat-item {
+        display: flex;
+        flex-direction: column;
+      }
+      .stat-label {
+        font-size: 10px;
+        color: #64748b;
+        text-transform: uppercase;
+      }
+      .stat-val {
+        font-weight: 700;
+        color: #38bdf8;
+      }
+      .view-modes {
+        display: flex;
+        gap: 8px;
+      }
+      .btn-mode {
+        background: rgba(30, 41, 59, 0.85);
+        color: #f8fafc;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all 0.2s;
+      }
+      .btn-mode:active, .btn-mode.active {
+        background: #0284c7;
+        border-color: #38bdf8;
+      }
+      /* Loading Screen */
+      #loading-screen {
+        position: absolute;
+        inset: 0;
+        background: #090d16;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        transition: opacity 0.5s ease;
+      }
+      .spinner {
+        width: 44px;
+        height: 44px;
+        border: 3px solid rgba(56, 189, 248, 0.2);
+        border-top-color: #38bdf8;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 16px;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      /* HUD Esquiador (Siempre activo al entrar en la estación) */
+      .skier-telemetry {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(8px);
+        padding: 8px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        pointer-events: auto;
+      }
+      .btn-respawn {
+        background: rgba(56, 189, 248, 0.2);
+        color: #38bdf8;
+        border: 1px solid rgba(56, 189, 248, 0.45);
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .skier-touch-controls {
+        display: flex;
+        position: absolute;
+        bottom: 76px;
+        left: 16px;
+        right: 16px;
+        justify-content: space-between;
+        align-items: flex-end;
+        pointer-events: none;
+      }
+      .touch-group {
+        display: flex;
+        gap: 10px;
+        pointer-events: auto;
+      }
+      .touch-btn {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: rgba(15, 23, 42, 0.75);
+        border: 2px solid rgba(255, 255, 255, 0.25);
+        color: #ffffff;
+        font-size: 18px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        backdrop-filter: blur(6px);
+      }
+      .touch-btn.wide {
+        width: auto;
+        padding: 0 16px;
+        border-radius: 28px;
+        font-size: 12px;
+      }
+      .touch-btn:active {
+        background: #0284c7;
+        border-color: #38bdf8;
+      }
+      /* Mapa Selector de Estaciones (10.5) */
+      #resort-map-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 10, 20, 0.86);
+        backdrop-filter: blur(10px);
+        z-index: 90;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .map-modal-card {
+        width: 100%;
+        max-width: 980px;
+        height: min(85vh, 660px);
+        background: #0f172a;
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+      }
+      .map-modal-header {
+        padding: 14px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .map-modal-header h2 {
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 2px;
+      }
+      .map-status-badge {
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .map-status-badge.live { color: #34d399; }
+      .map-status-badge.offline { color: #38bdf8; }
+      .map-close-btn {
+        background: rgba(255, 255, 255, 0.08);
+        border: none;
+        color: #cbd5e1;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 15px;
+      }
+      .map-modal-body {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      .map-sidebar {
+        width: 280px;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        flex-direction: column;
+        padding: 12px;
+        gap: 10px;
+      }
+      .map-search-input {
+        width: 100%;
+        background: #1e293b;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #f8fafc;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        outline: none;
+      }
+      .map-resort-list {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .map-resort-item {
+        text-align: left;
+        background: rgba(30, 41, 59, 0.55);
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 9px 11px;
+        color: #f1f5f9;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .map-resort-item:hover { background: rgba(30, 41, 59, 0.9); }
+      .map-resort-item.selected {
+        background: rgba(2, 132, 199, 0.25);
+        border-color: #38bdf8;
+      }
+      .map-resort-item-title { font-size: 13px; font-weight: 700; }
+      .map-resort-item-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+      .map-canvas-area {
+        flex: 1;
+        position: relative;
+        background: radial-gradient(circle at center, #132238 0%, #090f1d 100%);
+        overflow: hidden;
+      }
+      .iberian-map-bg {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+      .iberian-svg {
+        width: 100%;
+        height: 100%;
+      }
+      .map-pin {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        background: none;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        z-index: 2;
+      }
+      .pin-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #38bdf8;
+        border: 2px solid #ffffff;
+        box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+      }
+      .map-pin.active .pin-dot {
+        width: 16px;
+        height: 16px;
+        background: #f97316;
+        box-shadow: 0 0 14px rgba(249, 115, 22, 0.95);
+      }
+      .pin-label {
+        background: rgba(15, 23, 42, 0.88);
+        color: #f8fafc;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 7px;
+        border-radius: 5px;
+        white-space: nowrap;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+      }
+      .map-pin.active .pin-label {
+        background: #0284c7;
+        border-color: #7dd3fc;
+      }
+      .map-detail-card {
+        position: absolute;
+        bottom: 14px;
+        left: 14px;
+        right: 14px;
+        background: rgba(15, 23, 42, 0.92);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        border-radius: 12px;
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        z-index: 4;
+      }
+      .map-detail-info h3 { font-size: 15px; font-weight: 700; }
+      .map-detail-info p { font-size: 12px; color: #94a3b8; margin: 2px 0 6px; }
+      .map-detail-metrics {
+        display: flex;
+        gap: 14px;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+      .map-detail-metrics b { color: #38bdf8; }
+      .map-travel-btn {
+        background: #0284c7;
+        color: #ffffff;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .map-travel-btn:hover { background: #0369a1; }
+      @media (max-width: 720px) {
+        .map-modal-body { flex-direction: column; }
+        .map-sidebar { width: 100%; max-height: 180px; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="loading-screen">
+        <div class="spinner"></div>
+        <p style="font-size: 14px; font-weight: 600; color: #94a3b8;">Generando estación procedural...</p>
+      </div>
+
+      <canvas id="webgl-canvas"></canvas>
+
+      <div id="resort-map-overlay"></div>
+
+      <div class="hud-overlay">
+        <div class="hud-header">
+          <div class="resort-title" style="pointer-events: auto;">
+            <span id="resort-name">Valdesquí</span>
+            <span class="badge-live">3D Live</span>
+            <button class="btn-respawn" id="btn-open-map" style="margin-left: 6px;">🗺️ Estaciones</button>
+          </div>
+          <div class="hud-controls-hint" id="controls-hint">
+            Arrastra para rotar · Pellizca/Rueda para zoom
+          </div>
+        </div>
+
+        <div class="skier-touch-controls" id="skier-touch-controls">
+          <div class="touch-group">
+            <button class="touch-btn" id="touch-left">◀</button>
+            <button class="touch-btn" id="touch-right">▶</button>
+          </div>
+          <div class="touch-group">
+            <button class="touch-btn wide" id="touch-tuck">Impulso</button>
+            <button class="touch-btn wide" id="touch-brake">Frenar</button>
+          </div>
+        </div>
+
+        <div class="hud-footer">
+          <div class="skier-telemetry" id="skier-telemetry">
+            <div class="stat-item">
+              <span class="stat-label">Velocidad</span>
+              <span class="stat-val" id="skier-speed">0 km/h</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Altitud</span>
+              <span class="stat-val" id="skier-alt">1.860 m</span>
+            </div>
+            <button class="btn-respawn" id="btn-respawn-base">↓ Base</button>
+            <button class="btn-respawn" id="btn-respawn">↑ Cumbre</button>
+          </div>
+
+          <div class="hud-stats">
+            <div class="stat-item">
+              <span class="stat-label">Cota Cumbre</span>
+              <span class="stat-val" id="stat-summit">2.280 m</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Cota Base</span>
+              <span class="stat-val" id="stat-base">1.860 m</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Pistas</span>
+              <span class="stat-val" id="stat-pistes">62 trazados</span>
+            </div>
+          </div>
+
+          <div class="view-modes" style="pointer-events: auto;">
+            <button class="btn-mode" id="btn-toggle-aerial">👁️ Vista Aérea</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

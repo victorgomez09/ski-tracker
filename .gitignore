@@ -1,3 +1,8 @@
 apps/api/tmp/
 
 .venv/
+.pnpm-store/
+apps/resort-explorer/dist/
+apps/resort-explorer/node_modules/
+seed/*.xml
+
