@@ -56,6 +56,10 @@ export class TacticalMinimap {
   private expandedLayers: L.LayerGroup | null = null;
   private skierMarker: L.Marker | null = null;
   private targetPin: L.CircleMarker | null = null;
+  private sessionTrailPolyline: L.Polyline | null = null;
+  private sessionTrailXZ: Array<[number, number]> = [];
+  private sessionTrailLatLngs: Array<[number, number]> = [];
+  private showSessionTrail = true;
 
   private projection: GeoProjection | null = null;
   private terrain: ProceduralTerrain | null = null;
@@ -337,6 +341,7 @@ export class TacticalMinimap {
     this.expandedLayers.clearLayers();
     this.skierMarker = null;
     this.targetPin = null;
+    this.sessionTrailPolyline = null;
 
     // 1. Pistas clicables con nombre alineado en dirección de la pista y viaje al punto exacto
     this.pistes.forEach((p) => {
@@ -570,10 +575,36 @@ export class TacticalMinimap {
     });
   }
 
+  public setSessionTrailEnabled(enabled: boolean) {
+    this.showSessionTrail = enabled;
+    if (!enabled && this.sessionTrailPolyline && this.expandedLayers) {
+      this.expandedLayers.removeLayer(this.sessionTrailPolyline);
+      this.sessionTrailPolyline = null;
+    }
+    this.drawMini();
+    if (this.isExpanded) {
+      this.updateExpandedSkierMarker();
+    }
+  }
+
   public update(skierX: number, skierZ: number, heading: number) {
     this.skierX = skierX;
     this.skierZ = skierZ;
     this.skierHeading = heading;
+
+    if (this.projection) {
+      const last = this.sessionTrailXZ[this.sessionTrailXZ.length - 1];
+      const distSq = last ? (skierX - last[0]) ** 2 + (skierZ - last[1]) ** 2 : Infinity;
+      if (distSq >= 64 && distSq <= 3600) {
+        this.sessionTrailXZ.push([skierX, skierZ]);
+        const [lon, lat] = this.projection.unproject(skierX, skierZ);
+        this.sessionTrailLatLngs.push([lat, lon]);
+      } else if (!last) {
+        this.sessionTrailXZ.push([skierX, skierZ]);
+        const [lon, lat] = this.projection.unproject(skierX, skierZ);
+        this.sessionTrailLatLngs.push([lat, lon]);
+      }
+    }
 
     this.drawMini();
     if (this.isExpanded) {
@@ -583,6 +614,19 @@ export class TacticalMinimap {
 
   private updateExpandedSkierMarker() {
     if (!this.expandedMap || !this.expandedLayers || !this.projection) return;
+    if (this.showSessionTrail && this.sessionTrailLatLngs.length >= 2) {
+      if (!this.sessionTrailPolyline) {
+        this.sessionTrailPolyline = L.polyline(this.sessionTrailLatLngs, {
+          color: '#f97316',
+          weight: 3.5,
+          opacity: 0.9,
+          dashArray: '6 4',
+          interactive: false,
+        }).addTo(this.expandedLayers);
+      } else {
+        this.sessionTrailPolyline.setLatLngs(this.sessionTrailLatLngs);
+      }
+    }
     const [lon, lat] = this.projection.unproject(this.skierX, this.skierZ);
     const deg = (-Math.atan2(Math.sin(this.skierHeading), Math.cos(this.skierHeading)) * 180) / Math.PI + 180;
 
@@ -647,6 +691,21 @@ export class TacticalMinimap {
       ctx.stroke();
     });
     ctx.restore();
+
+    if (this.showSessionTrail && this.sessionTrailXZ.length >= 2) {
+      ctx.save();
+      ctx.strokeStyle = '#f97316';
+      ctx.lineWidth = 2.0;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      this.sessionTrailXZ.forEach(([wx, wz], idx) => {
+        const [px, py] = toPx(wx, wz);
+        if (idx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+      ctx.restore();
+    }
 
     ctx.fillStyle = '#fbbf24';
     this.pois.forEach((poi) => {

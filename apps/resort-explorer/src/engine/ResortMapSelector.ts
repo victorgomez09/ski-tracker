@@ -137,6 +137,7 @@ export class ResortMapSelector {
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 18,
+      className: 'leaflet-snow-layer',
     }).addTo(this.map);
 
     this.markersLayer = L.layerGroup().addTo(this.map);

@@ -8,6 +8,8 @@ import { JunctionSignEntry, PisteDecoration } from './PisteDecoration.js';
 interface PisteCenterline {
   name: string;
   number: string;
+  difficulty: string;
+  halfWidth: number;
   color: number;
   points: THREE.Vector3[];
 }
@@ -64,6 +66,40 @@ export class ProceduralPistes {
 
   public getPisteMaterials(): THREE.ShaderMaterial[] {
     return this.pisteMaterials;
+  }
+
+  public getPisteAt(x: number, z: number): { name: string; number: string; difficulty: string; color: number } | null {
+    let best: PisteCenterline | null = null;
+    let bestDistSq = Infinity;
+
+    for (let i = 0; i < this.centerlines.length; i++) {
+      const p = this.centerlines[i];
+      const maxDist = p.halfWidth + 4.5;
+      const maxDistSq = maxDist * maxDist;
+
+      for (let j = 0; j < p.points.length - 1; j++) {
+        const a = p.points[j];
+        const b = p.points[j + 1];
+        const abx = b.x - a.x;
+        const abz = b.z - a.z;
+        const lenSq = abx * abx + abz * abz;
+        let t = 0;
+        if (lenSq > 1e-5) {
+          t = Math.max(0, Math.min(1, ((x - a.x) * abx + (z - a.z) * abz) / lenSq));
+        }
+        const px = a.x + t * abx;
+        const pz = a.z + t * abz;
+        const dSq = (x - px) * (x - px) + (z - pz) * (z - pz);
+        if (dSq <= maxDistSq && dSq < bestDistSq) {
+          bestDistSq = dSq;
+          best = p;
+        }
+      }
+    }
+
+    return best
+      ? { name: best.name, number: best.number, difficulty: best.difficulty, color: best.color }
+      : null;
   }
 
   public setAerialHighlight(enabled: boolean) {
@@ -126,6 +162,8 @@ export class ProceduralPistes {
     this.centerlines.push({
       name: piste.name || `Pista ${pisteNumber}`,
       number: pisteNumber,
+      difficulty: diffKey,
+      halfWidth: baseWidth * 0.55,
       color: pisteColor,
       points: curvePoints,
     });

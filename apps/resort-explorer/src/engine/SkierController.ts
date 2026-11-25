@@ -12,11 +12,20 @@ export interface SkierInputState {
   brake: boolean;
 }
 
+export type SkierCameraMode = 'third_person' | 'first_person' | 'cinematic';
+
 export interface SkierTelemetry {
   speedKmh: number;
   altitudeMeters: number;
+  slopePercent: number;
+  cameraMode: SkierCameraMode;
   nearbyLiftName: string | null;
   ridingLiftName: string | null;
+  jumpCompleted: { airTimeSec: number; distanceMeters: number } | null;
+  sessionDistanceKm: number;
+  sessionDropMeters: number;
+  sessionMaxSpeedKmh: number;
+  sessionRuns: number;
 }
 
 /**
@@ -59,6 +68,20 @@ export class SkierController {
   private rideableLifts: RideableLift[] = [];
   private nearbyLift: RideableLift | null = null;
   private ridingLift: { lift: RideableLift; progress: number; durationSec: number; speedMs: number } | null = null;
+
+  private cameraMode: SkierCameraMode = 'third_person';
+  private wasGrounded = true;
+  private airTimeSec = 0;
+  private jumpStartPos = new THREE.Vector3();
+
+  private sessionDistanceMeters = 0;
+  private sessionDropMeters = 0;
+  private sessionMaxSpeedKmh = 0;
+  private sessionRuns = 0;
+  private currentRunDropMeters = 0;
+  private runCountedForDescent = false;
+  private lastSessionPos = new THREE.Vector3();
+  private lastSessionAltMeters: number | null = null;
 
   constructor(terrain: ProceduralTerrain) {
     this.terrain = terrain;
@@ -179,6 +202,18 @@ export class SkierController {
     this.spawnAt(x, y, z, heading, 0);
   }
 
+  public cycleCameraMode(): SkierCameraMode {
+    const order: SkierCameraMode[] = ['third_person', 'first_person', 'cinematic'];
+    const idx = order.indexOf(this.cameraMode);
+    this.cameraMode = order[(idx + 1) % order.length];
+    this.avatar.group.visible = this.cameraMode !== 'first_person';
+    return this.cameraMode;
+  }
+
+  public getCameraMode(): SkierCameraMode {
+    return this.cameraMode;
+  }
+
   private spawnAt(x: number, y: number, z: number, heading: number, initialSpeed: number) {
     this.position.set(x, y, z);
     this.heading = heading;
@@ -189,9 +224,16 @@ export class SkierController {
     this.currentSkid = 0;
     this.cameraRoll = 0;
     this.isGrounded = true;
+    this.wasGrounded = true;
+    this.airTimeSec = 0;
+    this.lastSessionPos.copy(this.position);
+    this.lastSessionAltMeters = null;
+    this.currentRunDropMeters = 0;
+    this.runCountedForDescent = false;
 
     this.avatar.group.position.copy(this.position);
     this.avatar.group.rotation.set(0, this.heading, 0);
+    this.avatar.group.visible = this.cameraMode !== 'first_person';
 
     // Inicializar cámara justo detrás del esquiador
     this.cameraPos.copy(this.position).addScaledVector(forward, -11).add(new THREE.Vector3(0, 4.5, 0));
@@ -200,6 +242,10 @@ export class SkierController {
 
   private bindKeyboard() {
     window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyC') {
+        this.cycleCameraMode();
+        return;
+      }
       if (this.ridingLift) {
         if (e.code === 'Space') {
           this.skipLiftRide();
@@ -260,11 +306,22 @@ export class SkierController {
         const altitudeMeters = Math.round(
           this.baseAltitudeMeters + normElev * (this.summitAltitudeMeters - this.baseAltitudeMeters)
         );
+        this.lastSessionPos.copy(this.position);
+        this.lastSessionAltMeters = null;
+        this.currentRunDropMeters = 0;
+        this.runCountedForDescent = false;
         return {
           speedKmh: Math.round(this.ridingLift.speedMs * 3.6),
           altitudeMeters,
+          slopePercent: 0,
+          cameraMode: this.cameraMode,
           nearbyLiftName: null,
           ridingLiftName: `${this.ridingLift.lift.name} (${Math.round(this.ridingLift.progress * 100)}%)`,
+          jumpCompleted: null,
+          sessionDistanceKm: Number((this.sessionDistanceMeters / 1000).toFixed(2)),
+          sessionDropMeters: Math.round(this.sessionDropMeters),
+          sessionMaxSpeedKmh: Math.round(this.sessionMaxSpeedKmh),
+          sessionRuns: this.sessionRuns,
         };
       }
     }
@@ -380,6 +437,27 @@ export class SkierController {
       this.isGrounded = false;
     }
 
+    // Detección de saltos y tiempo en el aire (Air Time)
+    let jumpCompleted: { airTimeSec: number; distanceMeters: number } | null = null;
+    if (this.wasGrounded && !this.isGrounded) {
+      this.airTimeSec = 0;
+      this.jumpStartPos.copy(this.position);
+    } else if (!this.isGrounded) {
+      this.airTimeSec += clampedDt;
+    } else if (!this.wasGrounded && this.isGrounded) {
+      if (this.airTimeSec >= 0.45) {
+        const dist = Math.hypot(this.position.x - this.jumpStartPos.x, this.position.z - this.jumpStartPos.z);
+        if (dist >= 3) {
+          jumpCompleted = {
+            airTimeSec: Number(this.airTimeSec.toFixed(1)),
+            distanceMeters: Math.round(dist),
+          };
+        }
+      }
+      this.airTimeSec = 0;
+    }
+    this.wasGrounded = this.isGrounded;
+
     // 5. Animar avatar (orientación a la pendiente, canteo, huevo y hockey stop)
     const targetRoll = -steerInput * Math.min(0.55, newHorizSpeed * 0.035);
     const targetCrouch = this.input.tuck ? 1.0 : this.input.brake ? 0.35 : 0.1;
@@ -412,42 +490,65 @@ export class SkierController {
     // 7. Audio procedural
     this.audio.update(newHorizSpeed, carveIntensity, this.isGrounded);
 
-    // 8. Cámara dinámica de persecución en 3ª persona
-    const camDistance = 9.5 + (newHorizSpeed / 25) * 3.5;
-    const camHeight = 3.8 + (newHorizSpeed / 25) * 0.8;
-
+    // 8. Cámara dinámica multi-modo (3ª Persona / 1ª Persona Casco / Cinematográfica)
     const velDir = newHorizSpeed > 1.5
       ? new THREE.Vector3(this.velocity.x, 0, this.velocity.z).normalize()
       : forward;
     const camDir = forward.clone().lerp(velDir, 0.5).normalize();
 
-    const desiredCamPos = this.position.clone()
-      .addScaledVector(camDir, -camDistance)
-      .add(new THREE.Vector3(0, camHeight, 0));
-
-    // Evitar que la cámara atraviese el terreno por detrás
-    const camGroundY = this.terrain.getElevationAt(desiredCamPos.x, desiredCamPos.z);
-    if (desiredCamPos.y < camGroundY + 2.0) {
-      desiredCamPos.y = camGroundY + 2.0;
-    }
-
-    const lookHeight = newHorizSpeed < 2.0 ? 2.4 : 1.3;
-    const desiredLookAt = this.position.clone()
-      .addScaledVector(camDir, 7.0)
-      .add(new THREE.Vector3(0, lookHeight, 0));
-
     const camSmooth = 1 - Math.exp(-7.5 * clampedDt);
-    this.cameraPos.lerp(desiredCamPos, camSmooth);
-    this.cameraLookAt.lerp(desiredLookAt, 1 - Math.exp(-10 * clampedDt));
+    let desiredCamPos: THREE.Vector3;
+    let desiredLookAt: THREE.Vector3;
+    let targetFov = 45 + (newHorizSpeed / 26) * 14;
+
+    if (this.cameraMode === 'first_person') {
+      desiredCamPos = this.position.clone().add(new THREE.Vector3(0, 1.62, 0)).addScaledVector(camDir, 0.25);
+      desiredLookAt = desiredCamPos.clone().addScaledVector(slopeForward, 14.0).add(new THREE.Vector3(0, -0.35, 0));
+      targetFov = 68 + (newHorizSpeed / 26) * 12;
+      this.cameraPos.copy(desiredCamPos);
+      this.cameraLookAt.lerp(desiredLookAt, 1 - Math.exp(-16 * clampedDt));
+    } else if (this.cameraMode === 'cinematic') {
+      const camDistance = 7.4 + (newHorizSpeed / 25) * 2.2;
+      desiredCamPos = this.position.clone()
+        .addScaledVector(camDir, -camDistance)
+        .addScaledVector(right, 3.6)
+        .add(new THREE.Vector3(0, 2.0, 0));
+      const camGroundY = this.terrain.getElevationAt(desiredCamPos.x, desiredCamPos.z);
+      if (desiredCamPos.y < camGroundY + 1.4) {
+        desiredCamPos.y = camGroundY + 1.4;
+      }
+      desiredLookAt = this.position.clone()
+        .addScaledVector(camDir, 4.5)
+        .add(new THREE.Vector3(0, 1.15, 0));
+      this.cameraPos.lerp(desiredCamPos, camSmooth);
+      this.cameraLookAt.lerp(desiredLookAt, 1 - Math.exp(-10 * clampedDt));
+    } else {
+      const camDistance = 9.5 + (newHorizSpeed / 25) * 3.5;
+      const camHeight = 3.8 + (newHorizSpeed / 25) * 0.8;
+      desiredCamPos = this.position.clone()
+        .addScaledVector(camDir, -camDistance)
+        .add(new THREE.Vector3(0, camHeight, 0));
+
+      const camGroundY = this.terrain.getElevationAt(desiredCamPos.x, desiredCamPos.z);
+      if (desiredCamPos.y < camGroundY + 2.0) {
+        desiredCamPos.y = camGroundY + 2.0;
+      }
+      const lookHeight = newHorizSpeed < 2.0 ? 2.4 : 1.3;
+      desiredLookAt = this.position.clone()
+        .addScaledVector(camDir, 7.0)
+        .add(new THREE.Vector3(0, lookHeight, 0));
+      this.cameraPos.lerp(desiredCamPos, camSmooth);
+      this.cameraLookAt.lerp(desiredLookAt, 1 - Math.exp(-10 * clampedDt));
+    }
 
     camera.position.copy(this.cameraPos);
     camera.lookAt(this.cameraLookAt);
 
     // Inclinación sutil (roll) de cámara al carvear y FOV dinámico con la velocidad
-    this.cameraRoll = THREE.MathUtils.lerp(this.cameraRoll, this.currentRoll * 0.22, camSmooth);
+    const rollScale = this.cameraMode === 'first_person' ? 0.32 : 0.22;
+    this.cameraRoll = THREE.MathUtils.lerp(this.cameraRoll, this.currentRoll * rollScale, camSmooth);
     camera.rotateZ(this.cameraRoll);
 
-    const targetFov = 45 + (newHorizSpeed / 26) * 14;
     if (Math.abs(camera.fov - targetFov) > 0.05) {
       camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, camSmooth);
       camera.updateProjectionMatrix();
@@ -458,11 +559,45 @@ export class SkierController {
     const normElev = Math.max(0, Math.min(1, (this.position.y - 14) / verticalRange));
     const altitudeMeters = Math.round(this.baseAltitudeMeters + normElev * (this.summitAltitudeMeters - this.baseAltitudeMeters));
 
+    // Acumular métricas de sesión en vivo (distancia, desnivel bajado, vel. máx y bajadas)
+    const speedKmh = Math.round(newHorizSpeed * 3.6);
+    const stepDist = this.position.distanceTo(this.lastSessionPos);
+    if (stepDist > 0.05 && stepDist < 40) {
+      this.sessionDistanceMeters += stepDist;
+    }
+    this.lastSessionPos.copy(this.position);
+
+    if (speedKmh > this.sessionMaxSpeedKmh) {
+      this.sessionMaxSpeedKmh = speedKmh;
+    }
+
+    if (this.lastSessionAltMeters !== null) {
+      const altDelta = this.lastSessionAltMeters - altitudeMeters;
+      if (altDelta > 0 && altDelta < 25) {
+        this.sessionDropMeters += altDelta;
+        this.currentRunDropMeters += altDelta;
+        if (!this.runCountedForDescent && this.currentRunDropMeters >= 35) {
+          this.sessionRuns += 1;
+          this.runCountedForDescent = true;
+        }
+      }
+    }
+    this.lastSessionAltMeters = altitudeMeters;
+
+    const slopePercent = Math.round(Math.hypot(gradX, gradZ) * 100);
+
     return {
-      speedKmh: Math.round(newHorizSpeed * 3.6),
+      speedKmh,
       altitudeMeters,
+      slopePercent,
+      cameraMode: this.cameraMode,
       nearbyLiftName: this.nearbyLift ? this.nearbyLift.name : null,
       ridingLiftName: null,
+      jumpCompleted,
+      sessionDistanceKm: Number((this.sessionDistanceMeters / 1000).toFixed(2)),
+      sessionDropMeters: Math.round(this.sessionDropMeters),
+      sessionMaxSpeedKmh: Math.round(this.sessionMaxSpeedKmh),
+      sessionRuns: this.sessionRuns,
     };
   }
 }

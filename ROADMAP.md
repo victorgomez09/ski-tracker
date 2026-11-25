@@ -345,6 +345,22 @@ Plataforma interactiva 3D procedural (inspirada en *Endless Peaks* / *Grand Moun
   - **Perfiles de Calidad (Bajo / Medio / Alto / Ultra):** Selector en HUD/ajustes para adaptar el simulador a cualquier móvil, tablet o PC.
   - **Escalado Dinámico de Resolución y Sombras:** Ajuste de `devicePixelRatio`, activación/resolución de mapas de sombras (`1024`/`2048`/Off), distancia de dibujado (niebla) y densidad de partículas/vegetación/IA para garantizar fluidez a 60 FPS en gama baja y máxima fidelidad en gama alta.
 
+- [x] **10.14 Telemetría en Vivo, Modos de Cámara y Experiencia Arcade en Pista**
+  - **Indicador de Pista Actual en el HUD:** Detectar en tiempo real el trazado sobre el que esquía el usuario para mostrar una chapa en pantalla (`⛷️ Nombre de pista · Dificultad`) junto con la pendiente instantánea (`%`).
+  - **Tracker de Sesión en el Simulador:** Acumular distancia recorrida (km), desnivel vertical bajado, velocidad máxima y número de bajadas durante la partida, con opción de visualizar el recorrido completo sobre el plano táctico.
+  - **Selector de Modos de Cámara (`C`):** Alternar entre cámara estándar en 3ª persona, vista en 1ª persona (casco / GoPro) y cámara cinematográfica baja/lateral.
+  - **Detección de Saltos y Tiempo en el Aire (*Air Time*):** Detectar despegues en cambios de rasante (`!isGrounded`) para mostrar avisos arcade de tiempo en el aire y distancia saltada al aterrizar.
+  - **Audio Ambiental Dinámico Sincronizado con el Clima:** Sonido de viento proporcional a la velocidad y audio ambiental de ventisca o lluvia acorde al estado meteorológico activo en `WeatherAtmosphere`.
+
+- [ ] **10.15 Animaciones Realistas del Personaje y Soporte para Snowboard**
+  - **Animaciones Articuladas del Personaje en Tiempo Real:**
+    - Flexión dinámica de piernas, rodillas y cadera en *carving*, posición aerodinámica (*tuck*) y compresión al aterrizar saltos.
+    - Angulación y contra-rotación realista de torso y hombros al enlazar curvas (cadera hacia el interior del giro y tronco compensando hacia la pendiente).
+    - Movimiento natural de brazos y bastones en impulsos, equilibrio en curvas y frenado derrapado (*hockey stop*).
+  - **Modalidad Snowboard (Selector Esquís / Tabla):**
+    - Selector de equipamiento para alternar entre **Esquí** y **Snowboard** (con postura *regular* / *goofy*).
+    - Avatar y postura lateral sobre tabla única con inclinación realista de cantos (*toe-side* / *heel-side*), física adaptada y huella única en la nieve.
+
 
 ---
 

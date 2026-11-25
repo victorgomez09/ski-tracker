@@ -9,6 +9,7 @@ export interface GraphicsConfig {
   treeCount: number;
   rockCount: number;
   trafficEnabled: boolean;
+  sessionTrackerEnabled: boolean;
 }
 
 const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
@@ -21,6 +22,7 @@ const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
     treeCount: 700,
     rockCount: 150,
     trafficEnabled: false,
+    sessionTrackerEnabled: true,
   },
   medium: {
     preset: 'medium',
@@ -31,6 +33,7 @@ const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
     treeCount: 1400,
     rockCount: 280,
     trafficEnabled: true,
+    sessionTrackerEnabled: true,
   },
   high: {
     preset: 'high',
@@ -41,6 +44,7 @@ const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
     treeCount: 2200,
     rockCount: 450,
     trafficEnabled: true,
+    sessionTrackerEnabled: true,
   },
   ultra: {
     preset: 'ultra',
@@ -51,6 +55,7 @@ const PRESET_MAP: Record<QualityPreset, GraphicsConfig> = {
     treeCount: 2600,
     rockCount: 550,
     trafficEnabled: true,
+    sessionTrackerEnabled: true,
   },
 };
 
@@ -83,7 +88,7 @@ export class GraphicsSettings {
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<GraphicsConfig>;
         const base = PRESET_MAP[parsed.preset || this.detectDefaultPreset()];
-        return { ...base, ...parsed };
+        return { ...base, ...parsed, sessionTrackerEnabled: parsed.sessionTrackerEnabled ?? true };
       }
     } catch {
       // Ignorar errores de almacenamiento en WebView restringido

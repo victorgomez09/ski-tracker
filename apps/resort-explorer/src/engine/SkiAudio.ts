@@ -9,6 +9,10 @@ export class SkiAudio {
   private windFilter: BiquadFilterNode | null = null;
   private carveGain: GainNode | null = null;
   private carveFilter: BiquadFilterNode | null = null;
+  private weatherGain: GainNode | null = null;
+  private weatherFilter: BiquadFilterNode | null = null;
+  private snowWeather = 0;
+  private rainWeather = 0;
   private active = false;
 
   public start() {
@@ -65,7 +69,30 @@ export class SkiAudio {
     this.carveGain.connect(this.ctx.destination);
     carveSource.start();
 
+    // Canal 3: Ambiente meteorológico (ventisca / lluvia)
+    const weatherSource = this.ctx.createBufferSource();
+    weatherSource.buffer = noiseBuffer;
+    weatherSource.loop = true;
+
+    this.weatherFilter = this.ctx.createBiquadFilter();
+    this.weatherFilter.type = 'bandpass';
+    this.weatherFilter.frequency.value = 540;
+    this.weatherFilter.Q.value = 0.85;
+
+    this.weatherGain = this.ctx.createGain();
+    this.weatherGain.gain.value = 0;
+
+    weatherSource.connect(this.weatherFilter);
+    this.weatherFilter.connect(this.weatherGain);
+    this.weatherGain.connect(this.ctx.destination);
+    weatherSource.start();
+
     this.active = true;
+  }
+
+  public setWeatherAmbience(snowIntensity: number, rainIntensity: number) {
+    this.snowWeather = Math.max(0, Math.min(1, snowIntensity));
+    this.rainWeather = Math.max(0, Math.min(1, rainIntensity));
   }
 
   public update(speedMs: number, carveIntensity: number, isGrounded: boolean) {
@@ -86,6 +113,21 @@ export class SkiAudio {
     const targetCarveFreq = 1400 + carveIntensity * 1400;
     this.carveGain.gain.setTargetAtTime(targetCarveGain, now, 0.06);
     this.carveFilter.frequency.setTargetAtTime(targetCarveFreq, now, 0.06);
+
+    // Ambiente de ventisca o lluvia sincronizado con el clima
+    if (this.weatherGain && this.weatherFilter) {
+      if (this.rainWeather > 0.02) {
+        this.weatherGain.gain.setTargetAtTime(this.rainWeather * 0.055, now, 0.25);
+        this.weatherFilter.frequency.setTargetAtTime(2500, now, 0.25);
+        this.weatherFilter.Q.setTargetAtTime(0.6, now, 0.25);
+      } else if (this.snowWeather > 0.02) {
+        this.weatherGain.gain.setTargetAtTime(this.snowWeather * 0.04, now, 0.25);
+        this.weatherFilter.frequency.setTargetAtTime(520 + speedNorm * 220, now, 0.25);
+        this.weatherFilter.Q.setTargetAtTime(1.2, now, 0.25);
+      } else {
+        this.weatherGain.gain.setTargetAtTime(0, now, 0.25);
+      }
+    }
   }
 
   public stop() {
@@ -93,5 +135,6 @@ export class SkiAudio {
     const now = this.ctx.currentTime;
     this.windGain.gain.setTargetAtTime(0, now, 0.05);
     this.carveGain.gain.setTargetAtTime(0, now, 0.05);
+    if (this.weatherGain) this.weatherGain.gain.setTargetAtTime(0, now, 0.05);
   }
 }

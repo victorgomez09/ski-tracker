@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { LiveWeatherInfo } from './ResortDataService.js';
 
-export type WeatherPreset = 'sunny' | 'sunset' | 'snow' | 'night';
+export type WeatherPreset = 'sunny' | 'sunset' | 'snow' | 'rain' | 'night';
 export type WeatherMode = 'live' | 'dry' | 'snow' | 'random';
 
 interface WeatherState {
@@ -17,6 +17,7 @@ interface WeatherState {
   bounceIntensity: number;
   headlampIntensity: number;
   snowOpacity: number;
+  rainOpacity: number;
 }
 
 /**
@@ -36,7 +37,16 @@ export class WeatherAtmosphere {
   private snowPoints: THREE.Points;
   private snowMaterial: THREE.PointsMaterial;
   private snowPositions: Float32Array;
-  private readonly snowCount = 1500;
+  private readonly snowCount = 2400;
+  private readonly snowBoxXZ = 90;
+  private readonly snowBoxY = 55;
+
+  private rainLines: THREE.LineSegments;
+  private rainMaterial: THREE.LineBasicMaterial;
+  private rainPositions: Float32Array;
+  private readonly rainCount = 1800;
+  private readonly rainBoxXZ = 80;
+  private readonly rainBoxY = 50;
 
   private terrainMaterial: THREE.ShaderMaterial | null = null;
   private pisteMaterials: THREE.ShaderMaterial[] = [];
@@ -67,31 +77,76 @@ export class WeatherAtmosphere {
     this.scene.add(this.headlampTarget);
     this.headlamp.target = this.headlampTarget;
 
+    // Sistema de nieve uniforme anclado a cámara
     this.snowPositions = new Float32Array(this.snowCount * 3);
     for (let i = 0; i < this.snowCount; i++) {
-      this.snowPositions[i * 3] = (Math.random() - 0.5) * 140;
-      this.snowPositions[i * 3 + 1] = Math.random() * 60;
-      this.snowPositions[i * 3 + 2] = (Math.random() - 0.5) * 140;
+      this.snowPositions[i * 3] = (Math.random() - 0.5) * this.snowBoxXZ;
+      this.snowPositions[i * 3 + 1] = Math.random() * this.snowBoxY - 20;
+      this.snowPositions[i * 3 + 2] = (Math.random() - 0.5) * this.snowBoxXZ;
     }
 
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(this.snowPositions, 3));
+    const snowGeom = new THREE.BufferGeometry();
+    snowGeom.setAttribute('position', new THREE.BufferAttribute(this.snowPositions, 3));
     this.snowMaterial = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: 0.45,
+      size: 0.34,
+      map: this.createSoftFlakeTexture(),
       transparent: true,
       opacity: 0,
       depthWrite: false,
     });
 
-    this.snowPoints = new THREE.Points(geom, this.snowMaterial);
+    this.snowPoints = new THREE.Points(snowGeom, this.snowMaterial);
     this.snowPoints.visible = false;
     this.snowPoints.frustumCulled = false;
     this.scene.add(this.snowPoints);
 
+    // Sistema de lluvia uniforme anclado a cámara (trazos finos)
+    this.rainPositions = new Float32Array(this.rainCount * 6);
+    for (let i = 0; i < this.rainCount; i++) {
+      const rx = (Math.random() - 0.5) * this.rainBoxXZ;
+      const ry = Math.random() * this.rainBoxY - 18;
+      const rz = (Math.random() - 0.5) * this.rainBoxXZ;
+      const idx = i * 6;
+      this.rainPositions[idx] = rx;
+      this.rainPositions[idx + 1] = ry;
+      this.rainPositions[idx + 2] = rz;
+      this.rainPositions[idx + 3] = rx - 0.14;
+      this.rainPositions[idx + 4] = ry + 1.25;
+      this.rainPositions[idx + 5] = rz;
+    }
+
+    const rainGeom = new THREE.BufferGeometry();
+    rainGeom.setAttribute('position', new THREE.BufferAttribute(this.rainPositions, 3));
+    this.rainMaterial = new THREE.LineBasicMaterial({
+      color: 0xcbd5e1,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+
+    this.rainLines = new THREE.LineSegments(rainGeom, this.rainMaterial);
+    this.rainLines.visible = false;
+    this.rainLines.frustumCulled = false;
+    this.scene.add(this.rainLines);
+
     this.currentState = this.buildPresetState('sunny');
     this.targetState = this.buildPresetState('sunny');
     this.applyStateToScene(this.currentState);
+  }
+
+  private createSoftFlakeTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d')!;
+    const grad = ctx.createRadialGradient(16, 16, 1, 16, 16, 15);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.55, 'rgba(248, 250, 252, 0.78)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 32, 32);
+    return new THREE.CanvasTexture(canvas);
   }
 
   public bindTerrainMaterial(material: THREE.ShaderMaterial) {
@@ -105,6 +160,13 @@ export class WeatherAtmosphere {
   public setAerialView(enabled: boolean) {
     this.isAerialView = enabled;
     this.applyStateToScene(this.currentState);
+  }
+
+  public getPrecipitationLevel(): { snow: number; rain: number } {
+    return {
+      snow: this.currentState.snowOpacity,
+      rain: this.currentState.rainOpacity,
+    };
   }
 
   private buildPresetState(preset: WeatherPreset): WeatherState {
@@ -122,6 +184,7 @@ export class WeatherAtmosphere {
         bounceIntensity: 0.45,
         headlampIntensity: 0,
         snowOpacity: 0,
+        rainOpacity: 0,
       };
     }
 
@@ -139,6 +202,25 @@ export class WeatherAtmosphere {
         bounceIntensity: 0.5,
         headlampIntensity: 0,
         snowOpacity: 0.88,
+        rainOpacity: 0,
+      };
+    }
+
+    if (preset === 'rain') {
+      return {
+        bgColor: new THREE.Color(0x94a3b8),
+        fogColor: new THREE.Color(0xb0becf),
+        fogDensity: 0.00095,
+        ambientColor: new THREE.Color(0xcbd5e1),
+        ambientIntensity: 0.92,
+        sunColor: new THREE.Color(0xe2e8f0),
+        sunIntensity: 0.85,
+        sunPos: new THREE.Vector3(250, 500, 200),
+        bounceColor: new THREE.Color(0x94a3b8),
+        bounceIntensity: 0.35,
+        headlampIntensity: 0,
+        snowOpacity: 0,
+        rainOpacity: 0.72,
       };
     }
 
@@ -156,6 +238,7 @@ export class WeatherAtmosphere {
         bounceIntensity: 0.25,
         headlampIntensity: 4.5,
         snowOpacity: 0,
+        rainOpacity: 0,
       };
     }
 
@@ -173,6 +256,7 @@ export class WeatherAtmosphere {
       bounceIntensity: 0.5,
       headlampIntensity: 0,
       snowOpacity: 0,
+      rainOpacity: 0,
     };
   }
 
@@ -204,6 +288,9 @@ export class WeatherAtmosphere {
     this.snowMaterial.opacity = s.snowOpacity;
     this.snowPoints.visible = s.snowOpacity > 0.01;
 
+    this.rainMaterial.opacity = s.rainOpacity;
+    this.rainLines.visible = s.rainOpacity > 0.01;
+
     // Sincronizar shader del terreno y de todas las pistas con sol, cielo y niebla en vivo
     const syncMaterials = this.terrainMaterial
       ? [this.terrainMaterial, ...this.pisteMaterials]
@@ -230,7 +317,7 @@ export class WeatherAtmosphere {
   }
 
   private pickNextRandomWeather() {
-    const options: WeatherPreset[] = ['sunny', 'sunset', 'snow', 'night'];
+    const options: WeatherPreset[] = ['sunny', 'sunset', 'snow', 'rain', 'night'];
     const filtered = options.filter((o) => o !== this.currentPreset);
     const next = filtered[Math.floor(Math.random() * filtered.length)];
     this.setPreset(next);
@@ -252,17 +339,24 @@ export class WeatherAtmosphere {
     const code = info.weatherCode;
 
     const isSnowing = info.snowfallTodayCm > 0.3 || (code >= 71 && code <= 77) || code === 85 || code === 86;
+    const isRaining = !isSnowing && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || (code >= 95 && code <= 99));
     const isFoggy = code === 45 || code === 48;
-    const isOvercast = code === 3 || (code >= 51 && code <= 67) || (code >= 80 && code <= 82);
+    const isOvercast = code === 3;
 
     if (isNight) {
       this.setPreset('night');
-      if (isSnowing) this.targetState.snowOpacity = 0.75;
+      if (isSnowing) this.targetState.snowOpacity = 0.78;
+      else if (isRaining) this.targetState.rainOpacity = 0.65;
       return;
     }
 
     if (isSnowing) {
       this.setPreset('snow');
+      return;
+    }
+
+    if (isRaining) {
+      this.setPreset('rain');
       return;
     }
 
@@ -285,7 +379,11 @@ export class WeatherAtmosphere {
     }
   }
 
-  public update(dt: number, skierPos: THREE.Vector3, skierHeading: number) {
+  private wrapCoord(val: number, min: number, size: number): number {
+    return min + (((val - min) % size + size) % size);
+  }
+
+  public update(dt: number, cameraPos: THREE.Vector3, skierPos?: THREE.Vector3, skierHeading = 0) {
     const clampedDt = Math.min(dt, 0.05);
 
     if (this.randomActive) {
@@ -314,11 +412,12 @@ export class WeatherAtmosphere {
     c.bounceIntensity = THREE.MathUtils.lerp(c.bounceIntensity, t.bounceIntensity, alpha);
     c.headlampIntensity = THREE.MathUtils.lerp(c.headlampIntensity, t.headlampIntensity, alpha);
     c.snowOpacity = THREE.MathUtils.lerp(c.snowOpacity, t.snowOpacity, alpha);
+    c.rainOpacity = THREE.MathUtils.lerp(c.rainOpacity, t.rainOpacity, alpha);
 
     this.applyStateToScene(c);
 
     // Actualizar foco nocturno delante del esquiador
-    if (c.headlampIntensity > 0.05) {
+    if (c.headlampIntensity > 0.05 && skierPos) {
       const fwdX = Math.sin(skierHeading);
       const fwdZ = Math.cos(skierHeading);
       this.headlamp.position.set(skierPos.x, skierPos.y + 1.85, skierPos.z);
@@ -329,27 +428,52 @@ export class WeatherAtmosphere {
       );
     }
 
-    // Actualizar copos de nieve alrededor de la posición actual
+    // Actualizar copos de nieve alrededor de la cámara con wrapping módulo uniforme
     if (this.snowPoints.visible) {
-      const box = 140;
-      const half = box / 2;
+      const minX = cameraPos.x - this.snowBoxXZ * 0.5;
+      const minY = cameraPos.y - 20;
+      const minZ = cameraPos.z - this.snowBoxXZ * 0.5;
+
       for (let i = 0; i < this.snowCount; i++) {
         const ix = i * 3;
-        let x = this.snowPositions[ix] - clampedDt * 2.5;
-        let y = this.snowPositions[ix + 1] - clampedDt * 9.5;
-        let z = this.snowPositions[ix + 2] + Math.sin(i + y * 0.1) * clampedDt * 1.5;
+        const driftX = -2.2 + ((i % 7) - 3) * 0.32;
+        const fallY = 7.0 + (i % 5) * 0.7;
+        const driftZ = ((i % 5) - 2) * 0.38;
 
-        if (x < skierPos.x - half) x += box;
-        if (x > skierPos.x + half) x -= box;
-        if (z < skierPos.z - half) z += box;
-        if (z > skierPos.z + half) z -= box;
-        if (y < skierPos.y - 10) y = skierPos.y + 42;
+        const x = this.wrapCoord(this.snowPositions[ix] + driftX * clampedDt, minX, this.snowBoxXZ);
+        const y = this.wrapCoord(this.snowPositions[ix + 1] - fallY * clampedDt, minY, this.snowBoxY);
+        const z = this.wrapCoord(this.snowPositions[ix + 2] + driftZ * clampedDt, minZ, this.snowBoxXZ);
 
         this.snowPositions[ix] = x;
         this.snowPositions[ix + 1] = y;
         this.snowPositions[ix + 2] = z;
       }
       this.snowPoints.geometry.attributes.position.needsUpdate = true;
+    }
+
+    // Actualizar gotas de lluvia alrededor de la cámara con wrapping módulo uniforme
+    if (this.rainLines.visible) {
+      const minX = cameraPos.x - this.rainBoxXZ * 0.5;
+      const minY = cameraPos.y - 18;
+      const minZ = cameraPos.z - this.rainBoxXZ * 0.5;
+
+      for (let i = 0; i < this.rainCount; i++) {
+        const idx = i * 6;
+        const windX = -3.2;
+        const fallY = 27.0 + (i % 4) * 2.5;
+
+        const x = this.wrapCoord(this.rainPositions[idx] + windX * clampedDt, minX, this.rainBoxXZ);
+        const y = this.wrapCoord(this.rainPositions[idx + 1] - fallY * clampedDt, minY, this.rainBoxY);
+        const z = this.wrapCoord(this.rainPositions[idx + 2], minZ, this.rainBoxXZ);
+
+        this.rainPositions[idx] = x;
+        this.rainPositions[idx + 1] = y;
+        this.rainPositions[idx + 2] = z;
+        this.rainPositions[idx + 3] = x - 0.14;
+        this.rainPositions[idx + 4] = y + 1.25;
+        this.rainPositions[idx + 5] = z;
+      }
+      this.rainLines.geometry.attributes.position.needsUpdate = true;
     }
   }
 }

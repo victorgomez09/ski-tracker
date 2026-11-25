@@ -37,6 +37,8 @@ export class SceneManager {
   private fpsFrames = 0;
   private fpsAccum = 0;
   private currentFps = 60;
+  private isPaused = false;
+  private jumpToastTimer: number | null = null;
   private clock = new THREE.Clock();
 
   // Modo por defecto: esquiar; permite alternar a Vista Aérea para inspeccionar el terreno
@@ -562,6 +564,14 @@ export class SceneManager {
     if (this.traffic) {
       this.traffic.group.visible = cfg.trafficEnabled;
     }
+
+    const trackerEnabled = cfg.sessionTrackerEnabled !== false;
+    if (this.minimap) {
+      this.minimap.setSessionTrailEnabled(trackerEnabled);
+    }
+    document.querySelectorAll('.session-stat-item').forEach((el) => {
+      (el as HTMLElement).style.display = trackerEnabled ? 'flex' : 'none';
+    });
   }
 
   public setWeatherMode(mode: WeatherMode) {
@@ -587,6 +597,23 @@ export class SceneManager {
 
   public skipLiftRide() {
     if (this.skier) this.skier.skipLiftRide();
+  }
+
+  public cycleCameraMode() {
+    return this.skier ? this.skier.cycleCameraMode() : 'third_person';
+  }
+
+  public setPaused(paused: boolean) {
+    this.isPaused = paused;
+    if (paused) {
+      this.skier?.audio.stop();
+    } else {
+      this.clock.getDelta();
+    }
+  }
+
+  public getPaused(): boolean {
+    return this.isPaused;
   }
 
   public setMode(mode: 'skier' | 'orbit') {
@@ -687,6 +714,11 @@ export class SceneManager {
       if (fpsEl) fpsEl.textContent = `${this.currentFps} FPS`;
     }
 
+    if (this.isPaused) {
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+
     if (this.lifts) {
       this.lifts.update(delta);
     }
@@ -703,9 +735,6 @@ export class SceneManager {
           this.tracks.addPoint(this.skier.position, this.skier.heading, this.skier.isGrounded);
         }
       }
-      if (this.weather) {
-        this.weather.update(delta, this.skier.position, this.skier.heading);
-      }
       // Seguir al esquiador con el frustum de sombras para mantener máxima nitidez alrededor
       if (this.sunLight) {
         this.sunLight.target.position.copy(this.skier.position);
@@ -719,6 +748,58 @@ export class SceneManager {
       const altEl = document.getElementById('skier-alt');
       if (speedEl) speedEl.textContent = `${telemetry.speedKmh} km/h`;
       if (altEl) altEl.textContent = `${telemetry.altitudeMeters.toLocaleString()} m`;
+
+      const sessionDistEl = document.getElementById('session-dist');
+      const sessionDropEl = document.getElementById('session-drop');
+      const sessionMaxEl = document.getElementById('session-max');
+      const sessionRunsEl = document.getElementById('session-runs');
+      if (sessionDistEl) sessionDistEl.textContent = `${telemetry.sessionDistanceKm.toFixed(2)} km`;
+      if (sessionDropEl) sessionDropEl.textContent = `${telemetry.sessionDropMeters} m`;
+      if (sessionMaxEl) sessionMaxEl.textContent = `${telemetry.sessionMaxSpeedKmh} km/h`;
+      if (sessionRunsEl) sessionRunsEl.textContent = `${telemetry.sessionRuns}`;
+
+      const camBtn = document.getElementById('btn-camera-mode');
+      if (camBtn) {
+        const camLabels = {
+          third_person: '🎥 3ª Persona (C)',
+          first_person: '🥽 1ª Persona (C)',
+          cinematic: '🎬 Cine (C)',
+        };
+        const nextLabel = camLabels[telemetry.cameraMode];
+        if (camBtn.textContent !== nextLabel) camBtn.textContent = nextLabel;
+      }
+
+      const pisteBadge = document.getElementById('piste-hud-badge');
+      const pisteDot = document.getElementById('piste-hud-dot');
+      const pisteText = document.getElementById('piste-hud-text');
+      if (pisteBadge && pisteDot && pisteText && this.pistes) {
+        if (telemetry.ridingLiftName) {
+          pisteDot.style.background = '#38bdf8';
+          pisteText.textContent = `🚡 ${telemetry.ridingLiftName} · ${telemetry.slopePercent}%`;
+        } else {
+          const activePiste = this.pistes.getPisteAt(this.skier.position.x, this.skier.position.z);
+          if (activePiste) {
+            const hex = `#${activePiste.color.toString(16).padStart(6, '0')}`;
+            pisteDot.style.background = hex === '#0f172a' ? '#94a3b8' : hex;
+            pisteText.textContent = `${activePiste.name} · ${telemetry.slopePercent}%`;
+          } else {
+            pisteDot.style.background = '#e2e8f0';
+            pisteText.textContent = `Fuera de pista · ${telemetry.slopePercent}%`;
+          }
+        }
+      }
+
+      if (telemetry.jumpCompleted) {
+        const jumpToast = document.getElementById('jump-toast');
+        if (jumpToast) {
+          jumpToast.textContent = `🚀 +${telemetry.jumpCompleted.airTimeSec}s AIRE · ${telemetry.jumpCompleted.distanceMeters} m`;
+          jumpToast.style.display = 'block';
+          if (this.jumpToastTimer) window.clearTimeout(this.jumpToastTimer);
+          this.jumpToastTimer = window.setTimeout(() => {
+            jumpToast.style.display = 'none';
+          }, 2200);
+        }
+      }
 
       const touchControls = document.getElementById('skier-touch-controls');
       if (touchControls) {
@@ -747,6 +828,16 @@ export class SceneManager {
     } else if (this.mode === 'orbit' && !this.isPointerDown) {
       this.orbitAngle += 0.0008;
       this.updateOrbitCamera();
+    }
+
+    if (this.weather) {
+      const skierPos = this.mode === 'skier' && this.skier ? this.skier.position : undefined;
+      const skierHeading = this.mode === 'skier' && this.skier ? this.skier.heading : 0;
+      this.weather.update(delta, this.camera.position, skierPos, skierHeading);
+      if (this.skier) {
+        const precip = this.weather.getPrecipitationLevel();
+        this.skier.audio.setWeatherAmbience(precip.snow, precip.rain);
+      }
     }
 
     this.renderer.render(this.scene, this.camera);
