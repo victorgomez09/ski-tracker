@@ -92,7 +92,7 @@ export class ResortMapSelector {
       <div class="map-fullscreen-shell">
         <div class="map-modal-header">
           <div style="display:flex;align-items:center;gap:12px;">
-            <h2 id="map-header-title">Estaciones de Esquí · España y Andorra</h2>
+            <h2 id="map-header-title">Estaciones de Esquí</h2>
             <span class="map-status-badge offline" id="map-status-badge">● Cargando...</span>
           </div>
           <div id="map-header-action"></div>
@@ -158,7 +158,7 @@ export class ResortMapSelector {
   private updateListAndMarkers() {
     const titleEl = this.container.querySelector('#map-header-title');
     if (titleEl) {
-      titleEl.textContent = `Estaciones de Esquí · España y Andorra (${this.resorts.length})`;
+      titleEl.textContent = `Estaciones de Esquí (${this.resorts.length})`;
     }
 
     const badgeEl = this.container.querySelector('#map-status-badge');

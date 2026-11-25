@@ -361,7 +361,7 @@ Plataforma interactiva 3D procedural (inspirada en *Endless Peaks* / *Grand Moun
     - Selector de equipamiento para alternar entre **Esquí** y **Snowboard** (con postura *regular* / *goofy*).
     - Avatar y postura lateral sobre tabla única con inclinación realista de cantos (*toe-side* / *heel-side*), física adaptada y huella única en la nieve.
 
-- [ ] **10.16 Multijugador en Tiempo Real: Esquiar con Amigos de la App**
+- [x] **10.16 Multijugador en Tiempo Real: Esquiar con Amigos de la App**
   - **Concepto:** Invitar a amigos reales de tu lista en la app móvil a una misma sesión 3D en cualquier estación para bajar pistas juntos en vivo, verse en el mapa táctico y competir o explorar en grupo.
   - **Arquitectura Técnica Paso a Paso:**
     - **1. Backend Go (`apps/api`) · Hub WebSocket y Salas:**

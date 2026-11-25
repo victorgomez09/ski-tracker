@@ -1,0 +1,54 @@
+pipeline {
+    agent any
+
+    environment {
+        EXPLORER_DIR = 'apps/resort-explorer'
+        DEPLOY_DIR = 'deploy'
+    }
+
+    stages {
+        stage('Install & Build Check') {
+            steps {
+                dir("${EXPLORER_DIR}") {
+                    echo 'Installing dependencies and running TypeScript + Vite build...'
+                    sh 'corepack enable && (pnpm install --frozen-lockfile || pnpm install) && pnpm build'
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                dir("${DEPLOY_DIR}") {
+                    echo 'Building 3D Resort Explorer Docker image via Docker Compose (no cache)...'
+                    sh 'docker compose build --no-cache explorer'
+                }
+            }
+        }
+
+        stage('Docker Deploy') {
+            steps {
+                dir("${DEPLOY_DIR}") {
+                    echo 'Stopping and removing old Explorer container...'
+                    sh 'docker compose stop explorer || true'
+                    sh 'docker compose rm -f explorer || true'
+                    echo 'Deploying 3D Resort Explorer service...'
+                    sh 'docker compose up -d --force-recreate explorer'
+                    echo 'Cleaning up dangling images...'
+                    sh 'docker image prune -f'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo '3D Resort Explorer deployment completed successfully!'
+        }
+        failure {
+            echo '3D Resort Explorer deployment failed. Please check the logs.'
+        }
+    }
+}

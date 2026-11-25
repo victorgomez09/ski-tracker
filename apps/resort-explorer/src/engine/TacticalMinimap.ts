@@ -60,6 +60,8 @@ export class TacticalMinimap {
   private sessionTrailXZ: Array<[number, number]> = [];
   private sessionTrailLatLngs: Array<[number, number]> = [];
   private showSessionTrail = true;
+  private remotePeers: Array<{ userId: string; name: string; x: number; z: number }> = [];
+  private remotePeerMarkers: Map<string, L.Marker> = new Map();
 
   private projection: GeoProjection | null = null;
   private terrain: ProceduralTerrain | null = null;
@@ -342,6 +344,7 @@ export class TacticalMinimap {
     this.skierMarker = null;
     this.targetPin = null;
     this.sessionTrailPolyline = null;
+    this.remotePeerMarkers.clear();
 
     // 1. Pistas clicables con nombre alineado en dirección de la pista y viaje al punto exacto
     this.pistes.forEach((p) => {
@@ -587,6 +590,10 @@ export class TacticalMinimap {
     }
   }
 
+  public setRemotePeers(peers: Array<{ userId: string; name: string; x: number; z: number }>) {
+    this.remotePeers = peers;
+  }
+
   public update(skierX: number, skierZ: number, heading: number) {
     this.skierX = skierX;
     this.skierZ = skierZ;
@@ -645,6 +652,32 @@ export class TacticalMinimap {
       this.skierMarker.setLatLng([lat, lon]);
       this.skierMarker.setIcon(icon);
     }
+
+    const activeIds = new Set(this.remotePeers.map((p) => p.userId));
+    this.remotePeerMarkers.forEach((m, id) => {
+      if (!activeIds.has(id)) {
+        this.expandedLayers?.removeLayer(m);
+        this.remotePeerMarkers.delete(id);
+      }
+    });
+    this.remotePeers.forEach((p) => {
+      const [pLon, pLat] = this.projection!.unproject(p.x, p.z);
+      const existing = this.remotePeerMarkers.get(p.userId);
+      if (existing) {
+        existing.setLatLng([pLat, pLon]);
+      } else {
+        const peerIcon = L.divIcon({
+          className: 'remote-peer-map-icon',
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
+          html: `<div style="width:14px;height:14px;border-radius:50%;background:#10b981;border:2px solid #ffffff;box-shadow:0 0 8px rgba(16,185,129,0.9);"></div>`,
+        });
+        const marker = L.marker([pLat, pLon], { icon: peerIcon, zIndexOffset: 900 })
+          .bindTooltip(p.name, { permanent: true, direction: 'top', offset: [0, -8] })
+          .addTo(this.expandedLayers!);
+        this.remotePeerMarkers.set(p.userId, marker);
+      }
+    });
   }
 
   private drawMini() {
@@ -714,6 +747,19 @@ export class TacticalMinimap {
         ctx.beginPath();
         ctx.arc(px, py, 2.5, 0, Math.PI * 2);
         ctx.fill();
+      }
+    });
+
+    this.remotePeers.forEach((peer) => {
+      const [px, py] = toPx(peer.x, peer.z);
+      if (px >= -6 && px <= w + 6 && py >= -6 && py <= h + 6) {
+        ctx.fillStyle = '#10b981';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       }
     });
 

@@ -236,6 +236,20 @@ export class SkierController {
     return this.riderMode;
   }
 
+  public getSnowboardStance(): SnowboardStance {
+    return this.snowboardStance;
+  }
+
+  public getPoseSnapshot() {
+    return {
+      roll: this.currentRoll,
+      crouch: this.currentCrouch,
+      skidAngle: this.currentSkid,
+      isGrounded: this.isGrounded,
+      ridingLiftName: this.ridingLift ? this.ridingLift.lift.name : '',
+    };
+  }
+
   private spawnAt(x: number, y: number, z: number, heading: number, initialSpeed: number) {
     this.position.set(x, y, z);
     this.heading = heading;

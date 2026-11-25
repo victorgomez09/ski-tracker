@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -9,7 +9,10 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { X, ExternalLink, Mountain } from 'lucide-react-native';
+import { useAuth } from '../../context/auth.context';
+import { API_BASE_URL, EXPLORER_URL } from '../../constants/constants';
 
 interface ResortExplorerModalProps {
   visible: boolean;
@@ -29,10 +32,12 @@ export const ResortExplorerModal: React.FC<ResortExplorerModalProps> = ({
   summitAltitude,
   baseAltitude,
   pistesKm,
-  explorerUrl = 'http://localhost:5174',
+  explorerUrl = EXPLORER_URL,
   resortData,
 }) => {
   const [loading, setLoading] = useState(true);
+  const webViewRef = useRef<WebView | null>(null);
+  const { token, user } = useAuth();
 
   // Construir URL con parámetros
   const params = new URLSearchParams({
@@ -42,47 +47,78 @@ export const ResortExplorerModal: React.FC<ResortExplorerModalProps> = ({
     base: String(baseAltitude || 1860),
     pistes: String(pistesKm || 22.3),
   });
+  if (token) {
+    params.set('token', token);
+    params.set('apiBaseUrl', API_BASE_URL.replace(/\/api\/v1\/?$/, ''));
+    params.set('playerName', user?.display_name || user?.email?.split('@')[0] || 'Esquiador');
+  }
   const fullUrl = `${explorerUrl}?${params.toString()}`;
 
   const isWeb = Platform.OS === 'web';
 
+  const buildBridgeMessages = (): string[] => {
+    const msgs: string[] = [];
+    if (resortData) {
+      const payload = {
+        id: resortData.id || resortData.ID || 'valdesqui',
+        name: resortData.name || resortData.Name || resortName,
+        country: resortData.country || resortData.Country,
+        latitude: resortData.latitude || resortData.Latitude,
+        longitude: resortData.longitude || resortData.Longitude,
+        base_altitude: baseAltitude || 1860,
+        summit_altitude: summitAltitude || 2280,
+        pistes: (resortData.pistes || []).map((p: any) => ({
+          id: p.id || p.ID,
+          name: p.name || p.Name,
+          difficulty: p.difficulty || p.Difficulty,
+          piste_type: p.piste_type || p.PisteType,
+          geometry_geojson: p.geometry_geojson || p.GeometryGeoJSON,
+        })),
+        lifts: (resortData.lifts || []).map((l: any) => ({
+          id: l.id || l.ID,
+          name: l.name || l.Name,
+          lift_type: l.lift_type || l.LiftType,
+          geometry_geojson: l.geometry_geojson || l.GeometryGeoJSON,
+        })),
+      };
+      msgs.push(JSON.stringify({ type: 'SET_RESORT_DATA', payload }));
+    }
+    if (token) {
+      msgs.push(
+        JSON.stringify({
+          type: 'SET_MULTIPLAYER_AUTH',
+          payload: {
+            apiBaseUrl: API_BASE_URL.replace(/\/api\/v1\/?$/, ''),
+            token,
+            playerName: user?.display_name || user?.email?.split('@')[0] || 'Esquiador',
+          },
+        })
+      );
+    }
+    return msgs;
+  };
+
   const handleIframeLoad = (e: any) => {
     setLoading(false);
     try {
-      if (resortData && e?.target?.contentWindow) {
-        const payload = {
-          id: resortData.id || resortData.ID || 'valdesqui',
-          name: resortData.name || resortData.Name || resortName,
-          country: resortData.country || resortData.Country,
-          latitude: resortData.latitude || resortData.Latitude,
-          longitude: resortData.longitude || resortData.Longitude,
-          base_altitude: baseAltitude || 1860,
-          summit_altitude: summitAltitude || 2280,
-          pistes: (resortData.pistes || []).map((p: any) => ({
-            id: p.id || p.ID,
-            name: p.name || p.Name,
-            difficulty: p.difficulty || p.Difficulty,
-            piste_type: p.piste_type || p.PisteType,
-            geometry_geojson: p.geometry_geojson || p.GeometryGeoJSON,
-          })),
-          lifts: (resortData.lifts || []).map((l: any) => ({
-            id: l.id || l.ID,
-            name: l.name || l.Name,
-            lift_type: l.lift_type || l.LiftType,
-            geometry_geojson: l.geometry_geojson || l.GeometryGeoJSON,
-          })),
-        };
-
-        e.target.contentWindow.postMessage(
-          JSON.stringify({
-            type: 'SET_RESORT_DATA',
-            payload,
-          }),
-          '*'
-        );
+      if (e?.target?.contentWindow) {
+        buildBridgeMessages().forEach((msg) => {
+          e.target.contentWindow.postMessage(msg, '*');
+        });
       }
     } catch (err) {
       console.warn('Error syncing resort data with 3D explorer:', err);
+    }
+  };
+
+  const handleNativeWebViewLoad = () => {
+    setLoading(false);
+    try {
+      buildBridgeMessages().forEach((msg) => {
+        webViewRef.current?.postMessage(msg);
+      });
+    } catch (err) {
+      console.warn('Error syncing resort data with native WebView:', err);
     }
   };
 
@@ -139,19 +175,19 @@ export const ResortExplorerModal: React.FC<ResortExplorerModalProps> = ({
               onLoad={handleIframeLoad}
             />
           ) : (
-            <View style={styles.nativeFallback}>
-              <Mountain size={48} color="#38bdf8" style={{ marginBottom: 16 }} />
-              <Text style={styles.fallbackTitle}>Simulador 3D de {resortName}</Text>
-              <Text style={styles.fallbackText}>
-                Explora las pistas y remontes en 3D interactivo en el navegador con aceleración por hardware.
-              </Text>
-              <TouchableOpacity style={styles.openBtn} onPress={handleOpenBrowser}>
-                <Text style={styles.openBtnText}>Abrir Simulador 3D</Text>
-              </TouchableOpacity>
-            </View>
+            <WebView
+              ref={webViewRef}
+              source={{ uri: fullUrl }}
+              style={styles.iframe as any}
+              javaScriptEnabled
+              domStorageEnabled
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              onLoadEnd={handleNativeWebViewLoad}
+            />
           )}
 
-          {isWeb && loading && (
+          {loading && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color="#38bdf8" />
               <Text style={styles.loadingText}>Cargando relieve 3D...</Text>

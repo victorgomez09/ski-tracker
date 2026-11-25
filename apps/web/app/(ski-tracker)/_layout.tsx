@@ -60,6 +60,13 @@ export default function RootLayout() {
           }}
         />
         <Tabs.Screen
+          name="explorer"
+          options={{
+            title: '3D',
+            tabBarIcon: ({ color }) => <Ionicons name="cube-outline" size={16} color={color} />
+          }}
+        />
+        <Tabs.Screen
           name="community"
           options={{
             title: t('community'),

@@ -110,6 +110,10 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		apiV1.GET("/resorts/by-id/:id/snow-report", weatherHandler.GetSnowReport)
 		apiV1.GET("/resorts/:id/snow-report", weatherHandler.GetSnowReport)
 
+		// Real-time 3D Explorer Multiplayer WebSocket (JWT via query ?token=)
+		explorerMPHandler := v1.NewExplorerMultiplayerHandler(deps.Store)
+		apiV1.GET("/ws/explorer/:roomId", middleware.WSAuth(deps.JWTManager), explorerMPHandler.ServeWS)
+
 		protected := apiV1.Group("")
 		protected.Use(middleware.Auth(deps.JWTManager))
 		{
@@ -193,6 +197,12 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.GET("/meeting-points", meetingPointHandler.List)
 			protected.GET("/meeting-points/:id", meetingPointHandler.GetByID)
 			protected.DELETE("/meeting-points/:id", meetingPointHandler.Delete)
+
+			// 3D Explorer Multiplayer rooms & friend invites (10.16)
+			protected.POST("/explorer/rooms", explorerMPHandler.CreateRoom)
+			protected.POST("/explorer/rooms/:id/invite", explorerMPHandler.InviteFriend)
+			protected.GET("/explorer/invites", explorerMPHandler.ListInvites)
+			protected.DELETE("/explorer/invites/:id", explorerMPHandler.DismissInvite)
 		}
 	}
 

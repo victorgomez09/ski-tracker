@@ -37,6 +37,40 @@ window.addEventListener('DOMContentLoaded', () => {
     manager.applyResortData(data);
   });
 
+  // Sesión multijugador / autenticación compartida desde la app móvil
+  let mpAuth: { apiBaseUrl: string; token: string; playerName?: string } | null = null;
+  const urlToken = urlParams.get('token');
+  const urlRoomId = urlParams.get('roomId');
+  const urlApiBase = urlParams.get('apiBaseUrl') || 'http://localhost:8082';
+  if (urlToken) {
+    mpAuth = {
+      apiBaseUrl: urlApiBase,
+      token: urlToken,
+      playerName: urlParams.get('playerName') || undefined,
+    };
+    if (urlRoomId) {
+      const resortId = urlParams.get('resortId') || 'valdesqui';
+      manager.connectMultiplayer({ ...mpAuth, roomId: urlRoomId, resortId });
+    }
+  }
+
+  Bridge.on('SET_MULTIPLAYER_AUTH', (payload: any) => {
+    if (payload?.token) {
+      mpAuth = {
+        apiBaseUrl: (payload.apiBaseUrl || 'http://localhost:8082').replace(/\/$/, ''),
+        token: payload.token,
+        playerName: payload.playerName,
+      };
+      if (payload.roomId) {
+        manager.connectMultiplayer({
+          ...mpAuth,
+          roomId: payload.roomId,
+          resortId: manager.getActiveResortInfo().id,
+        });
+      }
+    }
+  });
+
   // Controles táctiles / ratón en modo esquí
   const bindHoldButton = (id: string, inputKey: 'left' | 'right' | 'tuck' | 'brake') => {
     const el = document.getElementById(id);
@@ -254,5 +288,210 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('gfx-stance-select')?.addEventListener('change', (e) => {
     const val = (e.target as HTMLSelectElement).value as 'regular' | 'goofy';
     manager.updateGraphicsOption({ snowboardStance: val });
+  });
+
+  // Panel Multijugador: Esquiar con Amigos (Fase 10.16)
+  const mpOverlay = document.getElementById('friends-mp-overlay');
+  const mpSubtitle = document.getElementById('mp-modal-subtitle');
+  const mpCreateBtn = document.getElementById('mp-create-room-btn');
+  const mpLeaveBtn = document.getElementById('mp-leave-room-btn');
+  const mpAuthWarn = document.getElementById('mp-auth-warning');
+  const mpPeersList = document.getElementById('mp-peers-list');
+  const mpInvitesList = document.getElementById('mp-invites-list');
+  const mpFriendsList = document.getElementById('mp-friends-list');
+
+  const apiFetch = async (path: string, init?: RequestInit) => {
+    if (!mpAuth) throw new Error('Sin autenticación');
+    const res = await fetch(`${mpAuth.apiBaseUrl}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${mpAuth.token}`,
+        ...(init?.headers || {}),
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  };
+
+  const renderMultiplayerModal = async () => {
+    const roomId = manager.getMultiplayerRoomId();
+    if (mpSubtitle) {
+      mpSubtitle.textContent = roomId ? `Sala activa: #${roomId}` : 'Sin sala activa';
+    }
+    if (mpCreateBtn) mpCreateBtn.style.display = roomId ? 'none' : 'inline-block';
+    if (mpLeaveBtn) mpLeaveBtn.style.display = roomId ? 'inline-block' : 'none';
+    if (mpAuthWarn) mpAuthWarn.style.display = mpAuth ? 'none' : 'block';
+
+    // 1. Compañeros conectados actualmente en la sala
+    const peers = manager.getMultiplayerPeers();
+    if (mpPeersList) {
+      if (peers.length === 0) {
+        mpPeersList.innerHTML = '<span style="color:#64748b;">Nadie conectado todavía</span>';
+      } else {
+        mpPeersList.innerHTML = peers
+          .map(
+            (p) => `
+          <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(24,38,62,0.8);padding:6px 10px;border-radius:5px;border:1px solid rgba(16,185,129,0.3);">
+            <span>${p.riderMode === 'snowboard' ? '🏂' : '⛷️'} <b>${p.name}</b> · ${p.speedKmh} km/h</span>
+            <button class="btn-respawn" data-tp-peer="${p.userId}">📍 Ir con amigo</button>
+          </div>`
+          )
+          .join('');
+        mpPeersList.querySelectorAll('[data-tp-peer]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const uid = btn.getAttribute('data-tp-peer');
+            if (uid && manager.teleportToPeer(uid) && mpOverlay) {
+              mpOverlay.style.display = 'none';
+            }
+          });
+        });
+      }
+    }
+
+    if (!mpAuth) {
+      if (mpInvitesList) mpInvitesList.innerHTML = '<span style="color:#64748b;">Inicia sesión en la app para ver invitaciones</span>';
+      if (mpFriendsList) mpFriendsList.innerHTML = '<span style="color:#64748b;">Inicia sesión en la app para ver tus amigos</span>';
+      return;
+    }
+
+    // 2. Invitaciones recibidas
+    try {
+      const invData = await apiFetch('/api/v1/explorer/invites');
+      const invites = Array.isArray(invData) ? invData : invData?.data || [];
+      if (mpInvitesList) {
+        if (invites.length === 0) {
+          mpInvitesList.innerHTML = '<span style="color:#64748b;">Sin invitaciones pendientes</span>';
+        } else {
+          mpInvitesList.innerHTML = invites
+            .map(
+              (inv: any) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(14,165,233,0.16);padding:6px 10px;border-radius:5px;border:1px solid rgba(56,189,248,0.4);">
+              <span><b>${inv.from_user_name}</b> te invita a ${inv.resort_name || inv.resort_id}</span>
+              <button class="btn-respawn" data-join-inv="${inv.room_id}" data-inv-resort="${inv.resort_id}">Unirse</button>
+            </div>`
+            )
+            .join('');
+          mpInvitesList.querySelectorAll('[data-join-inv]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const rId = btn.getAttribute('data-join-inv')!;
+              const resId = btn.getAttribute('data-inv-resort') || manager.getActiveResortInfo().id;
+              manager.connectMultiplayer({ ...mpAuth!, roomId: rId, resortId: resId });
+              renderMultiplayerModal();
+            });
+          });
+        }
+      }
+    } catch {
+      if (mpInvitesList) mpInvitesList.innerHTML = '<span style="color:#64748b;">Sin invitaciones pendientes</span>';
+    }
+
+    // 3. Lista de amigos de Ski Tracker
+    try {
+      const frData = await apiFetch('/api/v1/friends');
+      const friendships = Array.isArray(frData) ? frData : frData?.data || [];
+      if (mpFriendsList) {
+        if (friendships.length === 0) {
+          mpFriendsList.innerHTML = '<span style="color:#64748b;">Aún no tienes amigos añadidos en la app</span>';
+        } else {
+          mpFriendsList.innerHTML = friendships
+            .map((f: any) => {
+              const friend = f.friend || f.requester || f.addressee || f;
+              const fId = friend.id || f.friend_id || f.addressee_id || '';
+              const fName = friend.display_name || friend.email || 'Amigo';
+              return `
+                <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(24,38,62,0.7);padding:6px 10px;border-radius:5px;border:1px solid rgba(255,255,255,0.1);">
+                  <span>👤 <b>${fName}</b></span>
+                  <button class="btn-respawn" data-invite-uid="${fId}">Invitar</button>
+                </div>`;
+            })
+            .join('');
+          mpFriendsList.querySelectorAll('[data-invite-uid]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              const toUid = btn.getAttribute('data-invite-uid');
+              if (!toUid) return;
+              let rId = manager.getMultiplayerRoomId();
+              const resort = manager.getActiveResortInfo();
+              if (!rId) {
+                const created = await apiFetch('/api/v1/explorer/rooms', {
+                  method: 'POST',
+                  body: JSON.stringify({ resort_id: resort.id, resort_name: resort.name }),
+                });
+                rId = created.room_id || created.data?.room_id;
+                if (rId) manager.connectMultiplayer({ ...mpAuth!, roomId: rId, resortId: resort.id });
+              }
+              if (rId) {
+                await apiFetch(`/api/v1/explorer/rooms/${encodeURIComponent(rId)}/invite`, {
+                  method: 'POST',
+                  body: JSON.stringify({ to_user_id: toUid, resort_id: resort.id, resort_name: resort.name }),
+                });
+                (btn as HTMLButtonElement).textContent = '✓ Invitado';
+                renderMultiplayerModal();
+              }
+            });
+          });
+        }
+      }
+    } catch {
+      if (mpFriendsList) mpFriendsList.innerHTML = '<span style="color:#64748b;">No se pudo cargar la lista de amigos</span>';
+    }
+  };
+
+  document.getElementById('btn-friends-mp')?.addEventListener('click', () => {
+    if (mpOverlay) mpOverlay.style.display = 'flex';
+    renderMultiplayerModal();
+  });
+
+  document.getElementById('mp-close-btn')?.addEventListener('click', () => {
+    if (mpOverlay) mpOverlay.style.display = 'none';
+  });
+
+  mpCreateBtn?.addEventListener('click', async () => {
+    if (!mpAuth) {
+      if (mpSubtitle) mpSubtitle.textContent = '⚠️ Inicia sesión desde la app Ski Tracker';
+      if (mpAuthWarn) mpAuthWarn.style.display = 'block';
+      return;
+    }
+    try {
+      if (mpSubtitle) mpSubtitle.textContent = '⏳ Creando sala...';
+      const resort = manager.getActiveResortInfo();
+      const created = await apiFetch('/api/v1/explorer/rooms', {
+        method: 'POST',
+        body: JSON.stringify({ resort_id: resort.id, resort_name: resort.name }),
+      });
+      const rId = created.room_id || created.data?.room_id;
+      if (rId) {
+        manager.connectMultiplayer({ ...mpAuth, roomId: rId, resortId: resort.id });
+        renderMultiplayerModal();
+      } else if (mpSubtitle) {
+        mpSubtitle.textContent = '⚠️ Respuesta inesperada del servidor';
+      }
+    } catch (err) {
+      if (mpSubtitle) {
+        mpSubtitle.textContent = `⚠️ Error creando sala (${err instanceof Error ? err.message : 'red'})`;
+      }
+    }
+  });
+
+  mpLeaveBtn?.addEventListener('click', () => {
+    manager.disconnectMultiplayer();
+    renderMultiplayerModal();
+  });
+
+  document.getElementById('mp-join-code-btn')?.addEventListener('click', () => {
+    if (!mpAuth) {
+      if (mpSubtitle) mpSubtitle.textContent = '⚠️ Inicia sesión desde la app Ski Tracker';
+      if (mpAuthWarn) mpAuthWarn.style.display = 'block';
+      return;
+    }
+    const input = document.getElementById('mp-room-code-input') as HTMLInputElement | null;
+    const code = input?.value.trim();
+    if (!code) return;
+    manager.connectMultiplayer({
+      ...mpAuth,
+      roomId: code,
+      resortId: manager.getActiveResortInfo().id,
+    });
+    renderMultiplayerModal();
   });
 });

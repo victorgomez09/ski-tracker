@@ -62,6 +62,15 @@ services:
     volumes:
       - ota_tracker:/app/updates
 
+  explorer:
+    build:
+      context: ../apps/resort-explorer
+      dockerfile: Dockerfile
+    container_name: ski_tracker-explorer
+    restart: unless-stopped
+    ports:
+      - "${EXPLORER_PORT:-5174}:80"
+
 volumes:
   minio_tracker:
   pgdata_tracker:

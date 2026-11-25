@@ -19,7 +19,7 @@ help: ## Show this help
 # Development
 # ============================================================================
 dev: docker-up ## Start full dev environment
-	@$(MAKE) -j2 dev-api dev-web
+	@$(MAKE) -j3 dev-api dev-web dev-explorer-app
 
 dev-api: docker-up ## Start Go API with hot reload
 	cd $(API_DIR) && air

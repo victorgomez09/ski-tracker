@@ -14,6 +14,7 @@ import { WeatherAtmosphere, WeatherMode } from './WeatherAtmosphere.js';
 import { MountainTraffic } from './MountainTraffic.js';
 import { SkiTracksTrail } from './SkiTracksTrail.js';
 import { GraphicsConfig, GraphicsSettings, QualityPreset } from './GraphicsSettings.js';
+import { MultiplayerManager, MultiplayerSessionConfig, PeerSummary } from './MultiplayerManager.js';
 
 export class SceneManager {
   private canvas: HTMLCanvasElement;
@@ -28,6 +29,9 @@ export class SceneManager {
   private projection!: GeoProjection;
   private skier!: SkierController;
   private minimap!: TacticalMinimap;
+  private multiplayer!: MultiplayerManager;
+  private activeResortId = 'valdesqui';
+  private activeResortName = 'Valdesquí';
   private weather!: WeatherAtmosphere;
   private traffic!: MountainTraffic;
   private tracks!: SkiTracksTrail;
@@ -200,6 +204,25 @@ export class SceneManager {
     this.tracks = new SkiTracksTrail();
     this.scene.add(this.tracks.group);
 
+    this.multiplayer = new MultiplayerManager((status, peerCount) => {
+      const badge = document.getElementById('mp-status-badge');
+      if (badge) {
+        if (status === 'connected') {
+          badge.textContent = peerCount > 0 ? `👥 ${peerCount + 1} en sala` : '🟢 Sala activa';
+          badge.style.color = '#34d399';
+        } else if (status === 'connecting') {
+          badge.textContent = '⏳ Conectando...';
+          badge.style.color = '#fbbf24';
+        } else {
+          badge.textContent = '👥 Amigos';
+          badge.style.color = '#bae6fd';
+        }
+      }
+    });
+    this.scene.add(this.multiplayer.group);
+    this.activeResortId = resortData.id;
+    this.activeResortName = resortData.name;
+
     // Controlador del esquiador siempre activo para empezar a esquiar al llegar a la estación
     this.skier = new SkierController(this.terrain, this.pistes);
     this.skier.setAltitudeRange(resortData.base_altitude, resortData.summit_altitude);
@@ -235,6 +258,8 @@ export class SceneManager {
 
   public async applyResortData(data: ResortDataPayload) {
     ResortDataService.setActiveResort(data);
+    this.activeResortId = data.id;
+    this.activeResortName = data.name;
 
     // 1. Calcular el bounding box geográfico completo de TODA la estación (pistas + remontes)
     const bounds = this.computeFullGeoBounds(data);
@@ -620,6 +645,36 @@ export class SceneManager {
     return this.isPaused;
   }
 
+  public getActiveResortInfo(): { id: string; name: string } {
+    return { id: this.activeResortId, name: this.activeResortName };
+  }
+
+  public connectMultiplayer(cfg: MultiplayerSessionConfig) {
+    this.multiplayer?.connect(cfg);
+  }
+
+  public disconnectMultiplayer() {
+    this.multiplayer?.disconnect();
+  }
+
+  public getMultiplayerRoomId(): string | null {
+    return this.multiplayer?.getRoomId() ?? null;
+  }
+
+  public getMultiplayerPeers(): PeerSummary[] {
+    return this.multiplayer ? this.multiplayer.getPeersForUI() : [];
+  }
+
+  public teleportToPeer(userId: string): boolean {
+    if (!this.multiplayer || !this.skier) return false;
+    const pos = this.multiplayer.getPeerPosition(userId);
+    if (!pos) return false;
+    if (this.tracks) this.tracks.breakStroke();
+    this.skier.teleportTo(pos.x, pos.z, pos.heading);
+    if (this.mode === 'orbit') this.setMode('skier');
+    return true;
+  }
+
   public setMode(mode: 'skier' | 'orbit') {
     this.mode = mode;
     const isOrbit = mode === 'orbit';
@@ -753,6 +808,25 @@ export class SceneManager {
       }
       if (this.minimap) {
         this.minimap.update(this.skier.position.x, this.skier.position.z, this.skier.heading);
+      }
+      if (this.multiplayer) {
+        const pose = this.skier.getPoseSnapshot();
+        this.multiplayer.sendLocalState({
+          x: this.skier.position.x,
+          y: this.skier.position.y,
+          z: this.skier.position.z,
+          heading: this.skier.heading,
+          speedKmh: telemetry.speedKmh,
+          riderMode: telemetry.riderMode,
+          stance: this.skier.getSnowboardStance(),
+          roll: pose.roll,
+          crouch: pose.crouch,
+          skidAngle: pose.skidAngle,
+          isGrounded: pose.isGrounded,
+          ridingLiftName: pose.ridingLiftName,
+        });
+        this.multiplayer.update(delta);
+        this.minimap?.setRemotePeers(this.multiplayer.getPeersForUI());
       }
       const speedEl = document.getElementById('skier-speed');
       const altEl = document.getElementById('skier-alt');
