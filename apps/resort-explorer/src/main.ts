@@ -68,6 +68,14 @@ window.addEventListener('DOMContentLoaded', () => {
     manager.respawnSkier('summit');
   });
 
+  document.getElementById('btn-board-lift')?.addEventListener('click', () => {
+    manager.boardNearbyLift();
+  });
+
+  document.getElementById('btn-skip-lift')?.addEventListener('click', () => {
+    manager.skipLiftRide();
+  });
+
   // Botón temporal para alternar entre esquiar y vista aérea de inspección del terreno
   let isAerial = false;
   const aerialBtn = document.getElementById('btn-toggle-aerial');
@@ -76,5 +84,15 @@ window.addEventListener('DOMContentLoaded', () => {
     aerialBtn.classList.toggle('active', isAerial);
     aerialBtn.textContent = isAerial ? '🎿 Volver a Esquiar' : '👁️ Vista Aérea';
     manager.setMode(isAerial ? 'orbit' : 'skier');
+  });
+
+  // Selector rápido de clima (Tiempo Real, Seco, Nieve, Aleatorio Dinámico)
+  document.querySelectorAll('[data-weather]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-weather]').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const mode = btn.getAttribute('data-weather') as 'live' | 'dry' | 'snow' | 'random';
+      if (mode) manager.setWeatherMode(mode);
+    });
   });
 });

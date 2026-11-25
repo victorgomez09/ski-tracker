@@ -3,6 +3,7 @@ import { ProceduralTerrain } from './ProceduralTerrain.js';
 import { SkierAvatar } from './SkierAvatar.js';
 import { SnowParticles } from './SnowParticles.js';
 import { SkiAudio } from './SkiAudio.js';
+import { RideableLift } from './ProceduralLifts.js';
 
 export interface SkierInputState {
   left: boolean;
@@ -14,6 +15,8 @@ export interface SkierInputState {
 export interface SkierTelemetry {
   speedKmh: number;
   altitudeMeters: number;
+  nearbyLiftName: string | null;
+  ridingLiftName: string | null;
 }
 
 /**
@@ -40,14 +43,22 @@ export class SkierController {
   private currentCrouch = 0;
   private currentSkid = 0;
   private cameraRoll = 0;
-  private isGrounded = true;
+  public isGrounded = true;
 
   private baseAltitudeMeters = 1860;
   private summitAltitudeMeters = 2280;
+  private snowFrictionMultiplier = 1.0;
+  private powderSprayMultiplier = 1.0;
+  // Las pistas se sitúan a +1.10m del terreno base; +1.12m deja las suelas justo encima de la nieve pisada
+  private readonly pisteSurfaceOffset = 1.12;
   private baseSpawnPoint = new THREE.Vector3(240, 14, -400);
   private baseHeading = 0; // Mirando hacia +Z (hacia las pistas/cumbre desde Prado Llano)
   private summitSpawnPoint = new THREE.Vector3(160, 120, 240);
   private summitHeading = Math.PI;
+
+  private rideableLifts: RideableLift[] = [];
+  private nearbyLift: RideableLift | null = null;
+  private ridingLift: { lift: RideableLift; progress: number; durationSec: number } | null = null;
 
   constructor(terrain: ProceduralTerrain) {
     this.terrain = terrain;
@@ -62,6 +73,51 @@ export class SkierController {
   public setAltitudeRange(baseAlt: number, summitAlt: number) {
     this.baseAltitudeMeters = baseAlt;
     this.summitAltitudeMeters = summitAlt;
+  }
+
+  /**
+   * Ajusta la física de deslizamiento y estela de nieve según el parte real de la estación.
+   */
+  public setSnowCondition(condition: string) {
+    if (condition === 'powder') {
+      this.snowFrictionMultiplier = 1.15;
+      this.powderSprayMultiplier = 1.65;
+    } else if (condition === 'hard_packed') {
+      this.snowFrictionMultiplier = 0.78;
+      this.powderSprayMultiplier = 0.75;
+    } else if (condition === 'spring' || condition === 'wet') {
+      this.snowFrictionMultiplier = 1.35;
+      this.powderSprayMultiplier = 0.85;
+    } else {
+      this.snowFrictionMultiplier = 1.0;
+      this.powderSprayMultiplier = 1.0;
+    }
+  }
+
+  public setRideableLifts(lifts: RideableLift[]) {
+    this.rideableLifts = lifts;
+    this.nearbyLift = null;
+    this.ridingLift = null;
+  }
+
+  public boardNearbyLift(): boolean {
+    if (this.ridingLift || !this.nearbyLift) return false;
+    const dist = this.nearbyLift.startPos.distanceTo(this.nearbyLift.endPos);
+    const durationSec = Math.max(7, Math.min(24, dist / 35));
+    this.ridingLift = { lift: this.nearbyLift, progress: 0, durationSec };
+    this.velocity.set(0, 0, 0);
+    return true;
+  }
+
+  public skipLiftRide() {
+    if (!this.ridingLift) return;
+    const { lift } = this.ridingLift;
+    this.ridingLift = null;
+
+    // Aparecer justo en el desembarque superior mirando cuesta abajo hacia la base
+    const exitHeading = Math.atan2(lift.startPos.x - lift.endPos.x, lift.startPos.z - lift.endPos.z);
+    const exitY = this.terrain.getElevationAt(lift.endPos.x, lift.endPos.z) + this.pisteSurfaceOffset;
+    this.spawnAt(lift.endPos.x, exitY, lift.endPos.z, exitHeading, 3.0);
   }
 
   public setSpawnPoints(
@@ -83,13 +139,19 @@ export class SkierController {
   }
 
   public respawnAtBase() {
-    const spawnY = this.terrain.getElevationAt(this.baseSpawnPoint.x, this.baseSpawnPoint.z);
+    const spawnY = this.terrain.getElevationAt(this.baseSpawnPoint.x, this.baseSpawnPoint.z) + this.pisteSurfaceOffset;
     this.spawnAt(this.baseSpawnPoint.x, spawnY, this.baseSpawnPoint.z, this.baseHeading, 0);
   }
 
   public respawnAtSummit() {
-    const spawnY = this.terrain.getElevationAt(this.summitSpawnPoint.x, this.summitSpawnPoint.z);
+    const spawnY = this.terrain.getElevationAt(this.summitSpawnPoint.x, this.summitSpawnPoint.z) + this.pisteSurfaceOffset;
     this.spawnAt(this.summitSpawnPoint.x, spawnY, this.summitSpawnPoint.z, this.summitHeading, 5.0);
+  }
+
+  public teleportTo(x: number, z: number, heading = this.heading) {
+    this.ridingLift = null;
+    const y = this.terrain.getElevationAt(x, z) + this.pisteSurfaceOffset;
+    this.spawnAt(x, y, z, heading, 0);
   }
 
   private spawnAt(x: number, y: number, z: number, heading: number, initialSpeed: number) {
@@ -116,8 +178,15 @@ export class SkierController {
       if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.input.left = true;
       if (e.code === 'ArrowRight' || e.code === 'KeyD') this.input.right = true;
       if (e.code === 'ArrowUp' || e.code === 'KeyW') this.input.tuck = true;
-      if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') this.input.brake = true;
-      if (e.code === 'KeyR') this.respawnAtSummit();
+      if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') {
+        if (this.ridingLift && e.code === 'Space') {
+          this.skipLiftRide();
+          return;
+        }
+        this.input.brake = true;
+      }
+      if (e.code === 'KeyE') this.boardNearbyLift();
+      if (e.code === 'KeyR') this.respawnAtBase();
     });
 
     window.addEventListener('keyup', (e) => {
@@ -130,6 +199,60 @@ export class SkierController {
 
   public update(dt: number, camera: THREE.PerspectiveCamera): SkierTelemetry {
     const clampedDt = Math.min(dt, 0.05);
+
+    // MODO REMONTANDO: el esquiador viaja en el telesilla/remonte hacia la cumbre
+    if (this.ridingLift) {
+      this.ridingLift.progress += clampedDt / this.ridingLift.durationSec;
+      if (this.ridingLift.progress >= 1) {
+        this.skipLiftRide();
+      } else {
+        const pt = this.ridingLift.lift.uphillCurve.getPointAt(this.ridingLift.progress);
+        const tangent = this.ridingLift.lift.uphillCurve.getTangentAt(this.ridingLift.progress);
+        this.position.copy(pt);
+        this.heading = Math.atan2(tangent.x, tangent.z);
+
+        this.avatar.group.position.copy(pt);
+        this.avatar.group.rotation.set(0, this.heading, 0);
+        this.avatar.updatePose(0, 0.25, 0);
+
+        this.particles.update(clampedDt);
+        this.audio.update(4, 0, false);
+
+        const forward = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+        const desiredCam = pt.clone().addScaledVector(forward, -12).add(new THREE.Vector3(0, 4.5, 0));
+        const desiredLook = pt.clone().addScaledVector(forward, 10);
+        this.cameraPos.lerp(desiredCam, 1 - Math.exp(-6 * clampedDt));
+        this.cameraLookAt.lerp(desiredLook, 1 - Math.exp(-8 * clampedDt));
+        camera.position.copy(this.cameraPos);
+        camera.lookAt(this.cameraLookAt);
+
+        const verticalRange = Math.max(1, this.terrain.verticalDropMeters || 420);
+        const normElev = Math.max(0, Math.min(1, (this.position.y - 14) / verticalRange));
+        const altitudeMeters = Math.round(
+          this.baseAltitudeMeters + normElev * (this.summitAltitudeMeters - this.baseAltitudeMeters)
+        );
+        return {
+          speedKmh: 18,
+          altitudeMeters,
+          nearbyLiftName: null,
+          ridingLiftName: this.ridingLift.lift.name,
+        };
+      }
+    }
+
+    // Detectar si está cerca de la base de algún remonte (radio 28m)
+    this.nearbyLift = null;
+    let bestDistSq = 28 * 28;
+    for (let i = 0; i < this.rideableLifts.length; i++) {
+      const l = this.rideableLifts[i];
+      const dx = this.position.x - l.startPos.x;
+      const dz = this.position.z - l.startPos.z;
+      const dSq = dx * dx + dz * dz;
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq;
+        this.nearbyLift = l;
+      }
+    }
 
     // 1. Calcular pendiente del terreno mediante diferencias finitas
     const eps = 1.2;
@@ -172,8 +295,8 @@ export class SkierController {
       const retainedRight = vRight * Math.exp(-edgeGrip * clampedDt);
       const redirectedForward = vForward + Math.abs(vRight - retainedRight) * (this.input.brake ? 0.05 : 0.45);
 
-      // Fricción de nieve y resistencia aerodinámica
-      const snowDrag = this.input.brake ? 2.4 : this.input.tuck ? 0.04 : 0.08;
+      // Fricción de nieve modulada por el parte meteorológico real + resistencia aerodinámica
+      const snowDrag = (this.input.brake ? 2.4 : this.input.tuck ? 0.04 : 0.08) * this.snowFrictionMultiplier;
       const aeroDrag = (this.input.tuck ? 0.008 : 0.015) * horizSpeed;
       const totalFriction = snowDrag + aeroDrag;
 
@@ -219,9 +342,9 @@ export class SkierController {
       this.velocity.z *= -0.3;
     }
 
-    const groundY = this.terrain.getElevationAt(this.position.x, this.position.z);
-    if (this.position.y <= groundY + 0.12) {
-      this.position.y = groundY;
+    const surfaceY = this.terrain.getElevationAt(this.position.x, this.position.z) + this.pisteSurfaceOffset;
+    if (this.position.y <= surfaceY + 0.12) {
+      this.position.y = surfaceY;
       this.velocity.y = (this.velocity.x * gradX + this.velocity.z * gradZ);
       this.isGrounded = true;
     } else {
@@ -248,12 +371,12 @@ export class SkierController {
     this.avatar.group.quaternion.slerp(targetQuat, 1 - Math.exp(-12 * clampedDt));
     this.avatar.updatePose(this.currentRoll, this.currentCrouch, this.currentSkid);
 
-    // 6. Partículas de nieve en polvo al carvear o frenar
+    // 6. Partículas de nieve en polvo al carvear o frenar (intensificadas en nieve polvo)
     const carveIntensity = Math.min(1, (Math.abs(steerInput) * 0.65 + (this.input.brake ? 1.0 : 0)) * (newHorizSpeed / 12));
     if (this.isGrounded && newHorizSpeed > 2.5 && carveIntensity > 0.15) {
       const sprayDir = right.clone().multiplyScalar(steerInput >= 0 ? 1 : -1);
-      const emitCount = Math.min(6, Math.ceil(carveIntensity * 5));
-      this.particles.emit(this.position, sprayDir, carveIntensity, emitCount);
+      const emitCount = Math.min(8, Math.ceil(carveIntensity * 5 * this.powderSprayMultiplier));
+      this.particles.emit(this.position, sprayDir, carveIntensity * this.powderSprayMultiplier, emitCount);
     }
     this.particles.update(clampedDt);
 
@@ -308,6 +431,8 @@ export class SkierController {
     return {
       speedKmh: Math.round(newHorizSpeed * 3.6),
       altitudeMeters,
+      nearbyLiftName: this.nearbyLift ? this.nearbyLift.name : null,
+      ridingLiftName: null,
     };
   }
 }

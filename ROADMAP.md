@@ -305,12 +305,12 @@ Plataforma interactiva 3D procedural (inspirada en *Endless Peaks* / *Grand Moun
   - **Carga Completa bajo Demanda:** Al seleccionar una estación, descarga automática de sus pistas, remontes, POIs y relieve (DEM) para construir el mundo 3D al vuelo.
   - **Spawn en Cota Base:** El esquiador aparece por defecto en la base de la estación (zona de acceso/taquillas), listo para explorar o tomar el primer remonte.
 
-- [ ] **10.6 Remontes Interactivos, Casetas y POIs 3D**
+- [x] **10.6 Remontes Interactivos, Casetas y POIs 3D**
   - **Embarque y Subida en Remonte:** Al acercarse a la base de cualquier telesilla o telesquí, posibilidad de embarcar (`E` / botón táctil) y subir montado hasta la cota superior.
   - **Salto de Trayecto (*Skip Ride*):** Opción durante el viaje en remonte para saltar la espera y aparecer directamente en el desembarque de la cumbre.
   - **Casetas de Remontes y POIs:** Modelado procedural limpio de las casetas terminales de los remontes y renderizado 3D de Puntos de Interés (cafeterías, alquiler, enfermería, miradores, parkings) con marcadores visibles.
 
-- [ ] **10.7 Minimapa Táctico Interactivo y Viaje Rápido**
+- [x] **10.7 Minimapa Táctico Interactivo y Viaje Rápido**
   - **Minimapa en HUD:** Plano vectorial en esquina con pistas (coloreadas por dificultad), remontes, POIs y flecha de posición/dirección del esquiador en tiempo real (estilo app de tracking).
   - **Mapa Ampliado:** Botón / tecla (`M`) para expandir el plano a pantalla completa con zoom y desplazamiento.
   - **Viaje Rápido (*Fast Travel*):** En el plano ampliado, posibilidad de pinchar sobre cualquier pista, cumbre o POI para teletransportarse directamente allí.
@@ -319,6 +319,28 @@ Plataforma interactiva 3D procedural (inspirada en *Endless Peaks* / *Grand Moun
   - **Modo Descenso Continuo y Slalom:** Cronómetro de bajada cumbre-base, récord de velocidad punta y puertas de slalom procedurales (palos dobles rojo/azul) sobre trazados reales.
   - **Clima y Hora Dinámica:** Selector rápido de ambiente (Sol alpino, Ventisca/Niebla densa para probar las balizas, Atardecer dorado).
   - **Replay *Ghost* de Sesiones Reales:** Reproducir en el escenario 3D una bajada GPS grabada con la app de tracking para competir contra tu propia trazada.
+
+- [x] **10.9 Señalización Numérica de Balizas y Carteles Direccionales en Cruces**
+  - **Número de Pista en Balizas:** Imprimir el número/código de cada pista (p. ej. `1`, `14`, `22`) en el centro del disco de color de sus balizas siguiendo la normativa real de estaciones.
+  - **Detección Automática de Intersecciones:** Analizar cruces y bifurcaciones geométricas entre dos o más pistas.
+  - **Carteles Direccionales 3D:** Postes con lamas de señalización en cada cruce mostrando flecha de dirección (`◀`/`▶`/`▲`), nombre de la pista y círculo de dificultad para orientar al esquiador sin abrir el mapa.
+
+- [ ] **10.10 Modo "Quema-Horas": Snowpark, Trucos y Coleccionables (Viaje en Coche/Autobús)**
+  - **Snowparks Procedurales:** Generación de cajones, barandillas (*rails*) y rampas (*kickers*) con sistema de saltos, giros (`360°`, `720°`, *grabs*), multiplicador de combos y puntuación por estilo.
+  - **Coleccionables de Exploración ("Pistas Completadas"):** Reto tipo *Grand Mountain* para descubrir y esquiar el 100% de las pistas y remontes de cada estación (checkmarks en el plano táctico y medallas Bronce/Plata/Oro por estación).
+  - **Desafíos Cronometrados y Récords Locales:** Puertas de salida/meta en cada pista para batir récords de velocidad punta y tiempo de bajada guardados en local/perfil.
+
+- [x] **10.11 Atmósfera Viva, Clima en Tiempo Real y Tráfico en Pistas**
+  - **Clima Real en Vivo (`/api/v1/weather` + Open-Meteo):** Consulta automática del parte meteorológico y de nieve real de la estación (temperatura, nevada actual, espesor, estado de la nieve y hora del día) adaptando la iluminación, niebla, copos 3D y la física de fricción/nieve polvo (`powder`, `hard_packed`, `spring`).
+  - **Ciclo Día/Atardecer/Noche y Clima Manual:** Botonera rápida (`🌐 Real`, `☀️ Sol`, `🌅 Tarde`, `❄️ Nevada`, `🌙 Noche`) con foco frontal nocturno en el casco.
+  - **Tráfico Vivo en la Montaña (IA):** Otros esquiadores bajando por las pistas haciendo slalom y máquinas pisanieves reales con rotativo ámbar y faros recorriendo el dominio.
+  - **Huellas Persistentes en la Nieve:** Surcos paralelos de los esquís dibujados sobre la nieve al deslizar y girar.
+
+- [ ] **10.12 Calidad Visual AAA: Iluminación Viva y Texturas Hiperrealistas (Fase Final de Pulido)**
+  - **Texturizado PBR Triplanar en Terreno:** Roca granítica con relieve real en cortados, transiciones suaves nieve-roca-pradera y micro-relieve de nieve polvo virgen con brillo cristalino.
+  - **Iluminación Global y Sombras Suaves (`PCFSoftShadowMap`):** Sombras dinámicas de pinos, pilonas, remontes y del propio esquiador sobre la nieve, junto con *Atmospheric Sky Dome* y *Color Grading* ACES vibrante.
+  - **Vegetación Detallada y Nieve en Ramas:** Pinos multicapa con copas nevadas y rocas dispersas en cota alta mediante `InstancedMesh`.
+  - **Post-Procesado Ligero (Bloom Alpino):** Resplandor sutil de sol sobre nieve y luces cálidas de refugios, pisanieves y foco nocturno.
 
 
 ---

@@ -211,29 +211,68 @@
         background: #0284c7;
         border-color: #38bdf8;
       }
-      /* Mapa Selector de Estaciones (10.5) */
+      /* Mapa Selector de Estaciones a Pantalla Completa (10.5) */
       #resort-map-overlay {
         display: none;
         position: fixed;
         inset: 0;
-        background: rgba(6, 10, 20, 0.86);
-        backdrop-filter: blur(10px);
+        background: #0b1320;
         z-index: 90;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
+        align-items: stretch;
+        justify-content: stretch;
+        padding: 0;
       }
-      .map-modal-card {
-        width: 100%;
-        max-width: 980px;
-        height: min(85vh, 660px);
+      .map-fullscreen-shell {
+        width: 100vw;
+        height: 100vh;
         background: #0f172a;
-        border: 1px solid rgba(56, 189, 248, 0.25);
-        border-radius: 16px;
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+      }
+      .map-tiles-layer {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: #d9e6f2;
+      }
+      .map-tile-img {
+        position: absolute;
+        width: 256px;
+        height: 256px;
+        pointer-events: none;
+        user-select: none;
+      }
+      .map-pins-layer {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .map-pins-layer .map-pin {
+        pointer-events: auto;
+      }
+      .map-zoom-controls {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        z-index: 5;
+      }
+      .map-zoom-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.9);
+        color: #f8fafc;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        font-size: 18px;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       .map-modal-header {
         padding: 14px 20px;
@@ -366,10 +405,10 @@
       }
       .map-detail-card {
         position: absolute;
-        bottom: 14px;
-        left: 14px;
-        right: 14px;
-        background: rgba(15, 23, 42, 0.92);
+        bottom: 18px;
+        left: 18px;
+        right: 18px;
+        background: rgba(15, 23, 42, 0.94);
         backdrop-filter: blur(8px);
         border: 1px solid rgba(56, 189, 248, 0.3);
         border-radius: 12px;
@@ -378,7 +417,245 @@
         justify-content: space-between;
         align-items: center;
         gap: 12px;
-        z-index: 4;
+        z-index: 1000;
+      }
+      .resort-leaflet-tooltip {
+        background: #0284c7;
+        border: 1px solid #7dd3fc;
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 12px;
+        border-radius: 6px;
+        padding: 3px 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+      }
+      .resort-leaflet-tooltip::before {
+        border-top-color: #0284c7;
+      }
+      /* Minimapa Táctico y Plano Ampliado (10.7) */
+      .minimap-widget {
+        position: absolute;
+        top: 64px;
+        right: 16px;
+        width: 156px;
+        height: 156px;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 2px solid rgba(56, 189, 248, 0.45);
+        background: rgba(11, 19, 32, 0.9);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+        pointer-events: auto;
+        cursor: pointer;
+      }
+      .minimap-widget canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .minimap-expand-badge {
+        position: absolute;
+        bottom: 5px;
+        right: 5px;
+        background: rgba(15, 23, 42, 0.85);
+        color: #38bdf8;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 5px;
+        border: 1px solid rgba(56, 189, 248, 0.3);
+      }
+      #expanded-minimap-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 10, 20, 0.88);
+        backdrop-filter: blur(8px);
+        z-index: 85;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .expanded-minimap-card {
+        width: 100%;
+        max-width: 1040px;
+        height: min(86vh, 700px);
+        background: #09111e;
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .expanded-minimap-body {
+        flex: 1;
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
+      }
+      #expanded-map-rotator {
+        position: absolute;
+        transform-origin: center center;
+        transition: transform 0.08s linear;
+      }
+      .expanded-map-controls {
+        position: absolute;
+        top: 14px;
+        left: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        z-index: 950;
+      }
+      .exp-ctrl-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(15, 23, 42, 0.9);
+        padding: 4px 6px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+      }
+      .exp-ctrl-btn {
+        background: rgba(30, 41, 59, 0.9);
+        color: #f8fafc;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .exp-ctrl-btn:hover { background: #0284c7; }
+      .minimap-zoom-bar {
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .minimap-zoom-btn {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(15, 23, 42, 0.85);
+        color: #f8fafc;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1;
+        cursor: pointer;
+      }
+      #expanded-minimap-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #expanded-minimap-tooltip {
+        display: none;
+        position: absolute;
+        background: rgba(15, 23, 42, 0.94);
+        border: 1px solid #38bdf8;
+        color: #f8fafc;
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        pointer-events: none;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+      }
+      #expanded-minimap-tooltip strong { display: block; font-size: 12px; }
+      #expanded-minimap-tooltip span { font-size: 10px; color: #38bdf8; }
+      .leaflet-snow-layer {
+        filter: grayscale(80%) brightness(1.14) contrast(0.92);
+      }
+      #expanded-selection-menu {
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        width: 290px;
+        background: rgba(15, 23, 42, 0.95);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(56, 189, 248, 0.45);
+        border-radius: 12px;
+        padding: 14px;
+        z-index: 1000;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      }
+      .sel-menu-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .sel-badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        color: #ffffff;
+        padding: 2px 7px;
+        border-radius: 5px;
+        margin-bottom: 4px;
+      }
+      .sel-menu-header h3 { font-size: 15px; font-weight: 700; color: #f8fafc; }
+      .sel-close-btn {
+        background: none;
+        border: none;
+        color: #94a3b8;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .sel-menu-details {
+        font-size: 12px;
+        color: #cbd5e1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .sel-menu-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 4px;
+      }
+      .sel-btn-cancel {
+        flex: 1;
+        background: rgba(255, 255, 255, 0.08);
+        color: #cbd5e1;
+        border: none;
+        padding: 8px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .sel-btn-go {
+        flex: 2;
+        background: #0284c7;
+        color: #ffffff;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .minimap-legend {
+        display: flex;
+        gap: 14px;
+        padding: 10px 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 11px;
+        color: #cbd5e1;
+        align-items: center;
+      }
+      .legend-dot {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        margin-right: 4px;
       }
       .map-detail-info h3 { font-size: 15px; font-weight: 700; }
       .map-detail-info p { font-size: 12px; color: #94a3b8; margin: 2px 0 6px; }
@@ -418,6 +695,44 @@
 
       <div id="resort-map-overlay"></div>
 
+      <div id="expanded-minimap-overlay">
+        <div class="expanded-minimap-card">
+          <div class="map-modal-header">
+            <div>
+              <h2>Plano Táctico de Pistas · Viaje Rápido</h2>
+              <span style="font-size:11px;color:#38bdf8;">Pincha sobre cualquier pista, remonte o POI para teletransportarte</span>
+            </div>
+            <button class="map-close-btn" id="expanded-minimap-close" title="Cerrar plano (M / Esc)">✕</button>
+          </div>
+          <div class="expanded-minimap-body">
+            <div id="expanded-map-rotator">
+              <div id="expanded-leaflet-map" style="width:100%;height:100%;background:#eef2f6;"></div>
+            </div>
+            <div class="expanded-map-controls">
+              <div class="exp-ctrl-row">
+                <button class="exp-ctrl-btn" id="exp-zoom-in" title="Acercar">+</button>
+                <button class="exp-ctrl-btn" id="exp-zoom-out" title="Alejar">−</button>
+                <button class="exp-ctrl-btn" id="exp-rotate-left" title="Rotar izquierda">⟲</button>
+                <button class="exp-ctrl-btn" id="exp-rotate-reset" title="Norte arriba">0°</button>
+                <button class="exp-ctrl-btn" id="exp-rotate-right" title="Rotar derecha">⟳</button>
+              </div>
+              <div class="exp-ctrl-row">
+                <input type="range" id="exp-rotate-slider" min="0" max="360" value="0" style="width:110px;accent-color:#38bdf8;" />
+                <span id="exp-rotate-label" style="font-size:11px;font-weight:700;color:#38bdf8;min-width:32px;text-align:right;">0°</span>
+              </div>
+            </div>
+            <div id="expanded-selection-menu"></div>
+          </div>
+          <div class="minimap-legend">
+            <span><i class="legend-dot" style="background:#10b981;"></i>Verde</span>
+            <span><i class="legend-dot" style="background:#38bdf8;"></i>Azul</span>
+            <span><i class="legend-dot" style="background:#ef4444;"></i>Roja</span>
+            <span><i class="legend-dot" style="background:#94a3b8;"></i>Negra / Remonte</span>
+            <span><i class="legend-dot" style="background:#fbbf24;"></i>POI</span>
+          </div>
+        </div>
+      </div>
+
       <div class="hud-overlay">
         <div class="hud-header">
           <div class="resort-title" style="pointer-events: auto;">
@@ -425,9 +740,33 @@
             <span class="badge-live">3D Live</span>
             <button class="btn-respawn" id="btn-open-map" style="margin-left: 6px;">🗺️ Estaciones</button>
           </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+            <div style="display:flex;gap:5px;pointer-events:auto;" id="weather-pills">
+              <button class="btn-mode active" data-weather="live" style="padding:5px 10px;font-size:11px;">🌐 Tiempo Real</button>
+              <button class="btn-mode" data-weather="dry" style="padding:5px 10px;font-size:11px;">☀️ Seco</button>
+              <button class="btn-mode" data-weather="snow" style="padding:5px 10px;font-size:11px;">❄️ Nieve</button>
+              <button class="btn-mode" data-weather="random" style="padding:5px 10px;font-size:11px;">🎲 Aleatorio</button>
+            </div>
+            <div id="live-weather-badge" style="display:none;font-size:11px;font-weight:600;color:#e2e8f0;background:rgba(15,23,42,0.75);padding:3px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.12);"></div>
+          </div>
           <div class="hud-controls-hint" id="controls-hint">
             Arrastra para rotar · Pellizca/Rueda para zoom
           </div>
+        </div>
+
+        <div id="lift-action-banner" style="display:none;align-self:center;align-items:center;gap:12px;background:rgba(15,23,42,0.92);border:1px solid rgba(56,189,248,0.45);padding:8px 16px;border-radius:12px;pointer-events:auto;backdrop-filter:blur(8px);">
+          <span id="lift-banner-text" style="font-size:13px;font-weight:700;color:#f8fafc;">Remonte</span>
+          <button class="btn-respawn" id="btn-board-lift" style="background:#0284c7;color:#fff;border:none;padding:6px 12px;font-size:12px;">🚡 Subir (E)</button>
+          <button class="btn-respawn" id="btn-skip-lift" style="display:none;background:#f97316;color:#fff;border:none;padding:6px 12px;font-size:12px;">⏩ Saltar trayecto (Espacio)</button>
+        </div>
+
+        <div class="minimap-widget" id="minimap-widget" title="Rueda para zoom · Clic o M para ampliar">
+          <canvas id="minimap-canvas" width="156" height="156"></canvas>
+          <div class="minimap-zoom-bar">
+            <button class="minimap-zoom-btn" id="minimap-zoom-in" title="Acercar minimapa">+</button>
+            <button class="minimap-zoom-btn" id="minimap-zoom-out" title="Alejar minimapa">−</button>
+          </div>
+          <span class="minimap-expand-badge">M · Ampliar</span>
         </div>
 
         <div class="skier-touch-controls" id="skier-touch-controls">

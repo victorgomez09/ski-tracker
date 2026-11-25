@@ -3,11 +3,16 @@ import { ProceduralTerrain } from './ProceduralTerrain.js';
 import { ProceduralPistes } from './ProceduralPistes.js';
 import { ProceduralLifts } from './ProceduralLifts.js';
 import { ProceduralVegetation } from './ProceduralVegetation.js';
+import { ProceduralPOIs } from './ProceduralPOIs.js';
 import { GeoProjection } from './GeoProjection.js';
-import { ResortDataService, ResortDataPayload } from './ResortDataService.js';
+import { LiveWeatherInfo, ResortDataService, ResortDataPayload } from './ResortDataService.js';
 import { ResortConfig } from './Bridge.js';
 import { SkierController, SkierInputState } from './SkierController.js';
 import { TerrainTileLoader } from './TerrainTileLoader.js';
+import { TacticalMinimap } from './TacticalMinimap.js';
+import { WeatherAtmosphere, WeatherMode } from './WeatherAtmosphere.js';
+import { MountainTraffic } from './MountainTraffic.js';
+import { SkiTracksTrail } from './SkiTracksTrail.js';
 
 export class SceneManager {
   private canvas: HTMLCanvasElement;
@@ -18,8 +23,14 @@ export class SceneManager {
   private pistes!: ProceduralPistes;
   private lifts!: ProceduralLifts;
   private vegetation!: ProceduralVegetation;
+  private pois!: ProceduralPOIs;
   private projection!: GeoProjection;
   private skier!: SkierController;
+  private minimap!: TacticalMinimap;
+  private weather!: WeatherAtmosphere;
+  private traffic!: MountainTraffic;
+  private tracks!: SkiTracksTrail;
+  private activeLiveWeather: LiveWeatherInfo | null = null;
   private clock = new THREE.Clock();
 
   // Modo por defecto: esquiar; permite alternar a Vista Aérea para inspeccionar el terreno
@@ -57,6 +68,9 @@ export class SceneManager {
     this.scene.background = new THREE.Color(0xcde2f5);
     this.scene.fog = new THREE.FogExp2(0xdce8f4, 0.00016);
 
+    // Entorno PBR procedural (reflejos reales del cielo y sol en visera, esquís, pilonas y casetas)
+    this.setupPBREnvironment();
+
     // Camera con plano lejano amplio (25 km) para dominios de hasta 270+ pistas
     this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 25000);
 
@@ -93,6 +107,34 @@ export class SceneManager {
     requestAnimationFrame(this.animate);
   }
 
+  private setupPBREnvironment() {
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const envScene = new THREE.Scene();
+    envScene.background = new THREE.Color(0xdbeafe);
+
+    const skyDome = new THREE.Mesh(
+      new THREE.SphereGeometry(50, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xbae6fd, side: THREE.BackSide })
+    );
+    const groundBounce = new THREE.Mesh(
+      new THREE.PlaneGeometry(100, 100),
+      new THREE.MeshBasicMaterial({ color: 0xf8fafc })
+    );
+    groundBounce.rotation.x = -Math.PI / 2;
+    groundBounce.position.y = -5;
+
+    const sunOrb = new THREE.Mesh(
+      new THREE.SphereGeometry(4, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    sunOrb.position.set(18, 30, 14);
+
+    envScene.add(skyDome, groundBounce, sunOrb);
+    this.scene.environment = pmrem.fromScene(envScene, 0.04).texture;
+    this.scene.environmentIntensity = 0.75;
+    pmrem.dispose();
+  }
+
   private setupLighting() {
     const ambientLight = new THREE.AmbientLight(0xf1f5f9, 1.0);
     this.scene.add(ambientLight);
@@ -107,6 +149,8 @@ export class SceneManager {
     const bounceSnowLight = new THREE.DirectionalLight(0xf8fafc, 0.5);
     bounceSnowLight.position.set(-400, 120, -400);
     this.scene.add(bounceSnowLight);
+
+    this.weather = new WeatherAtmosphere(this.scene, ambientLight, sunLight, bounceSnowLight);
   }
 
   private initWorld() {
@@ -124,11 +168,30 @@ export class SceneManager {
     this.vegetation = new ProceduralVegetation(this.terrain, 2200);
     this.scene.add(this.vegetation.instancedMesh);
 
+    this.pois = new ProceduralPOIs(this.terrain, this.projection, resortData.pois || []);
+    this.scene.add(this.pois.group);
+
+    this.traffic = new MountainTraffic(this.terrain, this.projection, resortData.pistes);
+    this.scene.add(this.traffic.group);
+
+    this.tracks = new SkiTracksTrail();
+    this.scene.add(this.tracks.group);
+
     // Controlador del esquiador siempre activo para empezar a esquiar al llegar a la estación
     this.skier = new SkierController(this.terrain);
     this.skier.setAltitudeRange(resortData.base_altitude, resortData.summit_altitude);
+    this.skier.setRideableLifts(this.lifts.getRideableLifts());
     this.scene.add(this.skier.avatar.group);
     this.scene.add(this.skier.particles.points);
+
+    this.minimap = new TacticalMinimap((tx, tz, heading) => {
+      if (this.tracks) this.tracks.clear();
+      this.skier.teleportTo(tx, tz, heading);
+      if (this.mode === 'orbit') {
+        this.setMode('skier');
+      }
+    });
+    this.minimap.setResortData(resortData, this.projection, this.terrain);
 
     const hint = document.getElementById('controls-hint');
     if (hint) {
@@ -170,12 +233,21 @@ export class SceneManager {
       this.orbitHeight = Math.max(450, this.terrain.verticalDropMeters + this.terrain.width * 0.25);
     }
 
-    // 4. Reconstruir pistas, remontes y vegetación sobre la topografía real
+    // 4. Reconstruir pistas, remontes, POIs y vegetación sobre la topografía real
     if (this.pistes && data.pistes) {
       this.pistes.rebuild(this.terrain, this.projection, data.pistes);
     }
     if (this.lifts && data.lifts) {
       this.lifts.rebuild(this.terrain, this.projection, data.lifts, isValdesqui);
+    }
+    if (this.pois) {
+      this.pois.rebuild(this.terrain, this.projection, data.pois || []);
+    }
+    if (this.traffic && data.pistes) {
+      this.traffic.rebuild(this.terrain, this.projection, data.pistes);
+    }
+    if (this.tracks) {
+      this.tracks.clear();
     }
     if (this.vegetation && this.terrain) {
       this.vegetation.rebuild(this.terrain);
@@ -184,9 +256,14 @@ export class SceneManager {
     // 5. Colocar al esquiador directamente en la base de la estación listo para esquiar
     if (this.skier) {
       this.skier.setAltitudeRange(data.base_altitude, data.summit_altitude);
+      this.skier.setRideableLifts(this.lifts ? this.lifts.getRideableLifts() : []);
       const { baseX, baseZ, baseHeading, summitX, summitZ, summitHeading } = this.computeResortSpawns(data);
       this.skier.setSpawnPoints(baseX, baseZ, baseHeading, summitX, summitZ, summitHeading);
       this.skier.respawnAtBase();
+    }
+
+    if (this.minimap) {
+      this.minimap.setResortData(data, this.projection, this.terrain);
     }
 
     this.applyResortConfig({
@@ -195,6 +272,25 @@ export class SceneManager {
       baseAltitude: data.base_altitude,
       pistesCount: data.pistes?.length,
     });
+
+    // 6. Consultar clima en tiempo real y parte de nieve de la estación
+    ResortDataService.fetchLiveWeather(data.id, data.latitude, data.longitude).then((liveWeather) => {
+      if (liveWeather) {
+        this.activeLiveWeather = liveWeather;
+        this.weather?.applyLiveWeather(liveWeather);
+        this.skier?.setSnowCondition(liveWeather.snowCondition);
+        this.updateLiveWeatherBadge(liveWeather);
+      }
+    });
+  }
+
+  private updateLiveWeatherBadge(info: LiveWeatherInfo) {
+    const badge = document.getElementById('live-weather-badge');
+    if (!badge) return;
+    const depthStr = info.snowDepthCm > 0 ? ` · ${info.snowDepthCm} cm` : '';
+    const freshStr = info.snowfallTodayCm > 0.5 ? ` (+${info.snowfallTodayCm.toFixed(0)} cm hoy)` : '';
+    badge.textContent = `🌡️ ${info.temperatureC}°C · ❄️ ${info.snowConditionLabel}${depthStr}${freshStr} · 💨 ${info.windSpeedKmh} km/h`;
+    badge.style.display = 'inline-block';
   }
 
   private computeFullGeoBounds(data: ResortDataPayload) {
@@ -316,6 +412,7 @@ export class SceneManager {
   }
 
   public respawnSkier(target: 'base' | 'summit' = 'base') {
+    if (this.tracks) this.tracks.clear();
     if (this.skier) {
       if (target === 'summit') {
         this.skier.respawnAtSummit();
@@ -323,6 +420,31 @@ export class SceneManager {
         this.skier.respawnAtBase();
       }
     }
+  }
+
+  public setWeatherMode(mode: WeatherMode) {
+    if (!this.weather) return;
+    this.weather.setRandomDynamic(mode === 'random');
+
+    if (mode === 'live') {
+      if (this.activeLiveWeather) {
+        this.weather.applyLiveWeather(this.activeLiveWeather);
+      } else {
+        this.weather.setPreset('sunny');
+      }
+    } else if (mode === 'dry') {
+      this.weather.setPreset('sunny');
+    } else if (mode === 'snow') {
+      this.weather.setPreset('snow');
+    }
+  }
+
+  public boardNearbyLift() {
+    if (this.skier) this.skier.boardNearbyLift();
+  }
+
+  public skipLiftRide() {
+    if (this.skier) this.skier.skipLiftRide();
   }
 
   public setMode(mode: 'skier' | 'orbit') {
@@ -409,13 +531,45 @@ export class SceneManager {
     if (this.lifts) {
       this.lifts.update(delta);
     }
+    if (this.traffic) {
+      this.traffic.update(delta);
+    }
 
     if (this.mode === 'skier' && this.skier) {
       const telemetry = this.skier.update(delta, this.camera);
+      if (this.tracks && !telemetry.ridingLiftName) {
+        this.tracks.addPoint(this.skier.position, this.skier.heading, this.skier.isGrounded);
+      }
+      if (this.weather) {
+        this.weather.update(delta, this.skier.position, this.skier.heading);
+      }
+      if (this.minimap) {
+        this.minimap.update(this.skier.position.x, this.skier.position.z, this.skier.heading);
+      }
       const speedEl = document.getElementById('skier-speed');
       const altEl = document.getElementById('skier-alt');
       if (speedEl) speedEl.textContent = `${telemetry.speedKmh} km/h`;
       if (altEl) altEl.textContent = `${telemetry.altitudeMeters.toLocaleString()} m`;
+
+      const liftBanner = document.getElementById('lift-action-banner');
+      const liftBannerText = document.getElementById('lift-banner-text');
+      const btnBoardLift = document.getElementById('btn-board-lift');
+      const btnSkipLift = document.getElementById('btn-skip-lift');
+      if (liftBanner && liftBannerText && btnBoardLift && btnSkipLift) {
+        if (telemetry.ridingLiftName) {
+          liftBanner.style.display = 'flex';
+          liftBannerText.textContent = `Subiendo en ${telemetry.ridingLiftName}...`;
+          btnBoardLift.style.display = 'none';
+          btnSkipLift.style.display = 'inline-block';
+        } else if (telemetry.nearbyLiftName) {
+          liftBanner.style.display = 'flex';
+          liftBannerText.textContent = `Remonte: ${telemetry.nearbyLiftName}`;
+          btnBoardLift.style.display = 'inline-block';
+          btnSkipLift.style.display = 'none';
+        } else {
+          liftBanner.style.display = 'none';
+        }
+      }
     } else if (this.mode === 'orbit' && !this.isPointerDown) {
       this.orbitAngle += 0.0008;
       this.updateOrbitCamera();

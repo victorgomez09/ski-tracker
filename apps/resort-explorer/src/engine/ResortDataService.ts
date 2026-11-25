@@ -20,6 +20,26 @@ export interface OSMSkiLift {
   geometry_geojson: GeoJSONGeometry;
 }
 
+export interface OSMResortPOI {
+  id: string;
+  name: string;
+  category: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface LiveWeatherInfo {
+  temperatureC: number;
+  weatherCode: number;
+  windSpeedKmh: number;
+  snowDepthCm: number;
+  snowfallTodayCm: number;
+  snowCondition: string;
+  snowConditionLabel: string;
+  forecast7dCm: number;
+  isLiveBackend: boolean;
+}
+
 export interface ResortSummary {
   id: string;
   name: string;
@@ -45,6 +65,7 @@ export interface ResortDataPayload {
   bbox?: [number, number, number, number]; // [minLon, minLat, maxLon, maxLat]
   pistes: OSMSkiPiste[];
   lifts: OSMSkiLift[];
+  pois?: OSMResortPOI[];
 }
 
 const FALLBACK_RESORTS_CATALOG: ResortSummary[] = [
@@ -259,16 +280,30 @@ export class ResortDataService {
 
       let rawPistes = data.pistes || data.Pistes || [];
       let rawLifts = data.lifts || data.Lifts || [];
+      let rawPOIs = data.pois || data.POIs || [];
+
+      const resortID = String(data.id || data.ID || idOrName);
 
       // Si /by-id no incluyó pistas, intentar /offline-pack
-      if (rawPistes.length === 0 && (data.id || data.ID)) {
+      if (rawPistes.length === 0 && resortID) {
         const packRes = await fetch(
-          `${apiBaseUrl}/api/v1/resorts/by-id/${encodeURIComponent(data.id || data.ID)}/offline-pack`
+          `${apiBaseUrl}/api/v1/resorts/by-id/${encodeURIComponent(resortID)}/offline-pack`
         ).catch(() => null);
         if (packRes && packRes.ok) {
           const pack = await packRes.json();
           rawPistes = pack.pistes || pack.Pistes || rawPistes;
           rawLifts = pack.lifts || pack.Lifts || rawLifts;
+          rawPOIs = pack.pois || pack.POIs || rawPOIs;
+        }
+      }
+
+      if (rawPOIs.length === 0 && resortID) {
+        const poisRes = await fetch(
+          `${apiBaseUrl}/api/v1/resorts/by-id/${encodeURIComponent(resortID)}/pois`
+        ).catch(() => null);
+        if (poisRes && poisRes.ok) {
+          const fetchedPOIs = await poisRes.json();
+          if (Array.isArray(fetchedPOIs)) rawPOIs = fetchedPOIs;
         }
       }
 
@@ -291,10 +326,20 @@ export class ResortDataService {
           geometry_geojson: l.geometry_geojson || l.GeometryGeoJSON,
         }));
 
+      const normalizedPOIs: OSMResortPOI[] = rawPOIs
+        .filter((poi: any) => (poi.latitude ?? poi.Latitude) && (poi.longitude ?? poi.Longitude))
+        .map((poi: any) => ({
+          id: String(poi.id || poi.ID || Math.random()),
+          name: poi.name || poi.Name || 'POI',
+          category: (poi.category || poi.Category || 'info').toLowerCase(),
+          latitude: Number(poi.latitude ?? poi.Latitude),
+          longitude: Number(poi.longitude ?? poi.Longitude),
+        }));
+
       const { baseAlt, summitAlt } = this.extractResortStats(data);
 
       const normalized: ResortDataPayload = {
-        id: String(data.id || data.ID || idOrName),
+        id: resortID,
         name: data.name || data.Name || idOrName,
         country: data.country || data.Country || 'Spain',
         latitude: Number(data.latitude || data.Latitude || 40.7940),
@@ -303,6 +348,7 @@ export class ResortDataService {
         summit_altitude: summitAlt || 2250,
         pistes: normalizedPistes,
         lifts: normalizedLifts,
+        pois: normalizedPOIs,
       };
 
       if (normalizedPistes.length > 0) {
@@ -401,5 +447,68 @@ export class ResortDataService {
 
   public static getValdesquiOfflineData(): ResortDataPayload {
     return valdesquiOsmData as unknown as ResortDataPayload;
+  }
+
+  /**
+   * Obtiene el clima en tiempo real y el parte de nieve desde el backend Go
+   * (/api/v1/weather) con respaldo directo a Open-Meteo si el backend no responde.
+   */
+  public static async fetchLiveWeather(
+    resortId: string,
+    lat: number,
+    lon: number
+  ): Promise<LiveWeatherInfo | null> {
+    const apiBaseUrl = this.getApiBaseUrl();
+    try {
+      const res = await fetch(
+        `${apiBaseUrl}/api/v1/weather?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}&resort_id=${encodeURIComponent(resortId)}`
+      ).catch(() => null);
+
+      if (res && res.ok) {
+        const w = await res.json();
+        const curr = w.current || w.Current || {};
+        const sr = w.snow_report || w.SnowReport || {};
+        return {
+          temperatureC: Math.round(Number(curr.temperature_2m ?? curr.temperature ?? w.temperature ?? 0)),
+          weatherCode: Number(curr.weather_code ?? curr.weathercode ?? w.weather_code ?? 0),
+          windSpeedKmh: Math.round(Number(curr.wind_speed_10m ?? curr.windspeed ?? 10)),
+          snowDepthCm: Math.round(Number(sr.snow_depth_summit_cm ?? sr.snow_depth_base_cm ?? 0)),
+          snowfallTodayCm: Number(sr.snowfall_today_summit_cm ?? 0),
+          snowCondition: String(sr.snow_condition || 'packed_powder'),
+          snowConditionLabel: String(sr.snow_condition_label || 'Nieve pisada'),
+          forecast7dCm: Math.round(Number(sr.forecast_snow_7d_cm ?? 0)),
+          isLiveBackend: true,
+        };
+      }
+    } catch {
+      // Continuar con respaldo Open-Meteo
+    }
+
+    // Respaldo directo Open-Meteo (gratuito, sin API key)
+    try {
+      const omRes = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,weather_code,wind_speed_10m,snowfall&timezone=auto`
+      ).catch(() => null);
+      if (omRes && omRes.ok) {
+        const om = await omRes.json();
+        const curr = om.current || {};
+        const snowfall = Number(curr.snowfall || 0);
+        return {
+          temperatureC: Math.round(Number(curr.temperature_2m ?? 0)),
+          weatherCode: Number(curr.weather_code ?? 0),
+          windSpeedKmh: Math.round(Number(curr.wind_speed_10m ?? 10)),
+          snowDepthCm: 0,
+          snowfallTodayCm: snowfall,
+          snowCondition: snowfall > 0 ? 'powder' : 'packed_powder',
+          snowConditionLabel: snowfall > 0 ? 'Nevando / Polvo' : 'Nieve pisada',
+          forecast7dCm: 0,
+          isLiveBackend: false,
+        };
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
   }
 }

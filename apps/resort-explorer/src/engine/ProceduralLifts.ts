@@ -4,6 +4,16 @@ import { GeoProjection } from './GeoProjection.js';
 import { OSMSkiLift } from './ResortDataService.js';
 import { LiftStationBuilder } from './LiftStationBuilder.js';
 
+export interface RideableLift {
+  id: string;
+  name: string;
+  liftType: string;
+  startPos: THREE.Vector3;
+  endPos: THREE.Vector3;
+  uphillCurve: THREE.CatmullRomCurve3;
+  isChair: boolean;
+}
+
 interface AnimatedLift {
   curve: THREE.CatmullRomCurve3;
   chairs: Array<{ mesh: THREE.Group; progress: number }>;
@@ -20,12 +30,17 @@ interface AnimatedLift {
 export class ProceduralLifts {
   public group: THREE.Group = new THREE.Group();
   private animatedLifts: AnimatedLift[] = [];
+  private rideableLifts: RideableLift[] = [];
 
   constructor(terrain: ProceduralTerrain, projection: GeoProjection, lifts: OSMSkiLift[], includeBolaAntennas = true) {
     this.buildLiftsFromOSM(terrain, projection, lifts);
     if (includeBolaAntennas) {
       this.generateBolaDelMundoAntennas(terrain);
     }
+  }
+
+  public getRideableLifts(): RideableLift[] {
+    return this.rideableLifts;
   }
 
   public rebuild(terrain: ProceduralTerrain, projection: GeoProjection, lifts: OSMSkiLift[], includeBolaAntennas = false) {
@@ -39,6 +54,7 @@ export class ProceduralLifts {
       }
     }
     this.animatedLifts = [];
+    this.rideableLifts = [];
 
     this.buildLiftsFromOSM(terrain, projection, lifts);
     if (includeBolaAntennas) {
@@ -89,6 +105,18 @@ export class ProceduralLifts {
       // CASO 1: Cinta transportadora de debutantes (Magic Carpet)
       if (lift.lift_type === 'magic_carpet') {
         this.buildMagicCarpet(startPos, endPos, terrain, totalDistance);
+        this.rideableLifts.push({
+          id: lift.id,
+          name: lift.name || 'Cinta',
+          liftType: lift.lift_type,
+          startPos: startPos.clone(),
+          endPos: endPos.clone(),
+          uphillCurve: new THREE.CatmullRomCurve3([
+            startPos.clone().add(new THREE.Vector3(0, 0.4, 0)),
+            endPos.clone().add(new THREE.Vector3(0, 0.4, 0)),
+          ]),
+          isChair: false,
+        });
         return;
       }
 
@@ -172,6 +200,26 @@ export class ProceduralLifts {
       const cableMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
       const cableMesh = new THREE.Mesh(cableGeom, cableMat);
       this.group.add(cableMesh);
+
+      // Registrar trayectoria de subida para poder embarcar en el remonte (Fase 10.6)
+      const uphillPoints: THREE.Vector3[] = [];
+      uphillPoints.push(baseWheelCenter.clone().addScaledVector(rightVec, cableOffset).add(new THREE.Vector3(0, -2.1, 0)));
+      for (let i = 0; i < pylonPositions.length; i++) {
+        uphillPoints.push(
+          pylonPositions[i].clone().addScaledVector(rightVec, cableOffset).add(new THREE.Vector3(0, pylonHeight - 2.35, 0))
+        );
+      }
+      uphillPoints.push(summitWheelCenter.clone().addScaledVector(rightVec, cableOffset).add(new THREE.Vector3(0, -2.1, 0)));
+
+      this.rideableLifts.push({
+        id: lift.id,
+        name: lift.name || 'Remonte',
+        liftType: lift.lift_type,
+        startPos: startPos.clone(),
+        endPos: endPos.clone(),
+        uphillCurve: new THREE.CatmullRomCurve3(uphillPoints),
+        isChair,
+      });
 
       // 4. Sillas cuatriplaza en movimiento
       if (isChair) {

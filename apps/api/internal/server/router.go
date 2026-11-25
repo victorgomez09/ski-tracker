@@ -103,6 +103,13 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 		apiV1.POST("/resorts/by-id/:id/dem", skiResortHandler.SaveDEM)
 		apiV1.GET("/resorts/closeness", skiResortHandler.GetByCloseness)
 
+		// Public weather & snow report routes for 3D Explorer & Map
+		weatherHandler := v1.NewWeatherHandler(deps.Services.Weather, deps.Cache)
+		apiV1.GET("/weather", weatherHandler.GetWeather)
+		apiV1.GET("/weather/snow-forecast", weatherHandler.GetSnowForecast)
+		apiV1.GET("/resorts/by-id/:id/snow-report", weatherHandler.GetSnowReport)
+		apiV1.GET("/resorts/:id/snow-report", weatherHandler.GetSnowReport)
+
 		protected := apiV1.Group("")
 		protected.Use(middleware.Auth(deps.JWTManager))
 		{
@@ -179,13 +186,6 @@ func NewRouter(deps *RouterDeps) *gin.Engine {
 			protected.POST("/crews/:id/photos", crewHandler.AddPhoto)
 			protected.GET("/crews/:id/leaderboard", crewHandler.GetCrewLeaderboard)
 			protected.GET("/crews/:id/live-locations", crewHandler.GetCrewLiveLocations)
-
-			// Weather and Snow routes
-			weatherHandler := v1.NewWeatherHandler(deps.Services.Weather, deps.Cache)
-			protected.GET("/weather", weatherHandler.GetWeather)
-			protected.GET("/weather/snow-forecast", weatherHandler.GetSnowForecast)
-			protected.GET("/resorts/by-id/:id/snow-report", weatherHandler.GetSnowReport)
-			protected.GET("/resorts/:id/snow-report", weatherHandler.GetSnowReport)
 
 			// Meeting Points routes (2.3)
 			meetingPointHandler := v1.NewMeetingPointHandler(deps.Services.MeetingPoint, deps.Logger)

@@ -3,13 +3,21 @@ import { ProceduralTerrain } from './ProceduralTerrain.js';
 import { GeoProjection } from './GeoProjection.js';
 import { OSMSkiPiste } from './ResortDataService.js';
 import { createPisteCorduroyMaterial } from './PisteShaderMaterial.js';
-import { PisteDecoration } from './PisteDecoration.js';
+import { JunctionSignEntry, PisteDecoration } from './PisteDecoration.js';
+
+interface PisteCenterline {
+  name: string;
+  number: string;
+  color: number;
+  points: THREE.Vector3[];
+}
 
 /**
  * Generador procedural de pistas de esquí a partir de OpenStreetMap con curvas naturales
  */
 export class ProceduralPistes {
   public group: THREE.Group = new THREE.Group();
+  private centerlines: PisteCenterline[] = [];
 
   private difficultyColors: Record<string, number> = {
     novice: 0x10b981,       // Verde oficial
@@ -53,16 +61,30 @@ export class ProceduralPistes {
   }
 
   private buildPistesFromOSM(terrain: ProceduralTerrain, projection: GeoProjection, pistes: OSMSkiPiste[]) {
-    pistes.forEach((piste) => {
+    this.centerlines = [];
+    pistes.forEach((piste, index) => {
       if (!piste.geometry_geojson || !Array.isArray(piste.geometry_geojson.coordinates)) return;
       const coords = piste.geometry_geojson.coordinates;
       if (coords.length < 2) return;
 
-      this.createPisteRibbon(terrain, projection, piste);
+      const pisteNumber = this.extractPisteNumber(piste.name, index + 1);
+      this.createPisteRibbon(terrain, projection, piste, pisteNumber);
     });
+
+    this.buildJunctionSignposts(terrain);
   }
 
-  private createPisteRibbon(terrain: ProceduralTerrain, projection: GeoProjection, piste: OSMSkiPiste) {
+  private extractPisteNumber(name: string, fallbackIndex: number): string {
+    const match = (name || '').match(/\b(\d{1,3})\b/);
+    return match ? match[1] : String(fallbackIndex);
+  }
+
+  private createPisteRibbon(
+    terrain: ProceduralTerrain,
+    projection: GeoProjection,
+    piste: OSMSkiPiste,
+    pisteNumber: string
+  ) {
     const coords = piste.geometry_geojson.coordinates;
     const diffKey = (piste.difficulty || 'easy').toLowerCase();
     const pisteColor = this.difficultyColors[diffKey] || 0x0284c7;
@@ -83,6 +105,13 @@ export class ProceduralPistes {
     const curve = new THREE.CatmullRomCurve3(vectors);
     const sampleCount = Math.max(24, Math.min(180, vectors.length * 3));
     const curvePoints = curve.getPoints(sampleCount);
+
+    this.centerlines.push({
+      name: piste.name || `Pista ${pisteNumber}`,
+      number: pisteNumber,
+      color: pisteColor,
+      points: curvePoints,
+    });
 
     const ribbonGeom = new THREE.BufferGeometry();
     const vertices: number[] = [];
@@ -139,10 +168,10 @@ export class ProceduralPistes {
         uvs.push(t, accumulatedDistance * 0.08);
       }
 
-      // Balizas cada ~5 segmentos para no saturar con 62 pistas
+      // Balizas cada ~5 segmentos con el número de pista impreso en el disco
       if (i % 5 === 0 && i < curvePoints.length - 1) {
-        const leftMarker = PisteDecoration.createMarker(left, dir, pisteColor, false);
-        const rightMarker = PisteDecoration.createMarker(right, dir, pisteColor, true);
+        const leftMarker = PisteDecoration.createMarker(left, dir, pisteColor, false, pisteNumber);
+        const rightMarker = PisteDecoration.createMarker(right, dir, pisteColor, true, pisteNumber);
         this.group.add(leftMarker);
         this.group.add(rightMarker);
       }
@@ -181,5 +210,83 @@ export class ProceduralPistes {
     const pisteMaterial = createPisteCorduroyMaterial(pisteColor);
     const ribbonMesh = new THREE.Mesh(ribbonGeom, pisteMaterial);
     this.group.add(ribbonMesh);
+  }
+
+  /**
+   * Detecta intersecciones y bifurcaciones entre pistas y coloca carteles direccionales 3D.
+   */
+  private buildJunctionSignposts(terrain: ProceduralTerrain) {
+    const placedJunctions: THREE.Vector3[] = [];
+    const maxSigns = 32;
+
+    for (let i = 0; i < this.centerlines.length && placedJunctions.length < maxSigns; i++) {
+      const pA = this.centerlines[i];
+      for (let idxA = 2; idxA < pA.points.length - 2; idxA += 4) {
+        const ptA = pA.points[idxA];
+
+        // Evitar agrupar carteles a menos de 55m entre sí
+        if (placedJunctions.some((pj) => pj.distanceToSquared(ptA) < 55 * 55)) continue;
+
+        const nearbyPistes: Array<{ line: PisteCenterline; ptIdx: number }> = [];
+        for (let j = 0; j < this.centerlines.length; j++) {
+          if (i === j) continue;
+          const pB = this.centerlines[j];
+          let bestIdx = -1;
+          let bestDistSq = 22 * 22;
+          for (let idxB = 0; idxB < pB.points.length; idxB += 2) {
+            const dSq = ptA.distanceToSquared(pB.points[idxB]);
+            if (dSq < bestDistSq) {
+              bestDistSq = dSq;
+              bestIdx = idxB;
+            }
+          }
+          if (bestIdx !== -1) {
+            nearbyPistes.push({ line: pB, ptIdx: bestIdx });
+          }
+        }
+
+        if (nearbyPistes.length === 0) continue;
+
+        // Dirección de entrada por pA en el cruce
+        const prevA = pA.points[Math.max(0, idxA - 1)];
+        const nextA = pA.points[Math.min(pA.points.length - 1, idxA + 1)];
+        const refDir = new THREE.Vector3(nextA.x - prevA.x, 0, nextA.z - prevA.z).normalize();
+        const refRight = new THREE.Vector3(-refDir.z, 0, refDir.x);
+
+        const entries: JunctionSignEntry[] = [{
+          pisteName: pA.name,
+          pisteNumber: pA.number,
+          color: pA.color,
+          arrow: '▲',
+        }];
+
+        nearbyPistes.slice(0, 3).forEach(({ line, ptIdx }) => {
+          const nPt = line.points[Math.min(line.points.length - 1, ptIdx + 2)];
+          const pPt = line.points[Math.max(0, ptIdx - 1)];
+          const outDir = new THREE.Vector3(nPt.x - pPt.x, 0, nPt.z - pPt.z).normalize();
+          const sideDot = outDir.dot(refRight);
+          const fwdDot = outDir.dot(refDir);
+          const arrow: '◀' | '▲' | '▶' = Math.abs(sideDot) > 0.35 && fwdDot < 0.85
+            ? (sideDot > 0 ? '▶' : '◀')
+            : '▲';
+
+          entries.push({
+            pisteName: line.name,
+            pisteNumber: line.number,
+            color: line.color,
+            arrow,
+          });
+        });
+
+        // Colocar el cartel en el margen derecho mirando hacia el esquiador que llega
+        const signPos = ptA.clone().addScaledVector(refRight, 11);
+        signPos.y = terrain.getElevationAt(signPos.x, signPos.z) + 0.6;
+        const facingYaw = Math.atan2(-refDir.x, -refDir.z);
+
+        const signpost = PisteDecoration.createJunctionSignpost(signPos, facingYaw, entries);
+        this.group.add(signpost);
+        placedJunctions.push(ptA);
+      }
+    }
   }
 }
