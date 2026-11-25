@@ -38,6 +38,10 @@ export class WeatherAtmosphere {
   private snowPositions: Float32Array;
   private readonly snowCount = 1500;
 
+  private terrainMaterial: THREE.ShaderMaterial | null = null;
+  private pisteMaterials: THREE.ShaderMaterial[] = [];
+  private isAerialView = false;
+
   private currentPreset: WeatherPreset = 'sunny';
   private randomActive = false;
   private randomTimer = 0;
@@ -90,6 +94,19 @@ export class WeatherAtmosphere {
     this.applyStateToScene(this.currentState);
   }
 
+  public bindTerrainMaterial(material: THREE.ShaderMaterial) {
+    this.terrainMaterial = material;
+  }
+
+  public bindPisteMaterials(materials: THREE.ShaderMaterial[]) {
+    this.pisteMaterials = materials;
+  }
+
+  public setAerialView(enabled: boolean) {
+    this.isAerialView = enabled;
+    this.applyStateToScene(this.currentState);
+  }
+
   private buildPresetState(preset: WeatherPreset): WeatherState {
     if (preset === 'sunset') {
       return {
@@ -110,18 +127,18 @@ export class WeatherAtmosphere {
 
     if (preset === 'snow') {
       return {
-        bgColor: new THREE.Color(0x94a3b8),
-        fogColor: new THREE.Color(0x9fb0c4),
-        fogDensity: 0.0030,
-        ambientColor: new THREE.Color(0xcbd5e1),
-        ambientIntensity: 1.1,
-        sunColor: new THREE.Color(0xe2e8f0),
-        sunIntensity: 0.45,
+        bgColor: new THREE.Color(0xcbd5e1),
+        fogColor: new THREE.Color(0xdbe3ed),
+        fogDensity: 0.0011,
+        ambientColor: new THREE.Color(0xf1f5f9),
+        ambientIntensity: 1.15,
+        sunColor: new THREE.Color(0xf8fafc),
+        sunIntensity: 1.05,
         sunPos: new THREE.Vector3(250, 500, 200),
-        bounceColor: new THREE.Color(0xcbd5e1),
-        bounceIntensity: 0.35,
+        bounceColor: new THREE.Color(0xe2e8f0),
+        bounceIntensity: 0.5,
         headlampIntensity: 0,
-        snowOpacity: 0.85,
+        snowOpacity: 0.88,
       };
     }
 
@@ -166,10 +183,13 @@ export class WeatherAtmosphere {
       this.scene.background = s.bgColor.clone();
     }
 
+    // En Vista Aérea lejana, atenuar la niebla para ver toda la montaña nítida y sin velo gris
+    const effectiveFogDensity = this.isAerialView ? Math.min(0.00012, s.fogDensity * 0.16) : s.fogDensity;
+
     const fog = this.scene.fog as THREE.FogExp2 | null;
     if (fog) {
       fog.color.copy(s.fogColor);
-      fog.density = s.fogDensity;
+      fog.density = effectiveFogDensity;
     }
 
     this.ambientLight.color.copy(s.ambientColor);
@@ -183,6 +203,22 @@ export class WeatherAtmosphere {
 
     this.snowMaterial.opacity = s.snowOpacity;
     this.snowPoints.visible = s.snowOpacity > 0.01;
+
+    // Sincronizar shader del terreno y de todas las pistas con sol, cielo y niebla en vivo
+    const syncMaterials = this.terrainMaterial
+      ? [this.terrainMaterial, ...this.pisteMaterials]
+      : this.pisteMaterials;
+
+    syncMaterials.forEach((mat) => {
+      if (!mat.uniforms) return;
+      const u = mat.uniforms;
+      if (u.sunColor) u.sunColor.value.copy(s.sunColor);
+      if (u.skyColor) u.skyColor.value.copy(s.ambientColor);
+      if (u.sunDirection) u.sunDirection.value.copy(s.sunPos).normalize();
+      if (u.sunIntensity) u.sunIntensity.value = Math.max(0.25, s.sunIntensity / 1.45);
+      if (u.fogColor) u.fogColor.value.copy(s.fogColor);
+      if (u.fogDensity) u.fogDensity.value = effectiveFogDensity;
+    });
   }
 
   public setRandomDynamic(enabled: boolean) {
@@ -237,15 +273,15 @@ export class WeatherAtmosphere {
 
     this.setPreset('sunny');
     if (isFoggy) {
-      this.targetState.bgColor.setHex(0x94a3b8);
-      this.targetState.fogColor.setHex(0x9fb0c4);
-      this.targetState.fogDensity = 0.0028;
-      this.targetState.sunIntensity = 0.65;
+      this.targetState.bgColor.setHex(0xcbd5e1);
+      this.targetState.fogColor.setHex(0xdbe3ed);
+      this.targetState.fogDensity = 0.0014;
+      this.targetState.sunIntensity = 1.05;
     } else if (isOvercast) {
-      this.targetState.bgColor.setHex(0xb0c4d8);
-      this.targetState.fogColor.setHex(0xc2d2e2);
-      this.targetState.fogDensity = 0.00055;
-      this.targetState.sunIntensity = 0.9;
+      this.targetState.bgColor.setHex(0xc4d4e4);
+      this.targetState.fogColor.setHex(0xd6e1ed);
+      this.targetState.fogDensity = 0.00045;
+      this.targetState.sunIntensity = 1.15;
     }
   }
 

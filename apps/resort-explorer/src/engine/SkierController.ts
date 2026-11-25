@@ -49,8 +49,8 @@ export class SkierController {
   private summitAltitudeMeters = 2280;
   private snowFrictionMultiplier = 1.0;
   private powderSprayMultiplier = 1.0;
-  // Las pistas se sitúan a +1.10m del terreno base; +1.12m deja las suelas justo encima de la nieve pisada
-  private readonly pisteSurfaceOffset = 1.12;
+  // Las pistas van al ras del terreno (+0.06m) para transición fluida con el fuera de pista
+  private readonly pisteSurfaceOffset = 0.06;
   private baseSpawnPoint = new THREE.Vector3(240, 14, -400);
   private baseHeading = 0; // Mirando hacia +Z (hacia las pistas/cumbre desde Prado Llano)
   private summitSpawnPoint = new THREE.Vector3(160, 120, 240);

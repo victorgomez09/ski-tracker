@@ -289,18 +289,21 @@ export class ProceduralTerrain {
     return new THREE.ShaderMaterial({
       lights: false,
       uniforms: {
-        snowColor: { value: new THREE.Color(0xfafafa) }, // Nieve natural blanca pura
-        skyColor: { value: new THREE.Color(0xe2e8f0) },  // Sombra neutra fría (sin tinte azul artificial)
-        sunColor: { value: new THREE.Color(0xfffdf8) },
-        rockColor: { value: new THREE.Color(0x6b7280) },
+        snowColor: { value: new THREE.Color(0xffffff) },
+        skyColor: { value: new THREE.Color(0xf1f5f9) },
+        sunColor: { value: new THREE.Color(0xffffff) },
+        rockColor: { value: new THREE.Color(0x646e78) },
+        rockDark: { value: new THREE.Color(0x3a424d) },
         sunDirection: { value: new THREE.Vector3(0.45, 0.78, 0.42).normalize() },
+        sunIntensity: { value: 1.0 },
+        fogColor: { value: new THREE.Color(0xdce8f4) },
+        fogDensity: { value: 0.00016 },
       },
       vertexShader: `
         varying vec3 vNormal;
         varying vec3 vWorldPosition;
 
         void main() {
-          // Normal en espacio de mundo para que coincida con sunDirection y la vertical Y
           vNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
           vec4 worldPos = modelMatrix * vec4(position, 1.0);
           vWorldPosition = worldPos.xyz;
@@ -312,40 +315,99 @@ export class ProceduralTerrain {
         uniform vec3 skyColor;
         uniform vec3 sunColor;
         uniform vec3 rockColor;
+        uniform vec3 rockDark;
         uniform vec3 sunDirection;
+        uniform float sunIntensity;
+        uniform vec3 fogColor;
+        uniform float fogDensity;
 
         varying vec3 vNormal;
         varying vec3 vWorldPosition;
 
+        float hash21(vec2 p) {
+          p = fract(p * vec2(127.1, 311.7));
+          p += dot(p, p + 34.23);
+          return fract(p.x * p.y);
+        }
+
+        float noise2D(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = hash21(i);
+          float b = hash21(i + vec2(1.0, 0.0));
+          float c = hash21(i + vec2(0.0, 1.0));
+          float d = hash21(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+
+        float fbmRock(vec2 p) {
+          float v = 0.0;
+          v += noise2D(p) * 0.55;
+          v += noise2D(p * 2.3 + 4.1) * 0.30;
+          v += noise2D(p * 5.7 - 1.9) * 0.15;
+          return v;
+        }
+
         void main() {
           float slope = clamp(vNormal.y, 0.0, 1.0);
-          float rockFactor = smoothstep(0.45, 0.20, slope);
 
-          float NdotL = dot(vNormal, sunDirection);
+          // Textura triplanar procedural para roca granítica en cortados y crestas
+          vec3 blendW = abs(vNormal);
+          blendW = pow(blendW, vec3(4.0));
+          blendW /= max(0.001, blendW.x + blendW.y + blendW.z);
+
+          float rx = fbmRock(vWorldPosition.zy * 0.06);
+          float ry = fbmRock(vWorldPosition.xz * 0.06);
+          float rz = fbmRock(vWorldPosition.xy * 0.06);
+          float rockPattern = rx * blendW.x + ry * blendW.y + rz * blendW.z;
+          float rockStrata = noise2D(vec2(vWorldPosition.y * 0.18, rockPattern * 3.0));
+
+          float rockFactor = smoothstep(0.62, 0.34, slope + (rockPattern - 0.5) * 0.12);
+
+          // Micro-relieve de nieve polvo virgen (sastrugi / ondas suaves de viento)
+          float snowRipples = noise2D(vWorldPosition.xz * 0.16) * 0.6 + noise2D(vWorldPosition.xz * 0.45) * 0.4;
+          vec3 snowNormal = normalize(vNormal + vec3((snowRipples - 0.5) * 0.14, 0.0, (snowRipples - 0.5) * 0.14));
+
+          float NdotL = dot(snowNormal, sunDirection);
           float halfLambert = clamp(NdotL * 0.5 + 0.5, 0.0, 1.0);
-          float directSun = smoothstep(0.18, 0.72, halfLambert);
+          float directSun = smoothstep(0.18, 0.74, halfLambert);
 
           float skyFactor = clamp(vNormal.y * 0.5 + 0.5, 0.0, 1.0);
-          vec3 ambientReflection = mix(skyColor * 0.90, vec3(0.95, 0.96, 0.98), skyFactor);
+          vec3 ambientReflection = mix(skyColor * 0.96, vec3(1.0, 1.0, 1.0), skyFactor);
 
+          vec3 snowAlbedo = snowColor * (0.98 + snowRipples * 0.04);
           vec3 litSnow = mix(
-            snowColor * ambientReflection * 0.92,
-            snowColor * (ambientReflection * 0.25 + sunColor * 0.80),
+            snowAlbedo * ambientReflection * 0.98,
+            snowAlbedo * (ambientReflection * 0.44 + sunColor * 0.86 * sunIntensity),
             directSun
           );
 
+          vec3 graniteAlbedo = mix(rockDark, rockColor, rockPattern * 0.75 + rockStrata * 0.25);
           vec3 litRock = mix(
-            rockColor * ambientReflection * 0.75,
-            rockColor * (ambientReflection * 0.35 + sunColor * 0.75),
+            graniteAlbedo * ambientReflection * 0.65,
+            graniteAlbedo * (ambientReflection * 0.28 + sunColor * 0.80 * sunIntensity),
             directSun
           );
 
           vec3 finalColor = mix(litSnow, litRock, rockFactor);
 
+          // Brillo especular + destellos cristalinos en nieve polvo
           vec3 viewDir = normalize(cameraPosition - vWorldPosition);
           vec3 halfVec = normalize(sunDirection + viewDir);
-          float spec = pow(max(dot(vNormal, halfVec), 0.0), 32.0) * directSun * (1.0 - rockFactor);
-          finalColor += vec3(0.18) * spec;
+          float spec = pow(max(dot(snowNormal, halfVec), 0.0), 28.0) * directSun * (1.0 - rockFactor);
+
+          vec2 glintCell = floor(vWorldPosition.xz * 5.0);
+          float glintRand = hash21(glintCell + floor(viewDir.xz * 4.0));
+          float closeMask = 1.0 - smoothstep(15.0, 90.0, length(cameraPosition - vWorldPosition));
+          float glint = smoothstep(0.982, 1.0, glintRand) * directSun * (1.0 - rockFactor) * closeMask * 0.4;
+
+          finalColor += vec3(0.16 * spec + glint);
+
+          // Niebla atmosférica exponencial sincronizada con WeatherAtmosphere
+          float dist = length(cameraPosition - vWorldPosition);
+          float fogFactor = 1.0 - exp(-fogDensity * fogDensity * dist * dist);
+          finalColor = mix(finalColor, fogColor, clamp(fogFactor, 0.0, 1.0));
 
           gl_FragColor = vec4(finalColor, 1.0);
         }

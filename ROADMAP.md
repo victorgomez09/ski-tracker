@@ -336,11 +336,14 @@ Plataforma interactiva 3D procedural (inspirada en *Endless Peaks* / *Grand Moun
   - **Tráfico Vivo en la Montaña (IA):** Otros esquiadores bajando por las pistas haciendo slalom y máquinas pisanieves reales con rotativo ámbar y faros recorriendo el dominio.
   - **Huellas Persistentes en la Nieve:** Surcos paralelos de los esquís dibujados sobre la nieve al deslizar y girar.
 
-- [ ] **10.12 Calidad Visual AAA: Iluminación Viva y Texturas Hiperrealistas (Fase Final de Pulido)**
+- [x] **10.12 Calidad Visual AAA: Iluminación Viva y Texturas Hiperrealistas**
   - **Texturizado PBR Triplanar en Terreno:** Roca granítica con relieve real en cortados, transiciones suaves nieve-roca-pradera y micro-relieve de nieve polvo virgen con brillo cristalino.
   - **Iluminación Global y Sombras Suaves (`PCFSoftShadowMap`):** Sombras dinámicas de pinos, pilonas, remontes y del propio esquiador sobre la nieve, junto con *Atmospheric Sky Dome* y *Color Grading* ACES vibrante.
   - **Vegetación Detallada y Nieve en Ramas:** Pinos multicapa con copas nevadas y rocas dispersas en cota alta mediante `InstancedMesh`.
-  - **Post-Procesado Ligero (Bloom Alpino):** Resplandor sutil de sol sobre nieve y luces cálidas de refugios, pisanieves y foco nocturno.
+
+- [x] **10.13 Ajustes Gráficos y Escalabilidad Multi-Dispositivo**
+  - **Perfiles de Calidad (Bajo / Medio / Alto / Ultra):** Selector en HUD/ajustes para adaptar el simulador a cualquier móvil, tablet o PC.
+  - **Escalado Dinámico de Resolución y Sombras:** Ajuste de `devicePixelRatio`, activación/resolución de mapas de sombras (`1024`/`2048`/Off), distancia de dibujado (niebla) y densidad de partículas/vegetación/IA para garantizar fluidez a 60 FPS en gama baja y máxima fidelidad en gama alta.
 
 
 ---

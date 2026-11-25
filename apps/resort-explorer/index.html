@@ -657,6 +657,57 @@
         border-radius: 50%;
         margin-right: 4px;
       }
+      /* Modal de Ajustes Gráficos (10.13) */
+      #graphics-settings-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 10, 20, 0.78);
+        backdrop-filter: blur(8px);
+        z-index: 95;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      .gfx-card {
+        width: 100%;
+        max-width: 440px;
+        background: #0f172a;
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        border-radius: 16px;
+        padding: 18px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      }
+      .gfx-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
+        color: #e2e8f0;
+      }
+      .gfx-preset-bar {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+      }
+      .gfx-btn {
+        background: #1e293b;
+        color: #cbd5e1;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 8px;
+        padding: 7px 6px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .gfx-btn.active {
+        background: #0284c7;
+        color: #ffffff;
+        border-color: #38bdf8;
+      }
       .map-detail-info h3 { font-size: 15px; font-weight: 700; }
       .map-detail-info p { font-size: 12px; color: #94a3b8; margin: 2px 0 6px; }
       .map-detail-metrics {
@@ -694,6 +745,53 @@
       <canvas id="webgl-canvas"></canvas>
 
       <div id="resort-map-overlay"></div>
+
+      <div id="graphics-settings-overlay">
+        <div class="gfx-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <h3 style="font-size:16px;font-weight:700;">Ajustes Gráficos</h3>
+              <span id="graphics-fps-val" style="font-size:11px;font-weight:700;color:#34d399;">60 FPS</span>
+            </div>
+            <button class="map-close-btn" id="gfx-close-btn">✕</button>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;text-transform:uppercase;">Perfil de Calidad</div>
+            <div class="gfx-preset-bar">
+              <button class="gfx-btn" data-gfx-preset="low">Bajo</button>
+              <button class="gfx-btn" data-gfx-preset="medium">Medio</button>
+              <button class="gfx-btn" data-gfx-preset="high">Alto</button>
+              <button class="gfx-btn" data-gfx-preset="ultra">Ultra</button>
+            </div>
+          </div>
+          <div class="gfx-row">
+            <span>Sombras Dinámicas</span>
+            <button class="gfx-btn" id="gfx-toggle-shadows" style="min-width:74px;">Activadas</button>
+          </div>
+          <div class="gfx-row">
+            <span>Esquiadores IA y Pisanieves</span>
+            <button class="gfx-btn" id="gfx-toggle-traffic" style="min-width:74px;">Activados</button>
+          </div>
+          <div class="gfx-row">
+            <span>Resolución (Pixel Ratio)</span>
+            <select id="gfx-dpr-select" style="background:#1e293b;color:#f8fafc;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:5px 8px;font-size:12px;">
+              <option value="1">Ahorro (1.0x)</option>
+              <option value="1.25">Equilibrada (1.25x)</option>
+              <option value="1.75">Alta (1.75x)</option>
+              <option value="2">Nativa Máx (2.0x)</option>
+            </select>
+          </div>
+          <div class="gfx-row">
+            <span>Distancia de Visión</span>
+            <select id="gfx-dist-select" style="background:#1e293b;color:#f8fafc;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:5px 8px;font-size:12px;">
+              <option value="5000">Corta (5 km)</option>
+              <option value="10000">Media (10 km)</option>
+              <option value="18000">Larga (18 km)</option>
+              <option value="25000">Máxima (25 km)</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <div id="expanded-minimap-overlay">
         <div class="expanded-minimap-card">
@@ -739,6 +837,7 @@
             <span id="resort-name">Valdesquí</span>
             <span class="badge-live">3D Live</span>
             <button class="btn-respawn" id="btn-open-map" style="margin-left: 6px;">🗺️ Estaciones</button>
+            <button class="btn-respawn" id="btn-open-gfx">⚙️ Gráficos</button>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
             <div style="display:flex;gap:5px;pointer-events:auto;" id="weather-pills">

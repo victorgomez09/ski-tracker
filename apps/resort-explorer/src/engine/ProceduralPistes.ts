@@ -18,6 +18,8 @@ interface PisteCenterline {
 export class ProceduralPistes {
   public group: THREE.Group = new THREE.Group();
   private centerlines: PisteCenterline[] = [];
+  private pisteMaterials: THREE.ShaderMaterial[] = [];
+  private aerialHighlight = false;
 
   private difficultyColors: Record<string, number> = {
     novice: 0x10b981,       // Verde oficial
@@ -60,8 +62,23 @@ export class ProceduralPistes {
     }
   }
 
+  public getPisteMaterials(): THREE.ShaderMaterial[] {
+    return this.pisteMaterials;
+  }
+
+  public setAerialHighlight(enabled: boolean) {
+    this.aerialHighlight = enabled;
+    const val = enabled ? 1.0 : 0.0;
+    this.pisteMaterials.forEach((mat) => {
+      if (mat.uniforms.aerialHighlight) {
+        mat.uniforms.aerialHighlight.value = val;
+      }
+    });
+  }
+
   private buildPistesFromOSM(terrain: ProceduralTerrain, projection: GeoProjection, pistes: OSMSkiPiste[]) {
     this.centerlines = [];
+    this.pisteMaterials = [];
     pistes.forEach((piste, index) => {
       if (!piste.geometry_geojson || !Array.isArray(piste.geometry_geojson.coordinates)) return;
       const coords = piste.geometry_geojson.coordinates;
@@ -95,7 +112,7 @@ export class ProceduralPistes {
       const lon = pt[0];
       const lat = pt[1];
       const [x, z] = projection.project(lon, lat);
-      const y = terrain.getElevationAt(x, z) + 0.85;
+      const y = terrain.getElevationAt(x, z) + 0.06;
       vectors.push(new THREE.Vector3(x, y, z));
     }
 
@@ -150,19 +167,19 @@ export class ProceduralPistes {
       const left = pt.clone().addScaledVector(side, -dynamicWidth / 2);
       const right = pt.clone().addScaledVector(side, dynamicWidth / 2);
 
-      left.y = terrain.getElevationAt(left.x, left.z) + 1.1;
-      right.y = terrain.getElevationAt(right.x, right.z) + 1.1;
+      left.y = terrain.getElevationAt(left.x, left.z) + 0.06;
+      right.y = terrain.getElevationAt(right.x, right.z) + 0.06;
 
       rightMarginPoints.push(right);
       leftMarginPoints.push(left);
 
-      // Malla transversal de 4 puntos para adaptarse al relieve sin recortar el terreno
-      const cols = 4;
+      // Malla transversal de 6 puntos al ras del terreno (+0.06m) para unificación total
+      const cols = 6;
       for (let k = 0; k < cols; k++) {
         const t = k / (cols - 1);
         const vx = left.x + (right.x - left.x) * t;
         const vz = left.z + (right.z - left.z) * t;
-        const vy = terrain.getElevationAt(vx, vz) + 1.1;
+        const vy = terrain.getElevationAt(vx, vz) + 0.06;
 
         vertices.push(vx, vy, vz);
         uvs.push(t, accumulatedDistance * 0.08);
@@ -187,7 +204,7 @@ export class ProceduralPistes {
       }
     }
 
-    const cols = 4;
+    const cols = 6;
     for (let i = 0; i < curvePoints.length - 1; i++) {
       const row1 = i * cols;
       const row2 = (i + 1) * cols;
@@ -208,6 +225,8 @@ export class ProceduralPistes {
     ribbonGeom.computeVertexNormals();
 
     const pisteMaterial = createPisteCorduroyMaterial(pisteColor);
+    pisteMaterial.uniforms.aerialHighlight.value = this.aerialHighlight ? 1.0 : 0.0;
+    this.pisteMaterials.push(pisteMaterial);
     const ribbonMesh = new THREE.Mesh(ribbonGeom, pisteMaterial);
     this.group.add(ribbonMesh);
   }

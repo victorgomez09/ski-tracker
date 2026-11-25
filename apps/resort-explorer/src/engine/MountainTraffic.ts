@@ -51,7 +51,7 @@ export class MountainTraffic {
       if (!coords || coords.length < 3) return;
       const pts: THREE.Vector3[] = coords.map((pt) => {
         const [x, z] = projection.project(pt[0], pt[1]);
-        const y = terrain.getElevationAt(x, z) + 1.12;
+        const y = terrain.getElevationAt(x, z) + 0.06;
         return new THREE.Vector3(x, y, z);
       });
       validCurves.push(new THREE.CatmullRomCurve3(pts));

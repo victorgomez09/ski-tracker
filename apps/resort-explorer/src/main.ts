@@ -95,4 +95,68 @@ window.addEventListener('DOMContentLoaded', () => {
       if (mode) manager.setWeatherMode(mode);
     });
   });
+
+  // Panel de Ajustes Gráficos Multi-Dispositivo (Fase 10.13)
+  const gfxOverlay = document.getElementById('graphics-settings-overlay');
+  const syncGfxUI = () => {
+    const cfg = manager.getGraphicsConfig();
+    document.querySelectorAll('[data-gfx-preset]').forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-gfx-preset') === cfg.preset);
+    });
+    const shadowsBtn = document.getElementById('gfx-toggle-shadows');
+    if (shadowsBtn) {
+      shadowsBtn.textContent = cfg.shadowsEnabled ? 'Activadas' : 'Desactiv.';
+      shadowsBtn.classList.toggle('active', cfg.shadowsEnabled);
+    }
+    const trafficBtn = document.getElementById('gfx-toggle-traffic');
+    if (trafficBtn) {
+      trafficBtn.textContent = cfg.trafficEnabled ? 'Activados' : 'Desactiv.';
+      trafficBtn.classList.toggle('active', cfg.trafficEnabled);
+    }
+    const dprSel = document.getElementById('gfx-dpr-select') as HTMLSelectElement | null;
+    if (dprSel) dprSel.value = String(cfg.pixelRatioMax);
+    const distSel = document.getElementById('gfx-dist-select') as HTMLSelectElement | null;
+    if (distSel) distSel.value = String(cfg.drawDistance);
+  };
+
+  document.getElementById('btn-open-gfx')?.addEventListener('click', () => {
+    syncGfxUI();
+    if (gfxOverlay) gfxOverlay.style.display = 'flex';
+  });
+
+  document.getElementById('gfx-close-btn')?.addEventListener('click', () => {
+    if (gfxOverlay) gfxOverlay.style.display = 'none';
+  });
+
+  document.querySelectorAll('[data-gfx-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const preset = btn.getAttribute('data-gfx-preset') as 'low' | 'medium' | 'high' | 'ultra';
+      if (preset) {
+        manager.setGraphicsPreset(preset);
+        syncGfxUI();
+      }
+    });
+  });
+
+  document.getElementById('gfx-toggle-shadows')?.addEventListener('click', () => {
+    const curr = manager.getGraphicsConfig();
+    manager.updateGraphicsOption({ shadowsEnabled: !curr.shadowsEnabled });
+    syncGfxUI();
+  });
+
+  document.getElementById('gfx-toggle-traffic')?.addEventListener('click', () => {
+    const curr = manager.getGraphicsConfig();
+    manager.updateGraphicsOption({ trafficEnabled: !curr.trafficEnabled });
+    syncGfxUI();
+  });
+
+  document.getElementById('gfx-dpr-select')?.addEventListener('change', (e) => {
+    const val = Number((e.target as HTMLSelectElement).value);
+    if (val > 0) manager.updateGraphicsOption({ pixelRatioMax: val });
+  });
+
+  document.getElementById('gfx-dist-select')?.addEventListener('change', (e) => {
+    const val = Number((e.target as HTMLSelectElement).value);
+    if (val > 0) manager.updateGraphicsOption({ drawDistance: val });
+  });
 });

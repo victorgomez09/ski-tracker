@@ -13,6 +13,7 @@ import { TacticalMinimap } from './TacticalMinimap.js';
 import { WeatherAtmosphere, WeatherMode } from './WeatherAtmosphere.js';
 import { MountainTraffic } from './MountainTraffic.js';
 import { SkiTracksTrail } from './SkiTracksTrail.js';
+import { GraphicsConfig, GraphicsSettings, QualityPreset } from './GraphicsSettings.js';
 
 export class SceneManager {
   private canvas: HTMLCanvasElement;
@@ -30,7 +31,12 @@ export class SceneManager {
   private weather!: WeatherAtmosphere;
   private traffic!: MountainTraffic;
   private tracks!: SkiTracksTrail;
+  private sunLight!: THREE.DirectionalLight;
+  private graphicsSettings: GraphicsSettings = new GraphicsSettings();
   private activeLiveWeather: LiveWeatherInfo | null = null;
+  private fpsFrames = 0;
+  private fpsAccum = 0;
+  private currentFps = 60;
   private clock = new THREE.Clock();
 
   // Modo por defecto: esquiar; permite alternar a Vista Aérea para inspeccionar el terreno
@@ -52,7 +58,7 @@ export class SceneManager {
       this.projection.setBounds(resortData.bbox[0], resortData.bbox[1], resortData.bbox[2], resortData.bbox[3]);
     }
 
-    // Renderer
+    // Renderer con sombras suaves PCFSoftShadowMap (Fase 10.12)
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: true,
@@ -60,8 +66,10 @@ export class SceneManager {
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.18;
 
     // Scene con cielo alpino luminoso y niebla ligera para abarcar estaciones extensas
     this.scene = new THREE.Scene();
@@ -139,18 +147,26 @@ export class SceneManager {
     const ambientLight = new THREE.AmbientLight(0xf1f5f9, 1.0);
     this.scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xfffcf5, 1.4);
-    sunLight.position.set(450, 800, 350);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 1024;
-    sunLight.shadow.mapSize.height = 1024;
-    this.scene.add(sunLight);
+    this.sunLight = new THREE.DirectionalLight(0xfffcf5, 1.45);
+    this.sunLight.position.set(450, 800, 350);
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.width = 2048;
+    this.sunLight.shadow.mapSize.height = 2048;
+    this.sunLight.shadow.camera.near = 10;
+    this.sunLight.shadow.camera.far = 2500;
+    this.sunLight.shadow.camera.left = -95;
+    this.sunLight.shadow.camera.right = 95;
+    this.sunLight.shadow.camera.top = 95;
+    this.sunLight.shadow.camera.bottom = -95;
+    this.sunLight.shadow.bias = -0.0005;
+    this.scene.add(this.sunLight);
+    this.scene.add(this.sunLight.target);
 
     const bounceSnowLight = new THREE.DirectionalLight(0xf8fafc, 0.5);
     bounceSnowLight.position.set(-400, 120, -400);
     this.scene.add(bounceSnowLight);
 
-    this.weather = new WeatherAtmosphere(this.scene, ambientLight, sunLight, bounceSnowLight);
+    this.weather = new WeatherAtmosphere(this.scene, ambientLight, this.sunLight, bounceSnowLight);
   }
 
   private initWorld() {
@@ -158,21 +174,26 @@ export class SceneManager {
 
     this.terrain = new ProceduralTerrain(2600, 2600, 220);
     this.scene.add(this.terrain.mesh);
+    this.weather?.bindTerrainMaterial(this.terrain.mesh.material as THREE.ShaderMaterial);
 
     this.pistes = new ProceduralPistes(this.terrain, this.projection, resortData.pistes);
     this.scene.add(this.pistes.group);
+    this.weather?.bindPisteMaterials(this.pistes.getPisteMaterials());
 
     this.lifts = new ProceduralLifts(this.terrain, this.projection, resortData.lifts, true);
     this.scene.add(this.lifts.group);
 
-    this.vegetation = new ProceduralVegetation(this.terrain, 2200);
-    this.scene.add(this.vegetation.instancedMesh);
+    this.vegetation = new ProceduralVegetation(this.terrain, 2600, 550);
+    this.scene.add(this.vegetation.group);
 
     this.pois = new ProceduralPOIs(this.terrain, this.projection, resortData.pois || []);
     this.scene.add(this.pois.group);
 
     this.traffic = new MountainTraffic(this.terrain, this.projection, resortData.pistes);
     this.scene.add(this.traffic.group);
+
+    // Aplicar perfil gráfico inicial detectado según dispositivo
+    this.applyGraphicsConfig(this.graphicsSettings.getConfig());
 
     this.tracks = new SkiTracksTrail();
     this.scene.add(this.tracks.group);
@@ -181,11 +202,16 @@ export class SceneManager {
     this.skier = new SkierController(this.terrain);
     this.skier.setAltitudeRange(resortData.base_altitude, resortData.summit_altitude);
     this.skier.setRideableLifts(this.lifts.getRideableLifts());
+    this.skier.avatar.group.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        obj.castShadow = true;
+      }
+    });
     this.scene.add(this.skier.avatar.group);
     this.scene.add(this.skier.particles.points);
 
     this.minimap = new TacticalMinimap((tx, tz, heading) => {
-      if (this.tracks) this.tracks.clear();
+      if (this.tracks) this.tracks.breakStroke();
       this.skier.teleportTo(tx, tz, heading);
       if (this.mode === 'orbit') {
         this.setMode('skier');
@@ -236,6 +262,7 @@ export class SceneManager {
     // 4. Reconstruir pistas, remontes, POIs y vegetación sobre la topografía real
     if (this.pistes && data.pistes) {
       this.pistes.rebuild(this.terrain, this.projection, data.pistes);
+      this.weather?.bindPisteMaterials(this.pistes.getPisteMaterials());
     }
     if (this.lifts && data.lifts) {
       this.lifts.rebuild(this.terrain, this.projection, data.lifts, isValdesqui);
@@ -338,12 +365,16 @@ export class SceneManager {
 
     let lowestY = Infinity;
     let highestY = -Infinity;
+    const liftBases: Array<{ x: number; z: number }> = [];
 
+    // 1. Buscar la cota más baja y la cota más alta reales entre todos los remontes y pistas
     (data.lifts || []).forEach((lift) => {
       const coords = lift.geometry_geojson?.coordinates;
       if (!coords || coords.length < 2) return;
       const [sx, sz] = this.projection.project(coords[0][0], coords[0][1]);
       const [ex, ez] = this.projection.project(coords[coords.length - 1][0], coords[coords.length - 1][1]);
+      liftBases.push({ x: sx, z: sz });
+
       const sy = this.terrain.getElevationAt(sx, sz);
       const ey = this.terrain.getElevationAt(ex, ez);
 
@@ -359,27 +390,52 @@ export class SceneManager {
       }
     });
 
-    if (!isFinite(lowestY) && data.pistes && data.pistes.length > 0) {
-      data.pistes.forEach((piste) => {
-        const coords = piste.geometry_geojson?.coordinates;
-        if (!coords || coords.length < 2) return;
-        const [sx, sz] = this.projection.project(coords[0][0], coords[0][1]);
-        const [ex, ez] = this.projection.project(coords[coords.length - 1][0], coords[coords.length - 1][1]);
-        const sy = this.terrain.getElevationAt(sx, sz);
-        const ey = this.terrain.getElevationAt(ex, ez);
-        if (ey < lowestY) {
-          lowestY = ey;
-          baseX = ex;
-          baseZ = ez;
+    (data.pistes || []).forEach((piste) => {
+      const coords = piste.geometry_geojson?.coordinates;
+      if (!coords || coords.length < 2) return;
+      coords.forEach((pt) => {
+        const [px, pz] = this.projection.project(pt[0], pt[1]);
+        const py = this.terrain.getElevationAt(px, pz);
+        if (py < lowestY) {
+          lowestY = py;
+          baseX = px;
+          baseZ = pz;
         }
-        if (sy > highestY) {
-          highestY = sy;
-          summitX = sx;
-          summitZ = sz;
+        if (py > highestY) {
+          highestY = py;
+          summitX = px;
+          summitZ = pz;
         }
       });
+    });
+
+    // 2. Asegurar que el spawn en base NO quede superpuesto a la base de ningún remonte (mínimo 18 m despejado)
+    const dirX = summitX - baseX;
+    const dirZ = summitZ - baseZ;
+    const len = Math.hypot(dirX, dirZ) || 1;
+    const fwdX = dirX / len;
+    const fwdZ = dirZ / len;
+    const rightX = -fwdZ;
+    const rightZ = fwdX;
+
+    const isTooCloseToLift = (x: number, z: number) =>
+      liftBases.some((lb) => Math.hypot(x - lb.x, z - lb.z) < 18);
+
+    if (isTooCloseToLift(baseX, baseZ)) {
+      const candidates = [
+        { x: baseX + rightX * 20, z: baseZ + rightZ * 20 },
+        { x: baseX - rightX * 20, z: baseZ - rightZ * 20 },
+        { x: baseX - fwdX * 22, z: baseZ - fwdZ * 22 },
+        { x: baseX + rightX * 32 - fwdX * 14, z: baseZ + rightZ * 32 - fwdZ * 14 },
+      ];
+      const safe = candidates.find((c) => !isTooCloseToLift(c.x, c.z));
+      if (safe) {
+        baseX = safe.x;
+        baseZ = safe.z;
+      }
     }
 
+    // Orientar la vista desde la base directamente hacia la cota más alta de la montaña
     const toSummit = Math.atan2(summitX - baseX, summitZ - baseZ);
     const toBase = Math.atan2(baseX - summitX, baseZ - summitZ);
 
@@ -412,13 +468,64 @@ export class SceneManager {
   }
 
   public respawnSkier(target: 'base' | 'summit' = 'base') {
-    if (this.tracks) this.tracks.clear();
+    if (this.tracks) this.tracks.breakStroke();
     if (this.skier) {
       if (target === 'summit') {
         this.skier.respawnAtSummit();
       } else {
         this.skier.respawnAtBase();
       }
+    }
+  }
+
+  public getGraphicsConfig(): GraphicsConfig {
+    return this.graphicsSettings.getConfig();
+  }
+
+  public getCurrentFps(): number {
+    return this.currentFps;
+  }
+
+  public setGraphicsPreset(preset: QualityPreset): GraphicsConfig {
+    const cfg = this.graphicsSettings.applyPreset(preset);
+    this.applyGraphicsConfig(cfg);
+    return cfg;
+  }
+
+  public updateGraphicsOption(partial: Partial<GraphicsConfig>): GraphicsConfig {
+    const cfg = this.graphicsSettings.updatePartial(partial);
+    this.applyGraphicsConfig(cfg);
+    return cfg;
+  }
+
+  private applyGraphicsConfig(cfg: GraphicsConfig) {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cfg.pixelRatioMax));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+
+    this.renderer.shadowMap.enabled = cfg.shadowsEnabled;
+    if (this.sunLight) {
+      this.sunLight.castShadow = cfg.shadowsEnabled;
+      if (this.sunLight.shadow.mapSize.width !== cfg.shadowMapSize) {
+        this.sunLight.shadow.mapSize.width = cfg.shadowMapSize;
+        this.sunLight.shadow.mapSize.height = cfg.shadowMapSize;
+        if (this.sunLight.shadow.map) {
+          this.sunLight.shadow.map.dispose();
+          this.sunLight.shadow.map = null;
+        }
+      }
+    }
+
+    if (this.camera.far !== cfg.drawDistance) {
+      this.camera.far = cfg.drawDistance;
+      this.camera.updateProjectionMatrix();
+    }
+
+    if (this.vegetation) {
+      this.vegetation.setLODCounts(cfg.treeCount, cfg.rockCount);
+    }
+
+    if (this.traffic) {
+      this.traffic.group.visible = cfg.trafficEnabled;
     }
   }
 
@@ -462,6 +569,13 @@ export class SceneManager {
     const telemetry = document.getElementById('skier-telemetry');
     if (touchControls) touchControls.style.display = isOrbit ? 'none' : 'flex';
     if (telemetry) telemetry.style.display = isOrbit ? 'none' : 'flex';
+
+    if (this.pistes) {
+      this.pistes.setAerialHighlight(isOrbit);
+    }
+    if (this.weather) {
+      this.weather.setAerialView(isOrbit);
+    }
 
     if (this.skier) {
       if (isOrbit) {
@@ -528,20 +642,40 @@ export class SceneManager {
 
     const delta = this.clock.getDelta();
 
+    this.fpsFrames++;
+    this.fpsAccum += delta;
+    if (this.fpsAccum >= 0.5) {
+      this.currentFps = Math.round(this.fpsFrames / this.fpsAccum);
+      this.fpsFrames = 0;
+      this.fpsAccum = 0;
+      const fpsEl = document.getElementById('graphics-fps-val');
+      if (fpsEl) fpsEl.textContent = `${this.currentFps} FPS`;
+    }
+
     if (this.lifts) {
       this.lifts.update(delta);
     }
-    if (this.traffic) {
+    if (this.traffic && this.traffic.group.visible) {
       this.traffic.update(delta);
     }
 
     if (this.mode === 'skier' && this.skier) {
       const telemetry = this.skier.update(delta, this.camera);
-      if (this.tracks && !telemetry.ridingLiftName) {
-        this.tracks.addPoint(this.skier.position, this.skier.heading, this.skier.isGrounded);
+      if (this.tracks) {
+        if (telemetry.ridingLiftName) {
+          this.tracks.breakStroke();
+        } else {
+          this.tracks.addPoint(this.skier.position, this.skier.heading, this.skier.isGrounded);
+        }
       }
       if (this.weather) {
         this.weather.update(delta, this.skier.position, this.skier.heading);
+      }
+      // Seguir al esquiador con el frustum de sombras para mantener máxima nitidez alrededor
+      if (this.sunLight) {
+        this.sunLight.target.position.copy(this.skier.position);
+        const sunDir = this.sunLight.position.clone().normalize();
+        this.sunLight.position.copy(this.skier.position).addScaledVector(sunDir, 600);
       }
       if (this.minimap) {
         this.minimap.update(this.skier.position.x, this.skier.position.z, this.skier.heading);

@@ -1,25 +1,27 @@
 import * as THREE from 'three';
 
 /**
- * Shader procedural fotorrealista de "Nieve Pisada Alpina" (Zero-Assets):
- * - Fresado real de pisanieves (corduroy con perfil en V y perturbación de normal a la luz).
- * - Pasadas de máquina con ligero bamboleo orgánico (sin líneas rígidas artificiales).
- * - Huellas sutiles de esquís carveando a lo largo de la bajada.
- * - Grano microcristalino y destellos especulares (snow glints) bajo el sol directo.
- * - Transición natural con talud lateral hacia la nieve polvo virgen.
+ * Shader procedural de "Nieve Pisada" unificado con la iluminación del terreno:
+ * - Usa exactamente el mismo color base nival, luz solar, cielo y niebla que la montaña,
+ *   diferenciándose únicamente por las estrías de fresado (corduroy) y pasadas de pisanieves.
+ * - Transición suave (alpha feathering) en los bordes para integrarse sin escalones con la nieve polvo.
  */
-export function createPisteCorduroyMaterial(_difficultyHex: number = 0x0284c7): THREE.ShaderMaterial {
+export function createPisteCorduroyMaterial(difficultyHex: number = 0x0284c7): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     lights: false,
     polygonOffset: true,
-    polygonOffsetFactor: -8.0,
-    polygonOffsetUnits: -8.0,
+    polygonOffsetFactor: -12.0,
+    polygonOffsetUnits: -12.0,
     uniforms: {
-      snowCrest: { value: new THREE.Color(0xffffff) },       // Cresta de nieve iluminada
-      grooveShadow: { value: new THREE.Color(0xdce1e8) },    // Sombra neutra del surco
-      bermShadow: { value: new THREE.Color(0xc2c9d4) },      // Talud lateral de la pisanieves
+      snowColor: { value: new THREE.Color(0xffffff) },
+      skyColor: { value: new THREE.Color(0xf1f5f9) },
+      sunColor: { value: new THREE.Color(0xffffff) },
       sunDirection: { value: new THREE.Vector3(0.45, 0.78, 0.42).normalize() },
-      skyAmbient: { value: new THREE.Color(0xe8ecf2) },
+      sunIntensity: { value: 1.0 },
+      fogColor: { value: new THREE.Color(0xdce8f4) },
+      fogDensity: { value: 0.00016 },
+      diffColor: { value: new THREE.Color(difficultyHex) },
+      aerialHighlight: { value: 0.0 },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -35,24 +37,26 @@ export function createPisteCorduroyMaterial(_difficultyHex: number = 0x0284c7): 
       }
     `,
     fragmentShader: `
-      uniform vec3 snowCrest;
-      uniform vec3 grooveShadow;
-      uniform vec3 bermShadow;
+      uniform vec3 snowColor;
+      uniform vec3 skyColor;
+      uniform vec3 sunColor;
       uniform vec3 sunDirection;
-      uniform vec3 skyAmbient;
+      uniform float sunIntensity;
+      uniform vec3 fogColor;
+      uniform float fogDensity;
+      uniform vec3 diffColor;
+      uniform float aerialHighlight;
 
       varying vec2 vUv;
       varying vec3 vNormal;
       varying vec3 vWorldPosition;
 
-      // Hash rápido 2D -> 1D para grano de nieve y destellos
       float hash21(vec2 p) {
-        p = fract(p * vec2(123.34, 456.21));
-        p += dot(p, p + 45.32);
+        p = fract(p * vec2(127.1, 311.7));
+        p += dot(p, p + 34.23);
         return fract(p.x * p.y);
       }
 
-      // Value noise suave 2D
       float noise2D(vec2 p) {
         vec2 i = floor(p);
         vec2 f = fract(p);
@@ -65,82 +69,69 @@ export function createPisteCorduroyMaterial(_difficultyHex: number = 0x0284c7): 
       }
 
       void main() {
-        // 1. Variación macro orgánica (ventisqueros suaves y placas compactadas)
-        float macroNoise = noise2D(vWorldPosition.xz * 0.045) * 0.65
-                         + noise2D(vWorldPosition.xz * 0.14) * 0.35;
-
-        // 2. Bamboleo orgánico en el trazado de las pasadas de pisanieves
-        float machineWobble = (noise2D(vec2(vUv.y * 0.35, vUv.x * 2.0)) - 0.5) * 0.025;
+        // 1. Bamboleo orgánico en las pasadas de pisanieves
+        float machineWobble = (noise2D(vec2(vUv.y * 0.35, vUv.x * 2.0)) - 0.5) * 0.022;
         float uWobbled = vUv.x + machineWobble;
 
-        // 3. Fresado de pisanieves (corduroy en perfil de diente de sierra / V)
-        // Atenuación anti-aliased con fwidth para que no parpadee desde lejos
+        // 2. Fresado de pisanieves (corduroy en perfil en V)
         float fw = fwidth(vUv.x);
         float detailFade = 1.0 - smoothstep(0.008, 0.06, fw);
-
-        float grooveCoord = uWobbled * 95.0;
-        float saw = abs(fract(grooveCoord) * 2.0 - 1.0); // 0 en fondo del surco, 1 en cresta
+        float saw = abs(fract(uWobbled * 95.0) * 2.0 - 1.0);
         float corduroy = mix(0.55, saw, detailFade);
 
-        // 4. Uniones entre las 4 pasadas paralelas de la máquina pisanieves
+        // 3. Uniones entre 4 pasadas paralelas de la máquina y huellas sutiles de esquís
         float lanePhase = fract(uWobbled * 4.0);
-        float laneSeam = smoothstep(0.055, 0.0, min(lanePhase, 1.0 - lanePhase));
-        float laneVariation = noise2D(vec2(floor(uWobbled * 4.0) * 3.7, vUv.y * 0.15));
+        float laneSeam = smoothstep(0.05, 0.0, min(lanePhase, 1.0 - lanePhase));
+        float skiTrack = smoothstep(0.92, 0.99, sin(vUv.x * 28.0 + sin(vUv.y * 0.55) * 2.2)) * detailFade;
 
-        // 5. Huellas sutiles de esquís carveando a lo largo de la pista
-        float skiTrack1 = sin(vUv.x * 26.0 + sin(vUv.y * 0.55) * 2.2);
-        float skiTrack2 = sin(vUv.x * 38.0 - cos(vUv.y * 0.42) * 1.9);
-        float skiEtch = smoothstep(0.92, 0.99, max(skiTrack1, skiTrack2)) * detailFade;
+        // Misma base de color nieve recién caída que la montaña, modulada solo por el relieve del pisado
+        float groomShade = 0.95 + corduroy * 0.07 - laneSeam * 0.04 - skiTrack * 0.03;
+        vec3 baseSnow = snowColor * groomShade;
 
-        // 6. Grano microcristalino de nieve compacta (visible de cerca al esquiar)
-        float microGrain = noise2D(vWorldPosition.xz * 4.5);
-        float closeFade = 1.0 - smoothstep(0.02, 0.15, fwidth(vWorldPosition.x));
-        float grainMod = mix(0.5, microGrain, closeFade);
-
-        // Composición del albedo base de la nieve pisada
-        vec3 baseSnow = mix(grooveShadow, snowCrest, corduroy * 0.58 + 0.42);
-        baseSnow = mix(baseSnow, grooveShadow * 0.97, laneVariation * 0.12);
-        baseSnow = mix(baseSnow, grooveShadow * 0.92, laneSeam * 0.42);
-        baseSnow = mix(baseSnow, grooveShadow * 0.94, skiEtch * 0.35);
-        baseSnow *= (0.96 + macroNoise * 0.06 + (grainMod - 0.5) * 0.05);
-
-        // 7. Borde natural de nieve pisada (talud lateral suave hacia nieve polvo)
         float distFromEdge = min(vUv.x, 1.0 - vUv.x);
-        float bermBand = smoothstep(0.075, 0.02, distFromEdge) * smoothstep(0.0, 0.015, distFromEdge);
-        baseSnow = mix(baseSnow, bermShadow, bermBand * 0.45);
 
-        // 8. Perturbación sutil de normal por el fresado y el grano para reflejar el sol
+        // En Vista Aérea, delimitar nítidamente con el color de dificultad
+        if (aerialHighlight > 0.01) {
+          float aerialEdge = smoothstep(0.16, 0.06, distFromEdge);
+          baseSnow = mix(baseSnow, diffColor, aerialHighlight * (0.16 + aerialEdge * 0.84));
+        }
+
+        // 4. Iluminación idéntica a ProceduralTerrain para nieve blanca pura
         vec3 perturbedNormal = normalize(
-          vNormal + vec3((saw - 0.5) * 0.18 * detailFade, 0.0, (grainMod - 0.5) * 0.08)
+          vNormal + vec3((saw - 0.5) * 0.16 * detailFade, 0.0, 0.0)
         );
-
         float NdotL = dot(perturbedNormal, sunDirection);
-        float halfLambert = clamp(NdotL * 0.48 + 0.52, 0.0, 1.0);
-        float directSun = smoothstep(0.18, 0.78, halfLambert);
+        float halfLambert = clamp(NdotL * 0.5 + 0.5, 0.0, 1.0);
+        float directSun = smoothstep(0.18, 0.74, halfLambert);
+
+        float skyFactor = clamp(vNormal.y * 0.5 + 0.5, 0.0, 1.0);
+        vec3 ambientReflection = mix(skyColor * 0.96, vec3(1.0, 1.0, 1.0), skyFactor);
 
         vec3 litPiste = mix(
-          baseSnow * skyAmbient * 0.92,
-          baseSnow * (skyAmbient * 0.20 + vec3(1.02, 1.01, 0.99) * 0.85),
+          baseSnow * ambientReflection * 0.98,
+          baseSnow * (ambientReflection * 0.44 + sunColor * 0.86 * sunIntensity),
           directSun
         );
 
-        // 9. Brillo especular + destellos cristalinos (snow glints) al sol
+        // Brillo especular compacto
         vec3 viewDir = normalize(cameraPosition - vWorldPosition);
         vec3 halfVec = normalize(sunDirection + viewDir);
-        float spec = pow(max(dot(perturbedNormal, halfVec), 0.0), 28.0) * directSun * 0.22;
+        float spec = pow(max(dot(perturbedNormal, halfVec), 0.0), 28.0) * directSun;
+        litPiste += vec3(0.18 * spec);
 
-        // Micro-destellos en celdas de ~12cm dependientes del ángulo de visión
-        vec2 sparkleCell = floor(vWorldPosition.xz * 8.0);
-        float sparkleRand = hash21(sparkleCell + floor(viewDir.xz * 6.0));
-        float glint = smoothstep(0.975, 1.0, sparkleRand) * directSun * closeFade * 0.45;
+        // Niebla atmosférica sincronizada con la montaña
+        float dist = length(cameraPosition - vWorldPosition);
+        float fogFactor = 1.0 - exp(-fogDensity * fogDensity * dist * dist);
+        litPiste = mix(litPiste, fogColor, clamp(fogFactor, 0.0, 1.0));
 
-        litPiste += vec3(spec + glint);
+        // 5. Fundido suave en los bordes para fusionarse al ras con la nieve polvo
+        float edgeAlpha = aerialHighlight > 0.01 ? 1.0 : smoothstep(0.0, 0.09, distFromEdge);
 
-        gl_FragColor = vec4(litPiste, 1.0);
+        gl_FragColor = vec4(litPiste, edgeAlpha);
       }
     `,
-    transparent: false,
-    depthWrite: true,
+    transparent: true,
+    depthWrite: false,
     side: THREE.DoubleSide,
   });
 }
