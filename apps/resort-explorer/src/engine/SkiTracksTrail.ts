@@ -21,13 +21,13 @@ export class SkiTracksTrail {
     geom.rotateX(-Math.PI / 2);
 
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xc2ccd9, // Sombra nival neutra sutil del surco prensado
+      color: 0xa3b8cc, // Sombra azulada sutil del surco prensado en la nieve
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.58,
       depthWrite: false,
       polygonOffset: true,
-      polygonOffsetFactor: -14.0,
-      polygonOffsetUnits: -14.0,
+      polygonOffsetFactor: -4.0,
+      polygonOffsetUnits: -4.0,
     });
 
     this.mesh = new THREE.InstancedMesh(geom, mat, this.maxGrooves);

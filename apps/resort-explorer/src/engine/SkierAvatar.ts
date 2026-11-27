@@ -43,11 +43,11 @@ export class SkierAvatar {
   private riderMode: RiderMode = 'ski';
   private stance: SnowboardStance = 'regular';
 
-  constructor() {
-    this.buildSkier();
+  constructor(jacketColor = 0xdc2626) {
+    this.buildSkier(jacketColor);
   }
 
-  private buildSkier() {
+  private buildSkier(jacketColor: number) {
     const fabricRoughness = ProceduralPBR.getFabricRoughnessMap();
 
     const skiTopMat = new THREE.MeshPhysicalMaterial({
@@ -65,7 +65,7 @@ export class SkierAvatar {
       roughnessMap: fabricRoughness,
     });
     const jacketMat = new THREE.MeshStandardMaterial({
-      color: 0xdc2626,
+      color: jacketColor,
       roughness: 0.65,
       roughnessMap: fabricRoughness,
     });
@@ -397,12 +397,14 @@ export class SkierAvatar {
 
     // Brazos y bastones: clavado de bastón sutil en giros, impulso en llano y apertura aérea
     const pushSwing = isPushing ? Math.sin(timeSec * 8.5) * 0.48 : 0;
-    const airArms = isGrounded ? 0 : 0.42;
-    const leftTurnReach = steerInput > 0 ? 0.24 : -0.10;
-    const rightTurnReach = steerInput < 0 ? 0.24 : -0.10;
-    this.leftArm.rotation.x = crouch * 0.35 + pushSwing + Math.abs(steerInput) * leftTurnReach;
-    this.rightArm.rotation.x = crouch * 0.35 + pushSwing + Math.abs(steerInput) * rightTurnReach;
+    const airArms = isGrounded ? 0 : 0.46;
+    const leftTurnReach = steerInput > 0.15 ? 0.34 * steerInput : -0.10;
+    const rightTurnReach = steerInput < -0.15 ? 0.34 * -steerInput : -0.10;
+    this.leftArm.rotation.x = crouch * 0.35 + pushSwing + leftTurnReach;
+    this.rightArm.rotation.x = crouch * 0.35 + pushSwing + rightTurnReach;
     this.leftArm.rotation.z = -crouch * 0.15 - 0.14 - airArms - roll * 0.32;
     this.rightArm.rotation.z = crouch * 0.15 + 0.14 + airArms - roll * 0.32;
+    this.leftPoleGroup.rotation.x = 1.15 - (steerInput > 0.2 ? steerInput * 0.38 : 0);
+    this.rightPoleGroup.rotation.x = 1.15 - (steerInput < -0.2 ? -steerInput * 0.38 : 0);
   }
 }

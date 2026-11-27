@@ -6,10 +6,13 @@ export type WeatherMode = 'live' | 'dry' | 'snow' | 'random';
 
 interface WeatherState {
   bgColor: THREE.Color;
+  skyTopColor: THREE.Color;
+  skyHorizonColor: THREE.Color;
   fogColor: THREE.Color;
   fogDensity: number;
   ambientColor: THREE.Color;
   ambientIntensity: number;
+  hemiIntensity: number;
   sunColor: THREE.Color;
   sunIntensity: number;
   sunPos: THREE.Vector3;
@@ -31,6 +34,8 @@ export class WeatherAtmosphere {
   private ambientLight: THREE.AmbientLight;
   private sunLight: THREE.DirectionalLight;
   private bounceLight: THREE.DirectionalLight;
+  private hemiLight: THREE.HemisphereLight | null = null;
+  private skyDomeMat: THREE.ShaderMaterial | null = null;
   private headlamp: THREE.SpotLight;
   private headlampTarget: THREE.Object3D;
 
@@ -157,6 +162,20 @@ export class WeatherAtmosphere {
     this.pisteMaterials = materials;
   }
 
+  public bindHemisphereLight(light: THREE.HemisphereLight) {
+    this.hemiLight = light;
+    this.applyStateToScene(this.currentState);
+  }
+
+  public bindSkyDomeMaterial(mat: THREE.ShaderMaterial) {
+    this.skyDomeMat = mat;
+    this.applyStateToScene(this.currentState);
+  }
+
+  public getSunDirection(): THREE.Vector3 {
+    return this.currentState.sunPos.clone().normalize();
+  }
+
   public setAerialView(enabled: boolean) {
     this.isAerialView = enabled;
     this.applyStateToScene(this.currentState);
@@ -173,15 +192,18 @@ export class WeatherAtmosphere {
     if (preset === 'sunset') {
       return {
         bgColor: new THREE.Color(0xf4a261),
+        skyTopColor: new THREE.Color(0x3a2e6d),
+        skyHorizonColor: new THREE.Color(0xf4a261),
         fogColor: new THREE.Color(0xf6bd8f),
-        fogDensity: 0.00028,
+        fogDensity: 0.00024,
         ambientColor: new THREE.Color(0xfde68a),
-        ambientIntensity: 0.78,
-        sunColor: new THREE.Color(0xff7b54),
-        sunIntensity: 1.55,
-        sunPos: new THREE.Vector3(-700, 180, 420),
+        ambientIntensity: 0.42,
+        hemiIntensity: 0.72,
+        sunColor: new THREE.Color(0xff8a5b),
+        sunIntensity: 1.65,
+        sunPos: new THREE.Vector3(-680, 175, 420),
         bounceColor: new THREE.Color(0xd8b4fe),
-        bounceIntensity: 0.45,
+        bounceIntensity: 0.42,
         headlampIntensity: 0,
         snowOpacity: 0,
         rainOpacity: 0,
@@ -191,15 +213,18 @@ export class WeatherAtmosphere {
     if (preset === 'snow') {
       return {
         bgColor: new THREE.Color(0xcbd5e1),
+        skyTopColor: new THREE.Color(0x889fb5),
+        skyHorizonColor: new THREE.Color(0xdbe3ed),
         fogColor: new THREE.Color(0xdbe3ed),
-        fogDensity: 0.0011,
+        fogDensity: 0.00105,
         ambientColor: new THREE.Color(0xf1f5f9),
-        ambientIntensity: 1.15,
+        ambientIntensity: 0.58,
+        hemiIntensity: 0.88,
         sunColor: new THREE.Color(0xf8fafc),
-        sunIntensity: 1.05,
+        sunIntensity: 0.95,
         sunPos: new THREE.Vector3(250, 500, 200),
         bounceColor: new THREE.Color(0xe2e8f0),
-        bounceIntensity: 0.5,
+        bounceIntensity: 0.45,
         headlampIntensity: 0,
         snowOpacity: 0.88,
         rainOpacity: 0,
@@ -209,15 +234,18 @@ export class WeatherAtmosphere {
     if (preset === 'rain') {
       return {
         bgColor: new THREE.Color(0x94a3b8),
+        skyTopColor: new THREE.Color(0x5f7285),
+        skyHorizonColor: new THREE.Color(0xb0becf),
         fogColor: new THREE.Color(0xb0becf),
-        fogDensity: 0.00095,
+        fogDensity: 0.0009,
         ambientColor: new THREE.Color(0xcbd5e1),
-        ambientIntensity: 0.92,
+        ambientIntensity: 0.48,
+        hemiIntensity: 0.75,
         sunColor: new THREE.Color(0xe2e8f0),
-        sunIntensity: 0.85,
+        sunIntensity: 0.8,
         sunPos: new THREE.Vector3(250, 500, 200),
         bounceColor: new THREE.Color(0x94a3b8),
-        bounceIntensity: 0.35,
+        bounceIntensity: 0.32,
         headlampIntensity: 0,
         snowOpacity: 0,
         rainOpacity: 0.72,
@@ -227,10 +255,13 @@ export class WeatherAtmosphere {
     if (preset === 'night') {
       return {
         bgColor: new THREE.Color(0x070d1d),
+        skyTopColor: new THREE.Color(0x040917),
+        skyHorizonColor: new THREE.Color(0x13264c),
         fogColor: new THREE.Color(0x0b152d),
-        fogDensity: 0.00085,
+        fogDensity: 0.00075,
         ambientColor: new THREE.Color(0x3b5998),
-        ambientIntensity: 0.48,
+        ambientIntensity: 0.28,
+        hemiIntensity: 0.45,
         sunColor: new THREE.Color(0x93c5fd),
         sunIntensity: 0.55,
         sunPos: new THREE.Vector3(250, 600, -300),
@@ -242,18 +273,21 @@ export class WeatherAtmosphere {
       };
     }
 
-    // 'sunny' (Seco)
+    // 'sunny' (Seco alpino luminoso)
     return {
-      bgColor: new THREE.Color(0xbce0fd),
-      fogColor: new THREE.Color(0xdce8f4),
-      fogDensity: 0.00016,
+      bgColor: new THREE.Color(0x9cd3f8),
+      skyTopColor: new THREE.Color(0x1c6fd6),
+      skyHorizonColor: new THREE.Color(0xd2ebfc),
+      fogColor: new THREE.Color(0xddeeff),
+      fogDensity: 0.00014,
       ambientColor: new THREE.Color(0xf1f5f9),
-      ambientIntensity: 1.05,
-      sunColor: new THREE.Color(0xfffcf5),
-      sunIntensity: 1.45,
-      sunPos: new THREE.Vector3(450, 800, 350),
-      bounceColor: new THREE.Color(0xf8fafc),
-      bounceIntensity: 0.5,
+      ambientIntensity: 0.42,
+      hemiIntensity: 0.92,
+      sunColor: new THREE.Color(0xfff9ed),
+      sunIntensity: 1.65,
+      sunPos: new THREE.Vector3(540, 420, 320),
+      bounceColor: new THREE.Color(0xdbeafe),
+      bounceIntensity: 0.45,
       headlampIntensity: 0,
       snowOpacity: 0,
       rainOpacity: 0,
@@ -261,10 +295,23 @@ export class WeatherAtmosphere {
   }
 
   private applyStateToScene(s: WeatherState) {
-    if (this.scene.background instanceof THREE.Color) {
+    if (this.skyDomeMat) {
+      this.scene.background = null;
+      const u = this.skyDomeMat.uniforms;
+      if (u.topColor) u.topColor.value.copy(s.skyTopColor);
+      if (u.horizonColor) u.horizonColor.value.copy(s.skyHorizonColor);
+      if (u.sunDir) u.sunDir.value.copy(s.sunPos).normalize();
+      if (u.sunColor) u.sunColor.value.copy(s.sunColor);
+    } else if (this.scene.background instanceof THREE.Color) {
       this.scene.background.copy(s.bgColor);
     } else {
       this.scene.background = s.bgColor.clone();
+    }
+
+    if (this.hemiLight) {
+      this.hemiLight.color.copy(s.skyTopColor).lerp(new THREE.Color(0xffffff), 0.48);
+      this.hemiLight.groundColor.copy(s.bounceColor).lerp(new THREE.Color(0x7c97b3), 0.45);
+      this.hemiLight.intensity = s.hemiIntensity;
     }
 
     // En Vista Aérea lejana, atenuar la niebla para ver toda la montaña nítida y sin velo gris
@@ -368,11 +415,15 @@ export class WeatherAtmosphere {
     this.setPreset('sunny');
     if (isFoggy) {
       this.targetState.bgColor.setHex(0xcbd5e1);
+      this.targetState.skyTopColor.setHex(0x94a3b8);
+      this.targetState.skyHorizonColor.setHex(0xdbe3ed);
       this.targetState.fogColor.setHex(0xdbe3ed);
       this.targetState.fogDensity = 0.0014;
       this.targetState.sunIntensity = 1.05;
     } else if (isOvercast) {
       this.targetState.bgColor.setHex(0xc4d4e4);
+      this.targetState.skyTopColor.setHex(0x7c97b5);
+      this.targetState.skyHorizonColor.setHex(0xd6e1ed);
       this.targetState.fogColor.setHex(0xd6e1ed);
       this.targetState.fogDensity = 0.00045;
       this.targetState.sunIntensity = 1.15;
@@ -401,10 +452,13 @@ export class WeatherAtmosphere {
     const c = this.currentState;
     const t = this.targetState;
     c.bgColor.lerp(t.bgColor, alpha);
+    c.skyTopColor.lerp(t.skyTopColor, alpha);
+    c.skyHorizonColor.lerp(t.skyHorizonColor, alpha);
     c.fogColor.lerp(t.fogColor, alpha);
     c.fogDensity = THREE.MathUtils.lerp(c.fogDensity, t.fogDensity, alpha);
     c.ambientColor.lerp(t.ambientColor, alpha);
     c.ambientIntensity = THREE.MathUtils.lerp(c.ambientIntensity, t.ambientIntensity, alpha);
+    c.hemiIntensity = THREE.MathUtils.lerp(c.hemiIntensity, t.hemiIntensity, alpha);
     c.sunColor.lerp(t.sunColor, alpha);
     c.sunIntensity = THREE.MathUtils.lerp(c.sunIntensity, t.sunIntensity, alpha);
     c.sunPos.lerp(t.sunPos, alpha);

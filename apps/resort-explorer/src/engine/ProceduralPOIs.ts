@@ -72,20 +72,30 @@ export class ProceduralPOIs {
     const baseMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
 
     if (category === 'restaurant' || category === 'cafe' || category === 'hotel') {
-      // Cabaña / Refugio alpino de madera y tejado oscuro con cimentación enterrada
+      // Cabaña / Refugio alpino de madera y tejado nevado a dos aguas
       const plinth = new THREE.Mesh(new THREE.BoxGeometry(9.0, 2.5, 7.0), baseMat);
       plinth.position.y = -0.8;
       group.add(plinth);
 
-      const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8 });
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 0.8 });
       const body = new THREE.Mesh(new THREE.BoxGeometry(8.2, 3.6, 6.2), woodMat);
       body.position.y = 2.2;
+      body.castShadow = true;
       group.add(body);
 
       const roofMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.55 });
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(9.0, 0.45, 7.0), roofMat);
-      roof.position.y = 4.2;
-      group.add(roof);
+      const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.65 });
+      const roofSlope = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 4.9, 9.2, 4, 1), roofMat);
+      roofSlope.rotation.y = Math.PI / 4;
+      roofSlope.rotation.z = Math.PI / 2;
+      roofSlope.scale.set(0.42, 1.0, 1.0);
+      roofSlope.position.y = 4.5;
+      roofSlope.castShadow = true;
+      group.add(roofSlope);
+
+      const snowCap = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.16, 6.8), snowMat);
+      snowCap.position.y = 4.18;
+      group.add(snowCap);
 
       const windowMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
       const win = new THREE.Mesh(new THREE.BoxGeometry(5.5, 1.4, 6.3), windowMat);

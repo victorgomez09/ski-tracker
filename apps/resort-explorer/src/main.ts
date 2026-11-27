@@ -16,9 +16,9 @@ window.addEventListener('DOMContentLoaded', () => {
     await manager.applyResortData(resortData);
   });
 
-  // Si se abre standalone sin ?resortId, mostrar el mapa de estaciones obligatorio al inicio
+  // Si se abre standalone sin ?resortId / ?resort / ?estacion, mostrar el mapa de estaciones al inicio
   const urlParams = new URLSearchParams(window.location.search);
-  const hasResortParam = Boolean(urlParams.get('resortId') || urlParams.get('resort'));
+  const hasResortParam = Boolean(urlParams.get('resortId') || urlParams.get('resort') || urlParams.get('estacion'));
   if (!hasResortParam) {
     mapSelector.open(false);
   }
@@ -49,7 +49,7 @@ window.addEventListener('DOMContentLoaded', () => {
       playerName: urlParams.get('playerName') || undefined,
     };
     if (urlRoomId) {
-      const resortId = urlParams.get('resortId') || 'valdesqui';
+      const resortId = urlParams.get('resortId') || urlParams.get('resort') || urlParams.get('estacion') || 'valdesqui';
       manager.connectMultiplayer({ ...mpAuth, roomId: urlRoomId, resortId });
     }
   }

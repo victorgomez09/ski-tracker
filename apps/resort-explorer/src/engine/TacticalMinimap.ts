@@ -267,7 +267,7 @@ export class TacticalMinimap {
       const geom = p.geometry_geojson;
       if (!geom || geom.type !== 'LineString' || !Array.isArray(geom.coordinates)) return;
       const pType = (p.piste_type || 'downhill').toLowerCase();
-      if (pType !== 'downhill' && pType !== 'alpine') return;
+      if (!['downhill', 'alpine', 'connection', 'link', 'ski_route', 'skitour'].includes(pType)) return;
 
       const coords = geom.coordinates;
       if (coords.length < 2) return;

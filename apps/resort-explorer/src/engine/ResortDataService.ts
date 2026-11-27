@@ -307,15 +307,41 @@ export class ResortDataService {
         }
       }
 
-      const normalizedPistes: OSMSkiPiste[] = rawPistes
-        .filter((p: any) => (p.geometry_geojson || p.GeometryGeoJSON)?.coordinates?.length >= 2)
-        .map((p: any) => ({
-          id: String(p.id || p.ID || Math.random()),
-          name: p.name || p.Name || 'Pista',
-          difficulty: (p.difficulty || p.Difficulty || 'easy').toLowerCase(),
-          piste_type: p.piste_type || p.PisteType || 'downhill',
-          geometry_geojson: p.geometry_geojson || p.GeometryGeoJSON,
-        }));
+      const normalizedPistes: OSMSkiPiste[] = [];
+      for (const p of rawPistes) {
+        const geom = p.geometry_geojson || p.GeometryGeoJSON;
+        if (!geom || !Array.isArray(geom.coordinates) || geom.coordinates.length === 0) continue;
+
+        const baseId = String(p.id || p.ID || Math.random());
+        const baseName = p.name || p.Name || 'Pista';
+        const baseDiff = (p.difficulty || p.Difficulty || 'easy').toLowerCase();
+        const baseType = (p.piste_type || p.PisteType || 'downhill').toLowerCase();
+        const gType = (geom.type || 'LineString').toLowerCase();
+
+        const pushCoords = (coords: any[], suffix = '') => {
+          if (Array.isArray(coords) && coords.length >= 2 && Array.isArray(coords[0]) && typeof coords[0][0] === 'number') {
+            normalizedPistes.push({
+              id: suffix ? `${baseId}_${suffix}` : baseId,
+              name: baseName,
+              difficulty: baseDiff,
+              piste_type: baseType,
+              geometry_geojson: { type: 'LineString', coordinates: coords },
+            });
+          }
+        };
+
+        if (gType === 'polygon') {
+          pushCoords(geom.coordinates[0]);
+        } else if (gType === 'multilinestring') {
+          geom.coordinates.forEach((line: any[], idx: number) => pushCoords(line, String(idx)));
+        } else if (gType === 'multipolygon') {
+          geom.coordinates.forEach((poly: any[], idx: number) => {
+            if (Array.isArray(poly) && poly.length > 0) pushCoords(poly[0], String(idx));
+          });
+        } else {
+          pushCoords(geom.coordinates);
+        }
+      }
 
       const normalizedLifts: OSMSkiLift[] = rawLifts
         .filter((l: any) => (l.geometry_geojson || l.GeometryGeoJSON)?.coordinates?.length >= 2)

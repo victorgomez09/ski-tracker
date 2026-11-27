@@ -33,6 +33,8 @@ export class ProceduralLifts {
   public group: THREE.Group = new THREE.Group();
   private animatedLifts: AnimatedLift[] = [];
   private rideableLifts: RideableLift[] = [];
+  private bullwheels: THREE.Object3D[] = [];
+  private liftCorridors: Array<{ ax: number; az: number; bx: number; bz: number }> = [];
 
   constructor(terrain: ProceduralTerrain, projection: GeoProjection, lifts: OSMSkiLift[], includeBolaAntennas = true) {
     this.buildLiftsFromOSM(terrain, projection, lifts);
@@ -43,6 +45,22 @@ export class ProceduralLifts {
 
   public getRideableLifts(): RideableLift[] {
     return this.rideableLifts;
+  }
+
+  public isPointNearLift(x: number, z: number, margin = 7.5): boolean {
+    const marginSq = margin * margin;
+    for (let i = 0; i < this.liftCorridors.length; i++) {
+      const c = this.liftCorridors[i];
+      const abx = c.bx - c.ax;
+      const abz = c.bz - c.az;
+      const lenSq = abx * abx + abz * abz;
+      const t = lenSq > 1e-5 ? Math.max(0, Math.min(1, ((x - c.ax) * abx + (z - c.az) * abz) / lenSq)) : 0;
+      const px = c.ax + t * abx;
+      const pz = c.az + t * abz;
+      const dSq = (x - px) * (x - px) + (z - pz) * (z - pz);
+      if (dSq <= marginSq) return true;
+    }
+    return false;
   }
 
   public rebuild(terrain: ProceduralTerrain, projection: GeoProjection, lifts: OSMSkiLift[], includeBolaAntennas = false) {
@@ -57,6 +75,8 @@ export class ProceduralLifts {
     }
     this.animatedLifts = [];
     this.rideableLifts = [];
+    this.bullwheels = [];
+    this.liftCorridors = [];
 
     this.buildLiftsFromOSM(terrain, projection, lifts);
     if (includeBolaAntennas) {
@@ -65,6 +85,9 @@ export class ProceduralLifts {
   }
 
   public update(deltaTime: number) {
+    for (let i = 0; i < this.bullwheels.length; i++) {
+      this.bullwheels[i].rotation.y += deltaTime * 1.45;
+    }
     this.animatedLifts.forEach((lift) => {
       const progressStep = (lift.speedMs * deltaTime) / Math.max(100, lift.loopLength);
       lift.chairs.forEach((chairData) => {
@@ -91,8 +114,8 @@ export class ProceduralLifts {
       const [startX, startZ] = projection.project(firstPt[0], firstPt[1]);
       const [endX, endZ] = projection.project(lastPt[0], lastPt[1]);
 
-      const startY = terrain.getElevationAt(startX, startZ);
-      const endY = terrain.getElevationAt(endX, endZ);
+      const startY = terrain.getMeshElevationAt(startX, startZ);
+      const endY = terrain.getMeshElevationAt(endX, endZ);
 
       const startPos = new THREE.Vector3(startX, startY, startZ);
       const endPos = new THREE.Vector3(endX, endY, endZ);
@@ -100,6 +123,8 @@ export class ProceduralLifts {
       const horizDelta = new THREE.Vector3(endPos.x - startPos.x, 0, endPos.z - startPos.z);
       const totalDistance = horizDelta.length();
       if (totalDistance < 30) return;
+
+      this.liftCorridors.push({ ax: startPos.x, az: startPos.z, bx: endPos.x, bz: endPos.z });
 
       const liftDir = horizDelta.clone().normalize();
       const rightVec = new THREE.Vector3(-liftDir.z, 0, liftDir.x);
@@ -149,6 +174,8 @@ export class ProceduralLifts {
       // 1. Estaciones terminales alineadas
       const baseStation = LiftStationBuilder.createTerminalStation(startPos, liftDir, isChair);
       const summitStation = LiftStationBuilder.createTerminalStation(endPos, liftDir.clone().negate(), isChair);
+      if (baseStation.userData.bullwheel) this.bullwheels.push(baseStation.userData.bullwheel);
+      if (summitStation.userData.bullwheel) this.bullwheels.push(summitStation.userData.bullwheel);
       this.group.add(baseStation);
       this.group.add(summitStation);
 
@@ -163,7 +190,7 @@ export class ProceduralLifts {
         const alpha = distAlong / totalDistance;
         const px = THREE.MathUtils.lerp(startPos.x, endPos.x, alpha);
         const pz = THREE.MathUtils.lerp(startPos.z, endPos.z, alpha);
-        const py = terrain.getElevationAt(px, pz);
+        const py = terrain.getMeshElevationAt(px, pz);
 
         const pylonPos = new THREE.Vector3(px, py, pz);
         pylonPositions.push(pylonPos);
@@ -174,36 +201,55 @@ export class ProceduralLifts {
         this.group.add(pylonMesh);
       }
 
-      // 3. Circuito cerrado de cable de acero centrado en las poleas terminales
-      const baseWheelCenter = startPos.clone()
-        .add(new THREE.Vector3(0, terminalCableHeight, 0));
-
-      const summitWheelCenter = endPos.clone()
-        .add(new THREE.Vector3(0, terminalCableHeight, 0));
+      // 3. Circuito cerrado de cable de acero centrado en las poleas terminales con ligera catenaria
+      const baseWheelCenter = startPos.clone().add(new THREE.Vector3(0, terminalCableHeight, 0));
+      const summitWheelCenter = endPos.clone().add(new THREE.Vector3(0, terminalCableHeight, 0));
 
       const loopPoints: THREE.Vector3[] = [];
       const diag = cableOffset * Math.SQRT1_2;
 
+      const pushSagSpan = (fromPt: THREE.Vector3, toPt: THREE.Vector3) => {
+        const spanLen = fromPt.distanceTo(toPt);
+        if (spanLen > 18) {
+          const mid = fromPt.clone().lerp(toPt, 0.5);
+          mid.y -= Math.min(1.1, spanLen * 0.011);
+          loopPoints.push(mid);
+        }
+        loopPoints.push(toPt);
+      };
+
       // Tramo de subida (derecha)
-      loopPoints.push(baseWheelCenter.clone().addScaledVector(rightVec, cableOffset));
+      const upStart = baseWheelCenter.clone().addScaledVector(rightVec, cableOffset);
+      loopPoints.push(upStart);
+      let prevUp = upStart;
       for (let i = 0; i < pylonPositions.length; i++) {
         const pylon = pylonPositions[i];
-        loopPoints.push(pylon.clone().addScaledVector(rightVec, cableOffset).add(new THREE.Vector3(0, pylonHeight - 0.25, 0)));
+        const nextUp = pylon.clone().addScaledVector(rightVec, cableOffset).add(new THREE.Vector3(0, pylonHeight - 0.25, 0));
+        pushSagSpan(prevUp, nextUp);
+        prevUp = nextUp;
       }
+      const upEnd = summitWheelCenter.clone().addScaledVector(rightVec, cableOffset);
+      pushSagSpan(prevUp, upEnd);
+
       // Giro alrededor de la polea de cumbre
-      loopPoints.push(summitWheelCenter.clone().addScaledVector(rightVec, cableOffset));
       loopPoints.push(summitWheelCenter.clone().addScaledVector(rightVec, diag).addScaledVector(liftDir, diag));
       loopPoints.push(summitWheelCenter.clone().addScaledVector(liftDir, cableOffset));
       loopPoints.push(summitWheelCenter.clone().addScaledVector(rightVec, -diag).addScaledVector(liftDir, diag));
 
       // Tramo de bajada (izquierda)
-      loopPoints.push(summitWheelCenter.clone().addScaledVector(rightVec, -cableOffset));
+      const downStart = summitWheelCenter.clone().addScaledVector(rightVec, -cableOffset);
+      loopPoints.push(downStart);
+      let prevDown = downStart;
       for (let i = pylonPositions.length - 1; i >= 0; i--) {
         const pylon = pylonPositions[i];
-        loopPoints.push(pylon.clone().addScaledVector(rightVec, -cableOffset).add(new THREE.Vector3(0, pylonHeight - 0.25, 0)));
+        const nextDown = pylon.clone().addScaledVector(rightVec, -cableOffset).add(new THREE.Vector3(0, pylonHeight - 0.25, 0));
+        pushSagSpan(prevDown, nextDown);
+        prevDown = nextDown;
       }
+      const downEnd = baseWheelCenter.clone().addScaledVector(rightVec, -cableOffset);
+      pushSagSpan(prevDown, downEnd);
+
       // Giro alrededor de la polea base
-      loopPoints.push(baseWheelCenter.clone().addScaledVector(rightVec, -cableOffset));
       loopPoints.push(baseWheelCenter.clone().addScaledVector(rightVec, -diag).addScaledVector(liftDir, -diag));
       loopPoints.push(baseWheelCenter.clone().addScaledVector(liftDir, -cableOffset));
       loopPoints.push(baseWheelCenter.clone().addScaledVector(rightVec, diag).addScaledVector(liftDir, -diag));
@@ -235,31 +281,42 @@ export class ProceduralLifts {
         isChair,
       });
 
-      // 4. Sillas cuatriplaza en movimiento
-      if (isChair) {
-        const chairsCount = Math.max(4, Math.round(totalDistance / 42));
-        const liftChairs: Array<{ mesh: THREE.Group; progress: number }> = [];
+      // 4. Vehículos en movimiento: telecabinas, sillas cuatriplaza con esquiadores o perchas (T-bar)
+      const isGondola = lift.lift_type === 'gondola' || lift.lift_type === 'cable_car';
+      const spacing = isGondola ? 68 : isChair ? 42 : 34;
+      const carrierCount = Math.max(4, Math.round(totalDistance / spacing));
+      const liftCarriers: Array<{ mesh: THREE.Group; progress: number }> = [];
+      const riderPalette = [0xdc2626, 0x0284c7, 0xf59e0b, 0x10b981, 0x8b5cf6, 0xec4899];
 
-        for (let c = 0; c < chairsCount; c++) {
-          const progress = c / chairsCount;
-          const chairMesh = LiftStationBuilder.createChairMesh();
-          const chairPt = cableCurve.getPointAt(progress);
-          chairMesh.position.copy(chairPt);
-
-          const tangent = cableCurve.getTangentAt(progress);
-          chairMesh.rotation.y = Math.atan2(tangent.x, tangent.z);
-
-          this.group.add(chairMesh);
-          liftChairs.push({ mesh: chairMesh, progress });
+      for (let c = 0; c < carrierCount; c++) {
+        const progress = c / carrierCount;
+        let carrierMesh: THREE.Group;
+        if (isGondola) {
+          carrierMesh = LiftStationBuilder.createGondolaMesh(0xdc2626);
+        } else if (isChair) {
+          // ~55% de las sillas llevan 1-3 esquiadores sentados
+          const riders = c % 2 === 0 ? [riderPalette[c % riderPalette.length], riderPalette[(c + 2) % riderPalette.length]] : (c % 3 === 0 ? [riderPalette[c % riderPalette.length]] : []);
+          carrierMesh = LiftStationBuilder.createChairMesh(riders);
+        } else {
+          carrierMesh = LiftStationBuilder.createTBarMesh();
         }
 
-        this.animatedLifts.push({
-          curve: cableCurve,
-          loopLength: cableCurve.getLength(),
-          speedMs: lift.lift_type === 'gondola' || lift.lift_type === 'cable_car' ? 7.0 : 5.5,
-          chairs: liftChairs,
-        });
+        const carrierPt = cableCurve.getPointAt(progress);
+        carrierMesh.position.copy(carrierPt);
+
+        const tangent = cableCurve.getTangentAt(progress);
+        carrierMesh.rotation.y = Math.atan2(tangent.x, tangent.z);
+
+        this.group.add(carrierMesh);
+        liftCarriers.push({ mesh: carrierMesh, progress });
       }
+
+      this.animatedLifts.push({
+        curve: cableCurve,
+        loopLength: cableCurve.getLength(),
+        speedMs: isGondola ? 7.0 : isChair ? 5.5 : 3.6,
+        chairs: liftCarriers,
+      });
     });
   }
 
@@ -332,39 +389,56 @@ export class ProceduralLifts {
   private createPylonMesh(height: number, cableOffset: number): THREE.Group {
     const group = new THREE.Group();
 
+    const concreteMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
     const metalMat = new THREE.MeshStandardMaterial({
       color: 0x94a3b8,
       metalness: 0.8,
       roughness: 0.3,
     });
     const wheelMat = new THREE.MeshStandardMaterial({
-      color: 0x334155,
+      color: 0x1e293b,
       metalness: 0.5,
       roughness: 0.4,
     });
 
-    const mastGeom = new THREE.CylinderGeometry(0.3, 0.45, height, 10);
+    // Zócalo de hormigón enterrado para evitar que la pilona flote en laderas inclinadas
+    const footing = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.0, 1.5), concreteMat);
+    footing.position.y = -0.5;
+    group.add(footing);
+
+    // Mástil tubular cónico de acero
+    const mastGeom = new THREE.CylinderGeometry(0.28, 0.52, height, 10);
     const mast = new THREE.Mesh(mastGeom, metalMat);
     mast.position.y = height / 2;
     group.add(mast);
 
-    const crossbarWidth = cableOffset * 2 + 0.8;
-    const crossbarGeom = new THREE.BoxGeometry(crossbarWidth, 0.35, 0.4);
+    // Cruceta superior y plataforma de mantenimiento
+    const crossbarWidth = cableOffset * 2 + 1.1;
+    const crossbarGeom = new THREE.BoxGeometry(crossbarWidth, 0.36, 0.44);
     const crossbar = new THREE.Mesh(crossbarGeom, metalMat);
     crossbar.position.y = height;
     group.add(crossbar);
 
-    const wheelRadius = 0.35;
-    const wheelGeom = new THREE.CylinderGeometry(wheelRadius, wheelRadius, 0.22, 12);
-    wheelGeom.rotateZ(Math.PI / 2);
+    const catwalk = new THREE.Mesh(new THREE.BoxGeometry(crossbarWidth * 0.85, 0.08, 0.85), metalMat);
+    catwalk.position.set(0, height - 0.55, 0);
+    group.add(catwalk);
 
-    const wheelLeft = new THREE.Mesh(wheelGeom, wheelMat);
-    wheelLeft.position.set(-cableOffset, height - 0.25, 0);
+    // Balancín de 4 poleas (roller battery) a cada lado
+    const sheaveGeom = new THREE.CylinderGeometry(0.26, 0.26, 0.16, 10);
+    sheaveGeom.rotateZ(Math.PI / 2);
+    const beamGeom = new THREE.BoxGeometry(0.18, 0.14, 1.85);
 
-    const wheelRight = new THREE.Mesh(wheelGeom, wheelMat);
-    wheelRight.position.set(cableOffset, height - 0.25, 0);
+    [-cableOffset, cableOffset].forEach((ox) => {
+      const beam = new THREE.Mesh(beamGeom, metalMat);
+      beam.position.set(ox, height - 0.22, 0);
+      group.add(beam);
 
-    group.add(wheelLeft, wheelRight);
+      [-0.72, -0.24, 0.24, 0.72].forEach((oz) => {
+        const sheave = new THREE.Mesh(sheaveGeom, wheelMat);
+        sheave.position.set(ox, height - 0.30, oz);
+        group.add(sheave);
+      });
+    });
 
     return group;
   }

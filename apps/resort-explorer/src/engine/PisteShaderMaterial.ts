@@ -1,137 +1,152 @@
 import * as THREE from 'three';
 
 /**
- * Shader procedural de "Nieve Pisada" unificado con la iluminación del terreno:
- * - Usa exactamente el mismo color base nival, luz solar, cielo y niebla que la montaña,
- *   diferenciándose únicamente por las estrías de fresado (corduroy) y pasadas de pisanieves.
- * - Transición suave (alpha feathering) en los bordes para integrarse sin escalones con la nieve polvo.
+ * Material de pista pisada (nieve groomed) — Endless Peaks style:
+ * - Totalmente opaco con depthWrite=true
+ * - Color base CLARAMENTE azul-compacto brillante, muy distinto del terreno cálido
+ * - Corduroy (fresado) bien visible — estrías anchas tipo Endless Peaks
+ * - 4 franjas de pasadas de pisanieves alternadas en tono
+ * - Borde oscuro nítido con franja del color de dificultad (verde/azul/rojo/negro)
+ * - polygonOffset agresivo para garantizar que siempre queda por encima del terreno
  */
 export function createPisteCorduroyMaterial(difficultyHex: number = 0x0284c7): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     lights: false,
     polygonOffset: true,
-    polygonOffsetFactor: -12.0,
-    polygonOffsetUnits: -12.0,
+    polygonOffsetFactor: -8.0,
+    polygonOffsetUnits: -8.0,
     uniforms: {
-      snowColor: { value: new THREE.Color(0xffffff) },
-      skyColor: { value: new THREE.Color(0xf1f5f9) },
-      sunColor: { value: new THREE.Color(0xffffff) },
-      sunDirection: { value: new THREE.Vector3(0.45, 0.78, 0.42).normalize() },
-      sunIntensity: { value: 1.0 },
-      fogColor: { value: new THREE.Color(0xdce8f4) },
-      fogDensity: { value: 0.00016 },
-      diffColor: { value: new THREE.Color(difficultyHex) },
+      sunDirection:    { value: new THREE.Vector3(0.45, 0.78, 0.42).normalize() },
+      sunIntensity:    { value: 1.0 },
+      sunColor:        { value: new THREE.Color(0xfffcf0) },
+      skyColor:        { value: new THREE.Color(0xc8dff5) },
+      fogColor:        { value: new THREE.Color(0xdce8f4) },
+      fogDensity:      { value: 0.00016 },
+      diffColor:       { value: new THREE.Color(difficultyHex) },
       aerialHighlight: { value: 0.0 },
     },
     vertexShader: `
-      varying vec2 vUv;
-      varying vec3 vNormal;
-      varying vec3 vWorldPosition;
+      varying vec2  vUv;
+      varying vec3  vNormal;
+      varying vec3  vWorldPos;
 
       void main() {
-        vUv = uv;
-        vNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vWorldPosition = worldPos.xyz;
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        vUv       = uv;
+        vNormal   = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+        vec4 wpos = modelMatrix * vec4(position, 1.0);
+        vWorldPos = wpos.xyz;
+        gl_Position = projectionMatrix * viewMatrix * wpos;
       }
     `,
     fragmentShader: `
-      uniform vec3 snowColor;
-      uniform vec3 skyColor;
-      uniform vec3 sunColor;
-      uniform vec3 sunDirection;
+      uniform vec3  sunDirection;
       uniform float sunIntensity;
-      uniform vec3 fogColor;
+      uniform vec3  sunColor;
+      uniform vec3  skyColor;
+      uniform vec3  fogColor;
       uniform float fogDensity;
-      uniform vec3 diffColor;
+      uniform vec3  diffColor;
       uniform float aerialHighlight;
 
-      varying vec2 vUv;
-      varying vec3 vNormal;
-      varying vec3 vWorldPosition;
+      varying vec2  vUv;
+      varying vec3  vNormal;
+      varying vec3  vWorldPos;
 
-      float hash21(vec2 p) {
+      float hash(vec2 p) {
         p = fract(p * vec2(127.1, 311.7));
         p += dot(p, p + 34.23);
         return fract(p.x * p.y);
       }
-
-      float noise2D(vec2 p) {
-        vec2 i = floor(p);
-        vec2 f = fract(p);
+      float noise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
         f = f * f * (3.0 - 2.0 * f);
-        float a = hash21(i);
-        float b = hash21(i + vec2(1.0, 0.0));
-        float c = hash21(i + vec2(0.0, 1.0));
-        float d = hash21(i + vec2(1.0, 1.0));
-        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        return mix(mix(hash(i), hash(i+vec2(1,0)), f.x),
+                   mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y);
       }
 
       void main() {
-        // 1. Bamboleo orgánico en las pasadas de pisanieves
-        float machineWobble = (noise2D(vec2(vUv.y * 0.35, vUv.x * 2.0)) - 0.5) * 0.022;
-        float uWobbled = vUv.x + machineWobble;
+        float u = vUv.x;
+        float v = vUv.y;
 
-        // 2. Fresado de pisanieves (corduroy en perfil en V)
-        float fw = fwidth(vUv.x);
-        float detailFade = 1.0 - smoothstep(0.008, 0.06, fw);
-        float saw = abs(fract(uWobbled * 95.0) * 2.0 - 1.0);
-        float corduroy = mix(0.55, saw, detailFade);
+        // ── 1. Wobble orgánico de las pasadas de pisanieves ──────────────────
+        float wobble = (noise(vec2(v * 0.18, u * 1.4)) - 0.5) * 0.010;
+        float uw = u + wobble;
 
-        // 3. Uniones entre 4 pasadas paralelas de la máquina y huellas sutiles de esquís
-        float lanePhase = fract(uWobbled * 4.0);
-        float laneSeam = smoothstep(0.05, 0.0, min(lanePhase, 1.0 - lanePhase));
-        float skiTrack = smoothstep(0.92, 0.99, sin(vUv.x * 28.0 + sin(vUv.y * 0.55) * 2.2)) * detailFade;
+        // ── 2. Corduroy (estrías de fresado en sierra) ───────────────────────
+        // Estrías más anchas y contrastadas (28 en lugar de 42) para ser visibles como Endless Peaks
+        float fw = fwidth(uw);
+        float detailFade = 1.0 - smoothstep(0.012, 0.22, fw);
+        float saw = abs(fract(uw * 28.0) * 2.0 - 1.0);  // 28 estrías por ancho
+        float corduroy = mix(0.5, saw, detailFade);       // 0=surco oscuro, 1=cresta clara
 
-        // Misma base de color nieve recién caída que la montaña, modulada solo por el relieve del pisado
-        float groomShade = 0.95 + corduroy * 0.07 - laneSeam * 0.04 - skiTrack * 0.03;
-        vec3 baseSnow = snowColor * groomShade;
+        // ── 3. Franjas de 4 carriles alternados ──────────────────────────────
+        float lane = floor(uw * 4.0);
+        float laneParity = mod(lane, 2.0);
+        float laneT = fract(uw * 4.0);
+        float seam = smoothstep(0.04, 0.0, min(laneT, 1.0 - laneT));
 
-        float distFromEdge = min(vUv.x, 1.0 - vUv.x);
+        // ── 4. Borde del color de dificultad (1.5m franjas verde/azul/rojo) ──
+        float edge = min(u, 1.0 - u);
+        float edgeBand  = 1.0 - smoothstep(0.0,  0.055, edge); // franja de dificultad
+        float edgeDark  = 1.0 - smoothstep(0.055, 0.12, edge); // zona talud oscura
+        float edgeSlope = 1.0 - smoothstep(0.12,  0.22, edge); // degradado de borde
 
-        // En Vista Aérea, delimitar nítidamente con el color de dificultad
+        // ── 5. Color base: azul-blanco compacto brillante ────────────────────
+        // CLARAMENTE diferente del terreno cálido amarillo-beige
+        vec3 cresta = vec3(0.92, 0.96, 1.00);  // azul-blanco brillante en cresta
+        vec3 surco  = vec3(0.52, 0.68, 0.88);  // azul-medio en el surco fresado
+        vec3 baseColor = mix(surco, cresta, corduroy);
+
+        // Oscurecer carriles pares ligeramente
+        baseColor *= (1.0 - laneParity * 0.065);
+        // Juntura de pasadas: línea oscura
+        baseColor *= (1.0 - seam * 0.20);
+
+        // Franja del color de dificultad en los bordes (tipo Endless Peaks)
+        baseColor = mix(baseColor, diffColor * vec3(1.5, 1.5, 1.5), edgeBand * 0.72);
+        baseColor = mix(baseColor, vec3(0.18, 0.22, 0.28), edgeBand * 0.28);
+
+        // Talud oscuro después de la franja de dificultad
+        baseColor *= (1.0 - edgeDark * 0.45 - edgeSlope * 0.18);
+
+        // ── 6. Vista aérea: rellenar con color de dificultad ─────────────────
         if (aerialHighlight > 0.01) {
-          float aerialEdge = smoothstep(0.16, 0.06, distFromEdge);
-          baseSnow = mix(baseSnow, diffColor, aerialHighlight * (0.16 + aerialEdge * 0.84));
+          float ae = smoothstep(0.14, 0.04, edge);
+          baseColor = mix(baseColor, diffColor, aerialHighlight * (0.25 + ae * 0.75));
         }
 
-        // 4. Iluminación idéntica a ProceduralTerrain para nieve blanca pura
-        vec3 perturbedNormal = normalize(
-          vNormal + vec3((saw - 0.5) * 0.16 * detailFade, 0.0, 0.0)
-        );
-        float NdotL = dot(perturbedNormal, sunDirection);
-        float halfLambert = clamp(NdotL * 0.5 + 0.5, 0.0, 1.0);
-        float directSun = smoothstep(0.18, 0.74, halfLambert);
+        // ── 7. Iluminación tipo half-Lambert ─────────────────────────────────
+        vec3 pertN = normalize(vNormal + vec3((saw - 0.5) * 0.18 * detailFade, 0.0, 0.0));
+        float NdL  = dot(pertN, sunDirection);
+        float hL   = clamp(NdL * 0.5 + 0.5, 0.0, 1.0);
+        float sun  = smoothstep(0.22, 0.75, hL);
 
-        float skyFactor = clamp(vNormal.y * 0.5 + 0.5, 0.0, 1.0);
-        vec3 ambientReflection = mix(skyColor * 0.96, vec3(1.0, 1.0, 1.0), skyFactor);
+        float sky  = clamp(vNormal.y * 0.5 + 0.5, 0.0, 1.0);
+        vec3  amb  = mix(skyColor * 0.88, vec3(1.0), sky);
 
-        vec3 litPiste = mix(
-          baseSnow * ambientReflection * 0.98,
-          baseSnow * (ambientReflection * 0.44 + sunColor * 0.86 * sunIntensity),
-          directSun
+        vec3 lit = mix(
+          baseColor * amb * 0.90,
+          baseColor * (amb * 0.38 + sunColor * 0.88 * sunIntensity),
+          sun
         );
 
-        // Brillo especular compacto
-        vec3 viewDir = normalize(cameraPosition - vWorldPosition);
-        vec3 halfVec = normalize(sunDirection + viewDir);
-        float spec = pow(max(dot(perturbedNormal, halfVec), 0.0), 28.0) * directSun;
-        litPiste += vec3(0.18 * spec);
+        // Especular compacto (nieve pisada = superficie dura)
+        vec3 vd   = normalize(cameraPosition - vWorldPos);
+        vec3 h    = normalize(sunDirection + vd);
+        float sp  = pow(max(dot(pertN, h), 0.0), 42.0) * sun * 0.28;
+        lit += vec3(sp);
 
-        // Niebla atmosférica sincronizada con la montaña
-        float dist = length(cameraPosition - vWorldPosition);
-        float fogFactor = 1.0 - exp(-fogDensity * fogDensity * dist * dist);
-        litPiste = mix(litPiste, fogColor, clamp(fogFactor, 0.0, 1.0));
+        // ── 8. Niebla ──────────────────────────────────────────────────────
+        float d  = length(cameraPosition - vWorldPos);
+        float ff = 1.0 - exp(-fogDensity * fogDensity * d * d);
+        lit = mix(lit, fogColor, clamp(ff, 0.0, 1.0));
 
-        // 5. Fundido suave en los bordes para fusionarse al ras con la nieve polvo
-        float edgeAlpha = aerialHighlight > 0.01 ? 1.0 : smoothstep(0.0, 0.09, distFromEdge);
-
-        gl_FragColor = vec4(litPiste, edgeAlpha);
+        gl_FragColor = vec4(lit, 1.0);
       }
     `,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.FrontSide,
   });
 }

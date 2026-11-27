@@ -232,4 +232,36 @@ export class PisteDecoration {
 
     return group;
   }
+
+  /**
+   * Cañón de nieve artificial alpino (turbina amarilla sobre torre metálica) en el borde de pista.
+   */
+  public static createSnowCannon(position: THREE.Vector3, inwardDir: THREE.Vector3): THREE.Group {
+    const group = new THREE.Group();
+    group.position.copy(position);
+    group.rotation.y = Math.atan2(inwardDir.x, inwardDir.z);
+
+    const yellowMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.35, metalness: 0.25 });
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8, roughness: 0.3 });
+    const darkMat = this.poleDarkMat;
+
+    // Torre inclinada sobre base enterrada
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.16, 3.2, 8), steelMat);
+    tower.position.set(0, 1.35, 0);
+    group.add(tower);
+
+    // Turbina / cañón apuntando hacia la pista
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.28, 1.25, 12), yellowMat);
+    barrel.rotation.x = Math.PI / 2 - 0.28;
+    barrel.position.set(0, 3.05, 0.25);
+    group.add(barrel);
+
+    // Aro de boquillas frontal
+    const nozzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.045, 6, 14), darkMat);
+    nozzleRing.position.set(0, 3.22, 0.84);
+    nozzleRing.rotation.x = -0.28;
+    group.add(nozzleRing);
+
+    return group;
+  }
 }

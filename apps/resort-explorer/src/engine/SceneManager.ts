@@ -36,6 +36,8 @@ export class SceneManager {
   private traffic!: MountainTraffic;
   private tracks!: SkiTracksTrail;
   private sunLight!: THREE.DirectionalLight;
+  private skyDomeMesh: THREE.Mesh | null = null;
+  private skyDomeMat: THREE.ShaderMaterial | null = null;
   private graphicsSettings: GraphicsSettings = new GraphicsSettings();
   private activeLiveWeather: LiveWeatherInfo | null = null;
   private fpsFrames = 0;
@@ -75,12 +77,12 @@ export class SceneManager {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.toneMappingExposure = 1.0;
 
-    // Scene con cielo alpino luminoso y niebla ligera para abarcar estaciones extensas
+    // Scene — cúpula de cielo procedural (scene.background = null para que siempre sea visible)
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xcde2f5);
-    this.scene.fog = new THREE.FogExp2(0xdce8f4, 0.00016);
+    this.scene.background = null;
+    this.scene.fog = new THREE.FogExp2(0xddeeff, 0.00014);
 
     // Entorno PBR procedural (reflejos reales del cielo y sol en visera, esquís, pilonas y casetas)
     this.setupPBREnvironment();
@@ -103,9 +105,9 @@ export class SceneManager {
     // Inicializar mundo
     this.initWorld();
 
-    // Si viene ?resortId= desde la app móvil o URL, cargar estación + DEM real
+    // Si viene ?resortId=, ?resort=, o ?estacion= desde la URL, cargar estación + DEM real
     const urlParams = new URLSearchParams(window.location.search);
-    const resortParam = urlParams.get('resortId') || urlParams.get('resort');
+    const resortParam = urlParams.get('resortId') || urlParams.get('resort') || urlParams.get('estacion');
     if (resortParam) {
       ResortDataService.fetchFromBackend(resortParam).then((liveData) => {
         if (liveData) {
@@ -124,72 +126,129 @@ export class SceneManager {
   private setupPBREnvironment() {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const envScene = new THREE.Scene();
-    envScene.background = new THREE.Color(0xdbeafe);
+    envScene.background = new THREE.Color(0x4a90d9);
 
     const skyDome = new THREE.Mesh(
       new THREE.SphereGeometry(50, 16, 12),
-      new THREE.MeshBasicMaterial({ color: 0xbae6fd, side: THREE.BackSide })
+      new THREE.MeshBasicMaterial({ color: 0x3b82f6, side: THREE.BackSide })
     );
     const groundBounce = new THREE.Mesh(
       new THREE.PlaneGeometry(100, 100),
-      new THREE.MeshBasicMaterial({ color: 0xf8fafc })
+      new THREE.MeshBasicMaterial({ color: 0xf0f4f8 })
     );
     groundBounce.rotation.x = -Math.PI / 2;
     groundBounce.position.y = -5;
 
     const sunOrb = new THREE.Mesh(
-      new THREE.SphereGeometry(4, 12, 12),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
+      new THREE.SphereGeometry(5, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xfffde7 })
     );
-    sunOrb.position.set(18, 30, 14);
+    sunOrb.position.set(20, 32, 15);
 
     envScene.add(skyDome, groundBounce, sunOrb);
     this.scene.environment = pmrem.fromScene(envScene, 0.04).texture;
-    this.scene.environmentIntensity = 0.75;
+    this.scene.environmentIntensity = 0.80;
     pmrem.dispose();
+
+    // Cúpula de cielo con gradiente procedural tipo Endless Peaks
+    this.addSkyDome();
+  }
+
+  private addSkyDome() {
+    const skyGeom = new THREE.SphereGeometry(14000, 32, 16);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      uniforms: {
+        topColor: { value: new THREE.Color(0x1c6fd6) },
+        horizonColor: { value: new THREE.Color(0xd2ebfc) },
+        sunDir: { value: new THREE.Vector3(0.7, 0.55, 0.42).normalize() },
+        sunColor: { value: new THREE.Color(0xfff9ed) },
+      },
+      vertexShader: `
+        varying vec3 vLocalDir;
+        void main() {
+          vLocalDir = normalize(position);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 horizonColor;
+        uniform vec3 sunDir;
+        uniform vec3 sunColor;
+        varying vec3 vLocalDir;
+        void main() {
+          vec3 dir = normalize(vLocalDir);
+          float h = dir.y;
+          float t = smoothstep(0.0, 0.42, max(0.0, h));
+          vec3 sky = mix(horizonColor, topColor, pow(t, 0.78));
+          float sunDot = max(0.0, dot(dir, normalize(sunDir)));
+          float glow = pow(sunDot, 24.0) * 0.35;
+          float disc = smoothstep(0.9975, 0.9992, sunDot) * 1.1;
+          sky += sunColor * (glow + disc);
+          gl_FragColor = vec4(sky, 1.0);
+        }
+      `,
+    });
+    const skyMesh = new THREE.Mesh(skyGeom, skyMat);
+    skyMesh.renderOrder = -1;
+    skyMesh.frustumCulled = false;
+    this.skyDomeMat = skyMat;
+    this.skyDomeMesh = skyMesh;
+    this.scene.add(skyMesh);
   }
 
   private setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0xf1f5f9, 1.0);
+    const ambientLight = new THREE.AmbientLight(0xf1f5f9, 0.42);
     this.scene.add(ambientLight);
 
-    this.sunLight = new THREE.DirectionalLight(0xfffcf5, 1.45);
-    this.sunLight.position.set(450, 800, 350);
+    const hemiLight = new THREE.HemisphereLight(0x88ccf8, 0x8ea6be, 0.92);
+    this.scene.add(hemiLight);
+
+    this.sunLight = new THREE.DirectionalLight(0xfff9ed, 1.65);
+    this.sunLight.position.set(540, 420, 320);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
     this.sunLight.shadow.mapSize.height = 2048;
     this.sunLight.shadow.camera.near = 10;
     this.sunLight.shadow.camera.far = 2500;
-    this.sunLight.shadow.camera.left = -95;
-    this.sunLight.shadow.camera.right = 95;
-    this.sunLight.shadow.camera.top = 95;
-    this.sunLight.shadow.camera.bottom = -95;
-    this.sunLight.shadow.bias = -0.0005;
+    this.sunLight.shadow.camera.left = -120;
+    this.sunLight.shadow.camera.right = 120;
+    this.sunLight.shadow.camera.top = 120;
+    this.sunLight.shadow.camera.bottom = -120;
+    this.sunLight.shadow.bias = -0.0004;
+    this.sunLight.shadow.normalBias = 0.03;
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    const bounceSnowLight = new THREE.DirectionalLight(0xf8fafc, 0.5);
+    const bounceSnowLight = new THREE.DirectionalLight(0xdbeafe, 0.45);
     bounceSnowLight.position.set(-400, 120, -400);
     this.scene.add(bounceSnowLight);
 
     this.weather = new WeatherAtmosphere(this.scene, ambientLight, this.sunLight, bounceSnowLight);
+    this.weather.bindHemisphereLight(hemiLight);
+    if (this.skyDomeMat) {
+      this.weather.bindSkyDomeMaterial(this.skyDomeMat);
+    }
   }
 
   private initWorld() {
     const resortData = ResortDataService.getActiveResort();
 
-    this.terrain = new ProceduralTerrain(2600, 2600, 220);
+    this.terrain = new ProceduralTerrain(2600, 2600, 280);
     this.scene.add(this.terrain.mesh);
-    this.weather?.bindTerrainMaterial(this.terrain.mesh.material as THREE.ShaderMaterial);
 
-    this.pistes = new ProceduralPistes(this.terrain, this.projection, resortData.pistes);
+    this.pistes = new ProceduralPistes(this.terrain, this.projection, resortData.pistes, resortData.lifts, resortData.pois || []);
+    this.terrain.setPisteSurfaceMap(this.pistes.getSurfaceMap());
     this.scene.add(this.pistes.group);
-    this.weather?.bindPisteMaterials(this.pistes.getPisteMaterials());
 
     this.lifts = new ProceduralLifts(this.terrain, this.projection, resortData.lifts, true);
     this.scene.add(this.lifts.group);
 
-    this.vegetation = new ProceduralVegetation(this.terrain, 2600, 550);
+    this.vegetation = new ProceduralVegetation(this.terrain, 4500, 650, this.pistes, this.lifts);
     this.scene.add(this.vegetation.group);
 
     this.pois = new ProceduralPOIs(this.terrain, this.projection, resortData.pois || []);
@@ -227,6 +286,16 @@ export class SceneManager {
     this.skier = new SkierController(this.terrain, this.pistes);
     this.skier.setAltitudeRange(resortData.base_altitude, resortData.summit_altitude);
     this.skier.setRideableLifts(this.lifts.getRideableLifts());
+    const initSpawns = this.computeResortSpawns(resortData);
+    this.skier.setSpawnPoints(
+      initSpawns.baseX,
+      initSpawns.baseZ,
+      initSpawns.baseHeading,
+      initSpawns.summitX,
+      initSpawns.summitZ,
+      initSpawns.summitHeading
+    );
+    this.skier.respawnAtBase();
     this.skier.avatar.group.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         obj.castShadow = true;
@@ -246,7 +315,7 @@ export class SceneManager {
 
     const hint = document.getElementById('controls-hint');
     if (hint) {
-      hint.textContent = 'WASD / Flechas para carvear · Espacio frenar · R base';
+      hint.textContent = 'WASD / Flechas carvear · Shift/J saltar · Espacio frenar · R base';
     }
 
     const loader = document.getElementById('loading-screen');
@@ -288,8 +357,8 @@ export class SceneManager {
 
     // 4. Reconstruir pistas, remontes, POIs y vegetación sobre la topografía real
     if (this.pistes && data.pistes) {
-      this.pistes.rebuild(this.terrain, this.projection, data.pistes);
-      this.weather?.bindPisteMaterials(this.pistes.getPisteMaterials());
+      this.pistes.rebuild(this.terrain, this.projection, data.pistes, data.lifts || [], data.pois || []);
+      this.terrain?.setPisteSurfaceMap(this.pistes.getSurfaceMap());
     }
     if (this.lifts && data.lifts) {
       this.lifts.rebuild(this.terrain, this.projection, data.lifts, isValdesqui);
@@ -304,7 +373,7 @@ export class SceneManager {
       this.tracks.clear();
     }
     if (this.vegetation && this.terrain) {
-      this.vegetation.rebuild(this.terrain);
+      this.vegetation.rebuild(this.terrain, this.pistes, this.lifts);
     }
 
     // 5. Colocar al esquiador directamente en la base de la estación listo para esquiar
@@ -694,6 +763,9 @@ export class SceneManager {
     if (this.pistes) {
       this.pistes.setAerialHighlight(isOrbit);
     }
+    if (this.terrain) {
+      this.terrain.setAerialHighlight(isOrbit);
+    }
     if (this.weather) {
       this.weather.setAerialView(isOrbit);
     }
@@ -774,7 +846,11 @@ export class SceneManager {
     }
 
     if (this.isPaused) {
-      this.renderer.render(this.scene, this.camera);
+      if (this.skyDomeMesh) {
+      this.skyDomeMesh.position.copy(this.camera.position);
+    }
+
+    this.renderer.render(this.scene, this.camera);
       return;
     }
 
@@ -800,10 +876,11 @@ export class SceneManager {
           );
         }
       }
-      // Seguir al esquiador con el frustum de sombras para mantener máxima nitidez alrededor
+      // Seguir al esquiador con el frustum de sombras manteniendo la dirección exacta del sol
       if (this.sunLight) {
         this.sunLight.target.position.copy(this.skier.position);
-        const sunDir = this.sunLight.position.clone().normalize();
+        this.sunLight.target.updateMatrixWorld();
+        const sunDir = this.weather ? this.weather.getSunDirection() : new THREE.Vector3(0.7, 0.55, 0.42).normalize();
         this.sunLight.position.copy(this.skier.position).addScaledVector(sunDir, 600);
       }
       if (this.minimap) {
@@ -928,6 +1005,10 @@ export class SceneManager {
         const precip = this.weather.getPrecipitationLevel();
         this.skier.audio.setWeatherAmbience(precip.snow, precip.rain);
       }
+    }
+
+    if (this.skyDomeMesh) {
+      this.skyDomeMesh.position.copy(this.camera.position);
     }
 
     this.renderer.render(this.scene, this.camera);

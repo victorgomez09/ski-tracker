@@ -62,10 +62,10 @@ export class SkierController {
   private summitAltitudeMeters = 2280;
   private snowFrictionMultiplier = 1.0;
   private powderSprayMultiplier = 1.0;
-  // Sobre pista pisada (+0.14m) los esquís quedan visibles encima; fuera de pista (-0.025m) se hunden en el pow
-  private readonly pisteSurfaceOffset = 0.14;
+  // Sobre pista pisada (en malla real) los esquís deslizan encima; fuera de pista se hunden ligeramente en el pow
+  private readonly pisteSurfaceOffset = 0.02;
   private readonly powderSurfaceOffset = -0.025;
-  private currentSurfaceOffset = 0.14;
+  private currentSurfaceOffset = 0.02;
   private smoothedSteer = 0;
   private baseSpawnPoint = new THREE.Vector3(240, 14, -400);
   private baseHeading = 0; // Mirando hacia +Z (hacia las pistas/cumbre desde Prado Llano)
@@ -81,6 +81,7 @@ export class SkierController {
   private snowboardStance: SnowboardStance = 'regular';
   private wasGrounded = true;
   private airTimeSec = 0;
+  private airSpinAngle = 0;
   private landingImpact = 0;
   private animTime = 0;
   private jumpStartPos = new THREE.Vector3();
@@ -172,7 +173,7 @@ export class SkierController {
 
     // Aparecer justo en el desembarque superior mirando cuesta abajo hacia la base
     const exitHeading = Math.atan2(lift.startPos.x - lift.endPos.x, lift.startPos.z - lift.endPos.z);
-    const exitY = this.terrain.getElevationAt(lift.endPos.x, lift.endPos.z) + this.pisteSurfaceOffset;
+    const exitY = this.terrain.getMeshElevationAt(lift.endPos.x, lift.endPos.z) + this.pisteSurfaceOffset;
     this.spawnAt(lift.endPos.x, exitY, lift.endPos.z, exitHeading, 3.0);
   }
 
@@ -199,18 +200,18 @@ export class SkierController {
   }
 
   public respawnAtBase() {
-    const spawnY = this.terrain.getElevationAt(this.baseSpawnPoint.x, this.baseSpawnPoint.z) + this.pisteSurfaceOffset;
+    const spawnY = this.terrain.getMeshElevationAt(this.baseSpawnPoint.x, this.baseSpawnPoint.z) + this.pisteSurfaceOffset;
     this.spawnAt(this.baseSpawnPoint.x, spawnY, this.baseSpawnPoint.z, this.baseHeading, 0);
   }
 
   public respawnAtSummit() {
-    const spawnY = this.terrain.getElevationAt(this.summitSpawnPoint.x, this.summitSpawnPoint.z) + this.pisteSurfaceOffset;
+    const spawnY = this.terrain.getMeshElevationAt(this.summitSpawnPoint.x, this.summitSpawnPoint.z) + this.pisteSurfaceOffset;
     this.spawnAt(this.summitSpawnPoint.x, spawnY, this.summitSpawnPoint.z, this.summitHeading, 5.0);
   }
 
   public teleportTo(x: number, z: number, heading = this.heading) {
     this.ridingLift = null;
-    const y = this.terrain.getElevationAt(x, z) + this.pisteSurfaceOffset;
+    const y = this.terrain.getMeshElevationAt(x, z) + this.pisteSurfaceOffset;
     this.spawnAt(x, y, z, heading, 0);
   }
 
@@ -262,6 +263,7 @@ export class SkierController {
     this.isGrounded = true;
     this.wasGrounded = true;
     this.airTimeSec = 0;
+    this.airSpinAngle = 0;
     this.lastSessionPos.copy(this.position);
     this.lastSessionAltMeters = null;
     this.currentRunDropMeters = 0;
@@ -292,6 +294,7 @@ export class SkierController {
       if (e.code === 'ArrowRight' || e.code === 'KeyD') this.input.right = true;
       if (e.code === 'ArrowUp' || e.code === 'KeyW') this.input.tuck = true;
       if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') this.input.brake = true;
+      if (e.code === 'KeyJ' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.triggerJump();
       if (e.code === 'KeyE') this.boardNearbyLift();
       if (e.code === 'KeyR') this.respawnAtBase();
     });
@@ -302,6 +305,15 @@ export class SkierController {
       if (e.code === 'ArrowUp' || e.code === 'KeyW') this.input.tuck = false;
       if (e.code === 'ArrowDown' || e.code === 'KeyS' || e.code === 'Space') this.input.brake = false;
     });
+  }
+
+  public triggerJump() {
+    if (!this.isGrounded || this.ridingLift) return;
+    const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    this.velocity.y = Math.max(this.velocity.y, 0) + 6.4 + Math.min(2.6, horizSpeed * 0.12);
+    this.position.y += 0.18;
+    this.isGrounded = false;
+    this.airSpinAngle = 0;
   }
 
   public update(dt: number, camera: THREE.PerspectiveCamera): SkierTelemetry {
@@ -318,7 +330,7 @@ export class SkierController {
         const tangent = this.ridingLift.lift.uphillCurve.getTangentAt(this.ridingLift.progress);
         // En remontes de superficie (telesquí, telecuerda, cinta), mantener los esquís al ras de la nieve
         if (!this.ridingLift.lift.isChair) {
-          pt.y = this.terrain.getElevationAt(pt.x, pt.z) + this.pisteSurfaceOffset;
+          pt.y = this.terrain.getMeshElevationAt(pt.x, pt.z) + this.pisteSurfaceOffset;
         }
         this.position.copy(pt);
         this.heading = Math.atan2(tangent.x, tangent.z);
@@ -484,7 +496,7 @@ export class SkierController {
     const targetOffset = onGroomedPiste ? this.pisteSurfaceOffset : this.powderSurfaceOffset;
     this.currentSurfaceOffset = THREE.MathUtils.lerp(this.currentSurfaceOffset, targetOffset, 1 - Math.exp(-10 * clampedDt));
 
-    const surfaceY = this.terrain.getElevationAt(this.position.x, this.position.z) + this.currentSurfaceOffset;
+    const surfaceY = this.terrain.getMeshElevationAt(this.position.x, this.position.z) + this.currentSurfaceOffset;
     if (this.position.y <= surfaceY + 0.12) {
       this.position.y = surfaceY;
       this.velocity.y = (this.velocity.x * gradX + this.velocity.z * gradZ);
@@ -493,16 +505,20 @@ export class SkierController {
       this.isGrounded = false;
     }
 
-    // Detección de saltos y tiempo en el aire (Air Time)
+    // Detección de saltos, trucos en el aire y tiempo en el aire (Air Time)
     let jumpCompleted: { airTimeSec: number; distanceMeters: number } | null = null;
     if (this.wasGrounded && !this.isGrounded) {
       this.airTimeSec = 0;
+      this.airSpinAngle = 0;
       this.jumpStartPos.copy(this.position);
     } else if (!this.isGrounded) {
       this.airTimeSec += clampedDt;
+      this.airSpinAngle += steerInput * 6.2 * clampedDt;
     } else if (!this.wasGrounded && this.isGrounded) {
       if (this.airTimeSec >= 0.25) {
         this.landingImpact = Math.min(1, this.airTimeSec * 0.9);
+        const burstDir = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+        this.particles.emit(this.position, burstDir, 1.35 * this.powderSprayMultiplier, 12);
       }
       if (this.airTimeSec >= 0.45) {
         const dist = Math.hypot(this.position.x - this.jumpStartPos.x, this.position.z - this.jumpStartPos.z);
@@ -514,9 +530,13 @@ export class SkierController {
         }
       }
       this.airTimeSec = 0;
+      this.airSpinAngle = 0;
     }
     this.wasGrounded = this.isGrounded;
     this.landingImpact *= Math.exp(-7.5 * clampedDt);
+    if (this.isGrounded) {
+      this.airSpinAngle = THREE.MathUtils.lerp(this.airSpinAngle, 0, 1 - Math.exp(-12 * clampedDt));
+    }
 
     // 5. Animar avatar (orientación a la pendiente, canteo, huevo, contra-rotación y hockey stop)
     const targetRoll = -steerInput * Math.min(0.55, newHorizSpeed * 0.035);
@@ -539,7 +559,7 @@ export class SkierController {
     this.avatar.updatePose({
       roll: this.currentRoll,
       crouch: this.currentCrouch,
-      skidAngle: this.currentSkid,
+      skidAngle: this.currentSkid + this.airSpinAngle,
       steerInput,
       speedMs: newHorizSpeed,
       isGrounded: this.isGrounded,
